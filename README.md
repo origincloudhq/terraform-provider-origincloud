@@ -89,8 +89,7 @@ change in incompatible ways, like the API itself.
 
 ## Contributing
 
-Issues are welcome. This repository is published from Origin Cloud's own
-source, so a pull request here is not merged; see [CONTRIBUTING.md](CONTRIBUTING.md).
+Issues and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
