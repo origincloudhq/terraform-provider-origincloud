@@ -43,20 +43,11 @@ resource "origincloud_pvs_snapshot" "data" {
 }
 ```
 
-Until the first release is in the Terraform and OpenTofu registries, build the
-provider and point Terraform at it:
-
-```sh
-go build -o "$HOME/.terraform.d/origincloud/terraform-provider-origincloud" .
-cat >> "$HOME/.terraformrc" <<EOF
-provider_installation {
-  dev_overrides {
-    "origincloudhq/origincloud" = "$HOME/.terraform.d/origincloud"
-  }
-  direct {}
-}
-EOF
-```
+`terraform init`, or `tofu init`, installs it from the
+[Terraform Registry](https://registry.terraform.io/providers/origincloudhq/origincloud)
+or the [OpenTofu registry](https://search.opentofu.org/provider/origincloudhq/origincloud),
+which also show its documentation. Every release is signed with the
+provider's own key, which both check.
 
 ## Configuration
 
