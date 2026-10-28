@@ -23,6 +23,15 @@ resource "origincloud_pvs_snapshot" "data" {
   project       = "my-project-123"
   zone          = "eu-central1-az1"
   source_volume = origincloud_pvs_volume.data.name
+  # Only a protected snapshot is the source of new volumes.
+  protected = true
+}
+
+resource "origincloud_pvs_volume" "restored" {
+  project         = "my-project-123"
+  zone            = "eu-central1-az1"
+  size_gib        = 20
+  source_snapshot = origincloud_pvs_snapshot.data.name
 }
 ```
 
@@ -37,6 +46,7 @@ resource "origincloud_pvs_snapshot" "data" {
 
 ### Optional
 
+- `protected` (Boolean) Whether the snapshot is protected: only a protected snapshot is the source of volumes and images, and it can't be deleted. Setting it to `true` protects the snapshot and `false` unprotects it, each waiting until done. The API refuses to unprotect a snapshot while a volume or an image is created from it. Destroying a protected snapshot unprotects it first. Left out, the snapshot's protection is left as it is.
 - `tags` (Map of String) Labels of your own, at most 50. The `origin:name` tag is the name the console shows.
 
 ### Read-Only

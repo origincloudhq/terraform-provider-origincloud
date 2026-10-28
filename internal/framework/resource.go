@@ -8,10 +8,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"go.origincloud.eu/sdk/core"
 	"google.golang.org/protobuf/proto"
 )
@@ -47,6 +49,27 @@ type ResourceSpec[M any, P proto.Message] struct {
 	// attributes then replaces it.
 	Update func(ctx context.Context, client *core.Client, resource P, mask []string) (P, error)
 	Delete func(ctx context.Context, client *core.Client, name string) error
+
+	// Toggles are the resource's boolean attributes that methods of their
+	// own set and clear, rather than an update.
+	Toggles []Toggle[M, P]
+}
+
+// A Toggle is a boolean attribute that a pair of custom methods (AIP-136)
+// sets and clears, such as a snapshot's protected (ProtectSnapshot and
+// UnprotectSnapshot). Creates and updates call the method that brings the
+// resource to the configured value, and wait on its operation; a value
+// left out changes nothing.
+type Toggle[M any, P proto.Message] struct {
+	// Planned returns the attribute's value in a plan.
+	Planned func(*M) types.Bool
+	// IsSet and IsClear say that the resource is set or clear. It can be
+	// neither, while a change is under way or after one failed.
+	IsSet, IsClear func(P) bool
+	Set, Clear     func(ctx context.Context, client *core.Client, name string) (*core.Operation[P], error)
+	// ClearBeforeDelete clears a resource that isn't clear before deleting
+	// it, as the API refuses to delete a protected snapshot.
+	ClearBeforeDelete bool
 }
 
 // NewResource returns the constructor of the resource spec describes.
@@ -108,7 +131,19 @@ func (r *Resource[M, P]) Create(ctx context.Context, req resource.CreateRequest,
 		}
 		return
 	}
+	plan := m
 	if err := r.spec.FromProto(created, &m); err != nil {
+		resp.Diagnostics.AddError(r.summary("read the created"), err.Error())
+		return
+	}
+	toggled, err := r.toggle(ctx, &plan, r.spec.Name(&m), created)
+	if err != nil {
+		// The resource exists: it goes into the state as it is, tainted.
+		resp.Diagnostics.AddError(r.summary("create"), err.Error())
+		resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
+		return
+	}
+	if err := r.spec.FromProto(toggled, &m); err != nil {
 		resp.Diagnostics.AddError(r.summary("read the created"), err.Error())
 		return
 	}
@@ -158,9 +193,13 @@ func (r *Resource[M, P]) Update(ctx context.Context, req resource.UpdateRequest,
 		resp.Diagnostics.AddError(r.summary("update"), err.Error())
 		return
 	}
-	if err := r.spec.FromProto(got, &plan); err != nil {
+	toggled, toggleErr := r.toggle(ctx, &plan, r.spec.Name(&state), got)
+	if err := r.spec.FromProto(toggled, &plan); err != nil {
 		resp.Diagnostics.AddError(r.summary("read the updated"), err.Error())
 		return
+	}
+	if toggleErr != nil {
+		resp.Diagnostics.AddError(r.summary("update"), toggleErr.Error())
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
@@ -170,9 +209,71 @@ func (r *Resource[M, P]) Delete(ctx context.Context, req resource.DeleteRequest,
 	if resp.Diagnostics.Append(req.State.Get(ctx, &m)...); resp.Diagnostics.HasError() {
 		return
 	}
-	if err := r.spec.Delete(ctx, r.client, r.spec.Name(&m)); err != nil && !NotFound(err) {
+	name := r.spec.Name(&m)
+	if err := r.clearBeforeDelete(ctx, name); err != nil {
+		if !NotFound(err) {
+			resp.Diagnostics.AddError(r.summary("delete"), err.Error())
+		}
+		return
+	}
+	if err := r.spec.Delete(ctx, r.client, name); err != nil && !NotFound(err) {
 		resp.Diagnostics.AddError(r.summary("delete"), err.Error())
 	}
+}
+
+// toggle brings the resource named name, which is got, to the toggles'
+// values in plan, and returns it after. On an error it returns the
+// resource as the last change left it.
+func (r *Resource[M, P]) toggle(ctx context.Context, plan *M, name string, got P) (P, error) {
+	for _, t := range r.spec.Toggles {
+		want := t.Planned(plan)
+		if want.IsNull() || want.IsUnknown() {
+			continue
+		}
+		change := t.Set
+		switch {
+		case want.ValueBool() && !t.IsSet(got):
+		case !want.ValueBool() && !t.IsClear(got):
+			change = t.Clear
+		default:
+			continue
+		}
+		op, err := change(ctx, r.client, name)
+		if err != nil {
+			return got, err
+		}
+		changed, err := op.Wait(ctx)
+		if err != nil {
+			return got, err
+		}
+		got = changed
+	}
+	return got, nil
+}
+
+// clearBeforeDelete clears the toggles that must be clear before the
+// resource is deleted.
+func (r *Resource[M, P]) clearBeforeDelete(ctx context.Context, name string) error {
+	if !slices.ContainsFunc(r.spec.Toggles, func(t Toggle[M, P]) bool { return t.ClearBeforeDelete }) {
+		return nil
+	}
+	got, err := r.spec.Get(ctx, r.client, name)
+	if err != nil {
+		return err
+	}
+	for _, t := range r.spec.Toggles {
+		if !t.ClearBeforeDelete || t.IsClear(got) {
+			continue
+		}
+		op, err := t.Clear(ctx, r.client, name)
+		if err != nil {
+			return err
+		}
+		if got, err = op.Wait(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ImportState adopts a resource by its resource name, such as

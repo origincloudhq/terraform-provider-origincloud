@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
@@ -172,6 +173,149 @@ resource "origincloud_pvs_volume" "data" {
 					return nil
 				},
 			},
+		},
+	})
+}
+
+// protectionConfig returns a configuration of the provider calling fake,
+// with a volume, a snapshot of it whose body is snapshot, and, unless copy
+// is false, a volume created from the snapshot.
+func protectionConfig(fake *fakePVS, snapshot string, copy bool) string {
+	config := fmt.Sprintf(`
+provider "origincloud" {
+  endpoint = %q
+}
+
+resource "origincloud_pvs_volume" "data" {
+  project  = "p-1"
+  zone     = "eu-central1-az1"
+  size_gib = 1
+}
+
+resource "origincloud_pvs_snapshot" "data" {
+  project       = "p-1"
+  zone          = "eu-central1-az1"
+  source_volume = origincloud_pvs_volume.data.name
+  %s
+}
+`, fake.URL, snapshot)
+	if copy {
+		config += `
+resource "origincloud_pvs_volume" "copy" {
+  project         = "p-1"
+  zone            = "eu-central1-az1"
+  size_gib        = 1
+  source_snapshot = origincloud_pvs_snapshot.data.name
+}
+`
+	}
+	return config
+}
+
+func TestASnapshotIsProtectedUnprotectedAndUnprotectedBeforeDeletion(t *testing.T) {
+	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
+	fake := newFakePVS(t)
+	snapshot := zone + "/snapshots/snap-2"
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			// Protected as it is created, so a volume can be created from
+			// it in the same apply.
+			{
+				Config: protectionConfig(fake, `protected = true`, true),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("origincloud_pvs_snapshot.data", "protected", "true"),
+					resource.TestCheckResourceAttr("origincloud_pvs_snapshot.data", "protection_state", "PROTECTED"),
+					resource.TestCheckResourceAttrPair("origincloud_pvs_volume.copy", "source_snapshot", "origincloud_pvs_snapshot.data", "name"),
+				),
+			},
+			// Another change leaves a protected snapshot as it is, without
+			// protecting it again.
+			{
+				Config: protectionConfig(fake, `protected = true
+  tags = { env = "test" }`, true),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction("origincloud_pvs_snapshot.data", plancheck.ResourceActionUpdate),
+				}},
+				Check: resource.TestCheckResourceAttr("origincloud_pvs_snapshot.data", "tags.env", "test"),
+			},
+			// Left out, the protection stays as it is.
+			{
+				Config: protectionConfig(fake, `tags = { env = "test" }`, true),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectEmptyPlan(),
+				}},
+				Check: resource.TestCheckResourceAttr("origincloud_pvs_snapshot.data", "protected", "true"),
+			},
+			// Refused while a volume created from it exists: the API's
+			// error reaches the user, and the snapshot stays protected.
+			{
+				Config: protectionConfig(fake, `protected = false
+  tags = { env = "test" }`, true),
+				ExpectError: regexp.MustCompile(`volumes are created from`),
+			},
+			// Unprotected in place once that volume is gone.
+			{
+				Config: protectionConfig(fake, `protected = false
+  tags = { env = "test" }`, false),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction("origincloud_pvs_snapshot.data", plancheck.ResourceActionUpdate),
+					plancheck.ExpectResourceAction("origincloud_pvs_volume.copy", plancheck.ResourceActionDestroy),
+				}},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("origincloud_pvs_snapshot.data", "protected", "false"),
+					resource.TestCheckResourceAttr("origincloud_pvs_snapshot.data", "protection_state", "UNPROTECTED"),
+				),
+			},
+			// Protected again, then destroyed with the rest.
+			{
+				Config: protectionConfig(fake, `protected = true
+  tags = { env = "test" }`, false),
+				Check: resource.TestCheckResourceAttr("origincloud_pvs_snapshot.data", "protection_state", "PROTECTED"),
+			},
+		},
+		CheckDestroy: func(*terraform.State) error {
+			want := []string{
+				"POST " + snapshot + ":protect",
+				"PATCH " + snapshot,
+				"POST " + snapshot + ":unprotect", // refused
+				"POST " + snapshot + ":unprotect",
+				"POST " + snapshot + ":protect",
+				"POST " + snapshot + ":unprotect",
+				"DELETE " + snapshot,
+			}
+			var got []string
+			for _, call := range fake.mutations() {
+				if strings.Contains(call, "/snapshots/") {
+					got = append(got, call)
+				}
+			}
+			if !slices.Equal(got, want) {
+				return fmt.Errorf("the snapshot's mutations were %v, not %v", got, want)
+			}
+			return nil
+		},
+	})
+}
+
+func TestARefusedUnprotectReachesTheUser(t *testing.T) {
+	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
+	fake := newFakePVS(t)
+	refused := protectionConfig(fake, `protected = true
+  tags = { fail = "unprotect" }`, false)
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			{Config: refused},
+			{
+				Config:      refused,
+				Destroy:     true,
+				ExpectError: regexp.MustCompile(`an image is being built from`),
+			},
+			// Once the API allows it, the snapshot is destroyed.
+			{Config: protectionConfig(fake, `protected = true`, false)},
 		},
 	})
 }

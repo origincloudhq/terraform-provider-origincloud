@@ -76,6 +76,9 @@ Credentials come from the environment, the first of:
   tainted, and the next apply replaces it.
 - **Deleted resources.** A resource deleted outside Terraform leaves the state
   at the next refresh, and the next apply creates it again.
+- **Protection.** A snapshot is the source of new volumes only while it is
+  protected. `protected = true` protects it, and destroying it unprotects it
+  first.
 - **Import.** Every resource is imported by its resource name:
 
   ```sh

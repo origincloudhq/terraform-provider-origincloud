@@ -22,7 +22,9 @@ import (
 
 // fakePVS serves PVS's REST API from memory, answering every mutation
 // with an operation that is already done. A volume whose tags hold
-// fail=create is created in ERROR, its operation failed.
+// fail=create is created in ERROR, its operation failed. A snapshot
+// refuses to be unprotected while a volume created from it exists, or
+// while its tags hold fail=unprotect.
 type fakePVS struct {
 	*httptest.Server
 
@@ -97,6 +99,13 @@ func (f *fakePVS) createVolume(w http.ResponseWriter, parent string, body []byte
 		volume.StorageClass = "storageClasses/gp1"
 	}
 	f.next++
+	if source := volume.GetSourceSnapshot(); source != "" {
+		snapshot, ok := f.snapshots[source]
+		if !ok || snapshot.GetProtectionState() != pvsv1beta1.Snapshot_PROTECTED {
+			writeError(w, http.StatusBadRequest, "FAILED_PRECONDITION", source+" isn't protected")
+			return
+		}
+	}
 	volume.Name = fmt.Sprintf("%s/volumes/vol-%d", parent, f.next)
 	volume.Urn = "urn:origincloud:pvs:volume/" + volume.Name
 	volume.Creator = "user:test"
@@ -172,9 +181,33 @@ func (f *fakePVS) createSnapshot(w http.ResponseWriter, parent string, body []by
 }
 
 func (f *fakePVS) snapshot(w http.ResponseWriter, r *http.Request, name string, body []byte) {
+	name, method, _ := strings.Cut(name, ":")
 	snapshot, ok := f.snapshots[name]
 	if !ok {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", name+" doesn't exist")
+		return
+	}
+	switch {
+	case method == "protect" && r.Method == http.MethodPost:
+		snapshot.ProtectionState = pvsv1beta1.Snapshot_PROTECTED
+		writeOperation(w, name, snapshot, "")
+		return
+	case method == "unprotect" && r.Method == http.MethodPost:
+		if snapshot.GetTags()["fail"] == "unprotect" {
+			writeError(w, http.StatusBadRequest, "FAILED_PRECONDITION", "an image is being built from "+name)
+			return
+		}
+		for _, volume := range f.volumes {
+			if volume.GetSourceSnapshot() == name && volume.GetState() != pvsv1beta1.Volume_DELETED {
+				writeError(w, http.StatusBadRequest, "FAILED_PRECONDITION", "volumes are created from "+name)
+				return
+			}
+		}
+		snapshot.ProtectionState = pvsv1beta1.Snapshot_UNPROTECTED
+		writeOperation(w, name, snapshot, "")
+		return
+	case method != "":
+		writeError(w, http.StatusNotFound, "NOT_FOUND", r.Method+" "+r.URL.Path+" isn't served")
 		return
 	}
 	switch r.Method {
@@ -189,6 +222,10 @@ func (f *fakePVS) snapshot(w http.ResponseWriter, r *http.Request, name string, 
 		snapshot.Tags = update.GetTags()
 		writeMessage(w, snapshot)
 	case http.MethodDelete:
+		if snapshot.GetProtectionState() != pvsv1beta1.Snapshot_UNPROTECTED {
+			writeError(w, http.StatusBadRequest, "FAILED_PRECONDITION", name+" is protected")
+			return
+		}
 		snapshot.State = pvsv1beta1.Snapshot_DELETED
 		writeOperation(w, name, &emptypb.Empty{}, "")
 	}
