@@ -97,7 +97,7 @@ func snapshotSchema() schema.Schema {
 				ElementType:         types.StringType,
 			},
 			"protected": schema.BoolAttribute{
-				MarkdownDescription: "Whether the snapshot is protected: only a protected snapshot is the source of volumes and images, and it can't be deleted. Setting it to `true` protects the snapshot and `false` unprotects it, each waiting until done. Destroying a protected snapshot unprotects it first. Left out, the snapshot's protection is left as it is.",
+				MarkdownDescription: "Whether the snapshot is protected: only a protected snapshot is the source of volumes and images, and it can't be deleted. Setting it to `true` protects the snapshot and `false` unprotects it, each waiting until done. The API refuses to unprotect a snapshot while a volume or an image is created from it. Destroying a protected snapshot unprotects it first. Left out, the snapshot's protection is left as it is.",
 				Optional:            true,
 				Computed:            true,
 				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},

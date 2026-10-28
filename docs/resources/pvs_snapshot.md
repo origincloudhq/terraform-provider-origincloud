@@ -46,7 +46,7 @@ resource "origincloud_pvs_volume" "restored" {
 
 ### Optional
 
-- `protected` (Boolean) Whether the snapshot is protected: only a protected snapshot is the source of volumes and images, and it can't be deleted. Setting it to `true` protects the snapshot and `false` unprotects it, each waiting until done. Destroying a protected snapshot unprotects it first. Left out, the snapshot's protection is left as it is.
+- `protected` (Boolean) Whether the snapshot is protected: only a protected snapshot is the source of volumes and images, and it can't be deleted. Setting it to `true` protects the snapshot and `false` unprotects it, each waiting until done. The API refuses to unprotect a snapshot while a volume or an image is created from it. Destroying a protected snapshot unprotects it first. Left out, the snapshot's protection is left as it is.
 - `tags` (Map of String) Labels of your own, at most 50. The `origin:name` tag is the name the console shows.
 
 ### Read-Only

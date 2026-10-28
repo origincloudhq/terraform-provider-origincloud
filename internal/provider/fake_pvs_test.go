@@ -22,8 +22,9 @@ import (
 
 // fakePVS serves PVS's REST API from memory, answering every mutation
 // with an operation that is already done. A volume whose tags hold
-// fail=create is created in ERROR, its operation failed; a snapshot whose
-// tags hold fail=unprotect refuses to be unprotected.
+// fail=create is created in ERROR, its operation failed. A snapshot
+// refuses to be unprotected while a volume created from it exists, or
+// while its tags hold fail=unprotect.
 type fakePVS struct {
 	*httptest.Server
 
@@ -195,6 +196,12 @@ func (f *fakePVS) snapshot(w http.ResponseWriter, r *http.Request, name string, 
 		if snapshot.GetTags()["fail"] == "unprotect" {
 			writeError(w, http.StatusBadRequest, "FAILED_PRECONDITION", "an image is being built from "+name)
 			return
+		}
+		for _, volume := range f.volumes {
+			if volume.GetSourceSnapshot() == name && volume.GetState() != pvsv1beta1.Volume_DELETED {
+				writeError(w, http.StatusBadRequest, "FAILED_PRECONDITION", "volumes are created from "+name)
+				return
+			}
 		}
 		snapshot.ProtectionState = pvsv1beta1.Snapshot_UNPROTECTED
 		writeOperation(w, name, snapshot, "")

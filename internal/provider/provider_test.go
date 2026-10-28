@@ -212,7 +212,7 @@ resource "origincloud_pvs_volume" "copy" {
 	return config
 }
 
-func TestASnapshotIsProtectedUnprotectedAndUnprotectedBeforeItIsDeleted(t *testing.T) {
+func TestASnapshotIsProtectedUnprotectedAndUnprotectedBeforeDeletion(t *testing.T) {
 	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
 	fake := newFakePVS(t)
 	snapshot := zone + "/snapshots/snap-2"
@@ -248,13 +248,20 @@ func TestASnapshotIsProtectedUnprotectedAndUnprotectedBeforeItIsDeleted(t *testi
 				}},
 				Check: resource.TestCheckResourceAttr("origincloud_pvs_snapshot.data", "protected", "true"),
 			},
-			// Unprotected in place.
+			// Refused while a volume created from it exists: the API's
+			// error reaches the user, and the snapshot stays protected.
 			{
 				Config: protectionConfig(fake, `protected = false
   tags = { env = "test" }`, true),
+				ExpectError: regexp.MustCompile(`volumes are created from`),
+			},
+			// Unprotected in place once that volume is gone.
+			{
+				Config: protectionConfig(fake, `protected = false
+  tags = { env = "test" }`, false),
 				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
 					plancheck.ExpectResourceAction("origincloud_pvs_snapshot.data", plancheck.ResourceActionUpdate),
-					plancheck.ExpectResourceAction("origincloud_pvs_volume.copy", plancheck.ResourceActionNoop),
+					plancheck.ExpectResourceAction("origincloud_pvs_volume.copy", plancheck.ResourceActionDestroy),
 				}},
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("origincloud_pvs_snapshot.data", "protected", "false"),
@@ -264,7 +271,7 @@ func TestASnapshotIsProtectedUnprotectedAndUnprotectedBeforeItIsDeleted(t *testi
 			// Protected again, then destroyed with the rest.
 			{
 				Config: protectionConfig(fake, `protected = true
-  tags = { env = "test" }`, true),
+  tags = { env = "test" }`, false),
 				Check: resource.TestCheckResourceAttr("origincloud_pvs_snapshot.data", "protection_state", "PROTECTED"),
 			},
 		},
@@ -272,6 +279,7 @@ func TestASnapshotIsProtectedUnprotectedAndUnprotectedBeforeItIsDeleted(t *testi
 			want := []string{
 				"POST " + snapshot + ":protect",
 				"PATCH " + snapshot,
+				"POST " + snapshot + ":unprotect", // refused
 				"POST " + snapshot + ":unprotect",
 				"POST " + snapshot + ":protect",
 				"POST " + snapshot + ":unprotect",
