@@ -6,6 +6,7 @@ package pvsv1beta1
 import (
 	context "context"
 	schema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	boolplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	planmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	stringplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	types "github.com/hashicorp/terraform-plugin-framework/types"
@@ -30,6 +31,7 @@ type snapshotModel struct {
 	ProtectionReason types.String `tfsdk:"protection_reason"`
 	Creator          types.String `tfsdk:"creator"`
 	Tags             types.Map    `tfsdk:"tags"`
+	Protected        types.Bool   `tfsdk:"protected"`
 }
 
 func snapshotSchema() schema.Schema {
@@ -94,6 +96,12 @@ func snapshotSchema() schema.Schema {
 				Optional:            true,
 				ElementType:         types.StringType,
 			},
+			"protected": schema.BoolAttribute{
+				MarkdownDescription: "Whether the snapshot is protected: only a protected snapshot is the source of volumes and images, and it can't be deleted. Setting it to `true` protects the snapshot and `false` unprotects it, each waiting until done. Destroying a protected snapshot unprotects it first. Left out, the snapshot's protection is left as it is.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+			},
 		},
 	}
 }
@@ -124,6 +132,7 @@ func snapshotFromProto(p *v1beta1.Snapshot, m *snapshotModel) error {
 	m.ProtectionReason = types.StringValue(p.GetProtectionReason())
 	m.Creator = types.StringValue(p.GetCreator())
 	m.Tags = framework.Optional(m.Tags, framework.StringMap(p.GetTags()), len(p.GetTags()) == 0)
+	m.Protected = types.BoolValue(p.GetProtectionState() == v1beta1.Snapshot_PROTECTED)
 	return nil
 }
 
@@ -161,6 +170,20 @@ func snapshotResource() framework.ResourceSpec[snapshotModel, *v1beta1.Snapshot]
 			}
 			_, err = op.Wait(ctx)
 			return err
+		},
+		Toggles: []framework.Toggle[snapshotModel, *v1beta1.Snapshot]{
+			{
+				Planned: func(m *snapshotModel) types.Bool { return m.Protected },
+				IsSet:   func(p *v1beta1.Snapshot) bool { return p.GetProtectionState() == v1beta1.Snapshot_PROTECTED },
+				IsClear: func(p *v1beta1.Snapshot) bool { return p.GetProtectionState() == v1beta1.Snapshot_UNPROTECTED },
+				Set: func(ctx context.Context, client *core.Client, name string) (*core.Operation[*v1beta1.Snapshot], error) {
+					return v1beta1.NewSnapshotClient(client).ProtectSnapshot(ctx, &v1beta1.ProtectSnapshotRequest{Name: name})
+				},
+				Clear: func(ctx context.Context, client *core.Client, name string) (*core.Operation[*v1beta1.Snapshot], error) {
+					return v1beta1.NewSnapshotClient(client).UnprotectSnapshot(ctx, &v1beta1.UnprotectSnapshotRequest{Name: name})
+				},
+				ClearBeforeDelete: true,
+			},
 		},
 	}
 }

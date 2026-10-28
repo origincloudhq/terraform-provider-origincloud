@@ -62,6 +62,9 @@ func main() {
 				return fmt.Errorf("%s: %w", f.Desc.Path(), err)
 			}
 		}
+		if err := checkTogglesFound(); err != nil {
+			return err
+		}
 		for _, p := range packages {
 			generatePackageList(gen, p)
 		}
@@ -224,6 +227,9 @@ type attribute struct {
 	// updatable is sent in an update when it changes.
 	updatable bool
 	int32     bool
+	// toggle is the attribute's toggle, when methods of their own set and
+	// clear it (toggles.go).
+	toggle *resolvedToggle
 }
 
 func attributes(t resourceType, forResource bool) ([]attribute, error) {
@@ -250,6 +256,24 @@ func attributes(t resourceType, forResource bool) ([]attribute, error) {
 			return nil, fmt.Errorf("field %s: the attribute %s is already the name's", f.Desc.Name(), a.name)
 		}
 		attrs = append(attrs, a)
+	}
+	if !forResource {
+		return attrs, nil
+	}
+	resolved, err := togglesOf(t)
+	if err != nil {
+		return nil, err
+	}
+	for i := range resolved {
+		r := &resolved[i]
+		if slices.ContainsFunc(attrs, func(b attribute) bool { return b.name == r.attribute }) {
+			return nil, fmt.Errorf("toggle %s: the attribute is already a field's", r.attribute)
+		}
+		// Optional and computed: left out, it follows the API.
+		attrs = append(attrs, attribute{
+			name: r.attribute, goName: camel(r.attribute), kind: "Bool", doc: r.doc,
+			optional: true, computed: true, keep: true, toggle: r,
+		})
 	}
 	return attrs, nil
 }
@@ -455,9 +479,49 @@ func generateResource(g *protogen.GeneratedFile, t resourceType) error {
 	}
 	g.P("},")
 
+	generateToggles(g, t, model, message, client, attrs)
+
 	g.P("}")
 	g.P("}")
 	return nil
+}
+
+// generateToggles writes the spec's toggles, when the resource has any.
+func generateToggles(g *protogen.GeneratedFile, t resourceType, model, message, client string, attrs []attribute) {
+	toggleType := g.QualifiedGoIdent(frameworkPackage.Ident("Toggle")) + "[" + model + ", " + message + "]"
+	ctx := g.QualifiedGoIdent(contextPackage.Ident("Context"))
+	coreClient := "*" + g.QualifiedGoIdent(corePackage.Ident("Client"))
+	operation := "*" + g.QualifiedGoIdent(corePackage.Ident("Operation")) + "[" + message + "]"
+	first := true
+	for _, a := range attrs {
+		if a.toggle == nil {
+			continue
+		}
+		if first {
+			g.P("Toggles: []", toggleType, "{")
+			first = false
+		}
+		state := "p.Get" + a.toggle.state.GoName + "()"
+		g.P("{")
+		g.P("Planned: func(m *", model, ") ", g.QualifiedGoIdent(typesPackage.Ident("Bool")), " { return m.", a.goName, " },")
+		g.P("IsSet: func(p ", message, ") bool { return ", state, " == ", g.QualifiedGoIdent(a.toggle.on.GoIdent), " },")
+		g.P("IsClear: func(p ", message, ") bool { return ", state, " == ", g.QualifiedGoIdent(a.toggle.off.GoIdent), " },")
+		for _, m := range []struct {
+			field  string
+			method *protogen.Method
+		}{{"Set", a.toggle.set}, {"Clear", a.toggle.clear}} {
+			g.P(m.field, ": func(ctx ", ctx, ", client ", coreClient, ", name string) (", operation, ", error) {")
+			g.P("return ", client, ".", m.method.GoName, "(ctx, &", g.QualifiedGoIdent(m.method.Input.GoIdent), "{Name: name})")
+			g.P("},")
+		}
+		if a.toggle.clearBeforeDelete {
+			g.P("ClearBeforeDelete: true,")
+		}
+		g.P("},")
+	}
+	if !first {
+		g.P("},")
+	}
 }
 
 func generateDataSource(g *protogen.GeneratedFile, t resourceType) error {
@@ -578,6 +642,10 @@ func generateConversions(g *protogen.GeneratedFile, t resourceType, model, messa
 		g.P("}")
 	}
 	for i, a := range attrs {
+		if a.toggle != nil {
+			g.P("m.", a.goName, " = ", types("BoolValue"), "(p.Get", a.toggle.state.GoName, "() == ", g.QualifiedGoIdent(a.toggle.on.GoIdent), ")")
+			continue
+		}
 		if a.field == nil {
 			if a.name == "id" {
 				g.P("m.ID = ", types("StringValue"), "(p.GetName())")
