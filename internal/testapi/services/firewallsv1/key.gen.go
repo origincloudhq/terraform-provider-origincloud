@@ -192,7 +192,7 @@ func keySchema() schema.Schema {
 				Optional:            true,
 				Computed:            true,
 				Validators:          []validator.String{framework.Oneof{Others: []string{"region"}}},
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured(), framework.OneofOthers{"region"}},
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), framework.OneofOthers{"region"}, stringplanmodifier.RequiresReplace()},
 			},
 			"region": schema.StringAttribute{
 				MarkdownDescription: "",

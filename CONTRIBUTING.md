@@ -139,7 +139,9 @@ to the plugin or `internal/framework`.
   set; exactly one when its members are `REQUIRED`. A member that isn't the
   one the oneof holds is null. A member the state keeps, such as an
   immutable one the API chose, is planned null while the configuration
-  sets another, so that the other is sent.
+  sets another, so that the other is sent. Switching away from an
+  `IMMUTABLE` member, or to one, replaces the resource; switching between
+  mutable members updates it, naming both in the mask.
 - A boolean that a pair of custom methods sets and clears, rather than an
   update, is a **toggle**, such as a snapshot's `protected`
   (`ProtectSnapshot`, `UnprotectSnapshot`). Nothing in the API marks such a

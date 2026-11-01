@@ -71,16 +71,34 @@ func TestPresenceInSetElements(t *testing.T) {
 	})
 }
 
-// Switching a oneof from its immutable member, kept from the state, to its
-// mutable one sends the mutable one.
+// A oneof whose members differ in IMMUTABLE: switching away from the
+// immutable member, or to it, replaces the resource, as the immutable
+// member can't change after the create; left out while nothing else is
+// set, it is kept; switching between mutable members is an update.
 func TestAOneofSwitchesFromAnImmutableMember(t *testing.T) {
 	keyTest(t, func(fake *fakeFirewalls) []resource.TestStep {
 		return []resource.TestStep{
 			keyStep(fake, `zone = "z1"`, plancheck.ResourceActionCreate),
-			keyStep(fake, `region = "r1"`, plancheck.ResourceActionUpdate,
-				keyMask(fake, "region"),
+			keyStep(fake, ``, plancheck.ResourceActionNoop,
+				resource.TestCheckResourceAttr(key, "zone", "z1")),
+			keyStep(fake, `region = "r1"`, plancheck.ResourceActionReplace,
 				resource.TestCheckResourceAttr(key, "region", "r1"),
 				resource.TestCheckNoResourceAttr(key, "zone")),
+			keyStep(fake, `zone = "z2"`, plancheck.ResourceActionReplace,
+				resource.TestCheckResourceAttr(key, "zone", "z2"),
+				resource.TestCheckNoResourceAttr(key, "region")),
+		}
+	})
+}
+
+// Between mutable members, a switch is an update naming both.
+func TestAOneofSwitchesBetweenMutableMembers(t *testing.T) {
+	keyTest(t, func(fake *fakeFirewalls) []resource.TestStep {
+		return []resource.TestStep{
+			keyStep(fake, `seed = "a"`, plancheck.ResourceActionCreate),
+			keyStep(fake, `imported = { fingerprint = "ff" }`, plancheck.ResourceActionUpdate,
+				keyMask(fake, "seed,imported"),
+				resource.TestCheckNoResourceAttr(key, "seed")),
 		}
 	})
 }

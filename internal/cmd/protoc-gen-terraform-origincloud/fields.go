@@ -451,24 +451,29 @@ func generateAttributes(g *protogen.GeneratedFile, schemaPackage protogen.GoImpo
 		case a.keep:
 			modifiers = append(modifiers, g.QualifiedGoIdent(modifierPackage.Ident("UseStateForUnknown"))+"()")
 		}
+		// A oneof's member kept from the state, such as an immutable one the
+		// API chose, is planned null while the configuration sets another:
+		// it would otherwise be the one sent. Its replacement then follows
+		// the plan, not the configuration: an immutable member going from
+		// set to null, as the oneof switches away from it, is a change.
+		ifConfigured := a.computed
+		if a.oneof != nil && a.keep {
+			modifiers = append(modifiers, c.framework("OneofOthers")+"{"+quoted(oneofOthers(a, attrs))+"}")
+			ifConfigured = false
+		}
 		if a.replace && a.message != nil {
 			// What it sends, so that an output-only field changing doesn't
 			// replace the resource.
 			value := c.types(a.kind)
-			modifiers = append(modifiers, c.framework(a.kind+"ReplaceIfSent")+"(func(plan, state "+value+") bool { return "+sentSame(g, a, "plan", "state")+" }, "+fmt.Sprint(a.computed)+")")
+			modifiers = append(modifiers, c.framework(a.kind+"ReplaceIfSent")+"(func(plan, state "+value+") bool { return "+sentSame(g, a, "plan", "state")+" }, "+fmt.Sprint(ifConfigured)+")")
 		} else if a.replace && a.wellKnown != "" {
 			// The same instant or length, however written.
 			same := g.QualifiedGoIdent(protoPackage.Ident("Equal")) + "(" + c.toProto(a, "plan") + ", " + c.toProto(a, "state") + ")"
-			modifiers = append(modifiers, c.framework("StringReplaceIfSent")+"(func(plan, state "+c.types("String")+") bool { return "+same+" }, "+fmt.Sprint(a.computed)+")")
-		} else if a.replace && a.computed {
+			modifiers = append(modifiers, c.framework("StringReplaceIfSent")+"(func(plan, state "+c.types("String")+") bool { return "+same+" }, "+fmt.Sprint(ifConfigured)+")")
+		} else if a.replace && ifConfigured {
 			modifiers = append(modifiers, g.QualifiedGoIdent(modifierPackage.Ident("RequiresReplaceIfConfigured"))+"()")
 		} else if a.replace {
 			modifiers = append(modifiers, g.QualifiedGoIdent(modifierPackage.Ident("RequiresReplace"))+"()")
-		}
-		if a.oneof != nil && a.keep {
-			// Kept from the state, it would be sent though another member is
-			// configured.
-			modifiers = append(modifiers, c.framework("OneofOthers")+"{"+quoted(oneofOthers(a, attrs))+"}")
 		}
 		if len(modifiers) > 0 {
 			g.P("PlanModifiers: []", g.QualifiedGoIdent(planPackage.Ident(a.kind)), "{", strings.Join(modifiers, ", "), "},")
