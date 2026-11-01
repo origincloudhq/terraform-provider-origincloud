@@ -1,11 +1,14 @@
 package provider
 
 import (
+	"cmp"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -21,7 +24,8 @@ import (
 )
 
 // fakePVS serves PVS's REST API from memory, answering every mutation
-// with an operation that is already done. A volume whose tags hold
+// with an operation that is already done. Its lists of volumes and
+// snapshots answer one per page. A volume whose tags hold
 // fail=create is created in ERROR, its operation failed. A snapshot
 // refuses to be unprotected while a volume created from it exists, or
 // while its tags hold fail=unprotect.
@@ -65,6 +69,18 @@ func (f *fakePVS) serve(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 
 	switch {
+	case len(segments) == 1 && segments[0] == "storageClasses":
+		list := &pvsv1beta1.ListStorageClassesResponse{}
+		for _, name := range slices.Sorted(maps.Keys(storageClasses)) {
+			list.StorageClasses = append(list.StorageClasses, storageClasses[name])
+		}
+		writeMessage(w, list)
+	case len(segments) == 5 && segments[4] == "volumes" && r.Method == http.MethodGet:
+		volumes, next := page(f.volumes, path+"/", r, func(v *pvsv1beta1.Volume) bool { return v.GetState() != pvsv1beta1.Volume_DELETED })
+		writeMessage(w, &pvsv1beta1.ListVolumesResponse{Volumes: volumes, NextPageToken: next})
+	case len(segments) == 5 && segments[4] == "snapshots" && r.Method == http.MethodGet:
+		snapshots, next := page(f.snapshots, path+"/", r, func(s *pvsv1beta1.Snapshot) bool { return s.GetState() != pvsv1beta1.Snapshot_DELETED })
+		writeMessage(w, &pvsv1beta1.ListSnapshotsResponse{Snapshots: snapshots, NextPageToken: next})
 	case len(segments) == 2 && segments[0] == "storageClasses":
 		class, ok := storageClasses[path]
 		if !ok {
@@ -229,6 +245,29 @@ func (f *fakePVS) snapshot(w http.ResponseWriter, r *http.Request, name string, 
 		snapshot.State = pvsv1beta1.Snapshot_DELETED
 		writeOperation(w, name, &emptypb.Empty{}, "")
 	}
+}
+
+// page returns the page r asks for of the resources whose names start
+// with prefix and that listed allows, oldest first, one per page, and the
+// token of the next page.
+func page[P any](all map[string]P, prefix string, r *http.Request, listed func(P) bool) ([]P, string) {
+	var names []string
+	for name, p := range all {
+		if strings.HasPrefix(name, prefix) && listed(p) {
+			names = append(names, name)
+		}
+	}
+	// vol-2 before vol-10.
+	slices.SortFunc(names, func(a, b string) int { return cmp.Or(cmp.Compare(len(a), len(b)), cmp.Compare(a, b)) })
+	i, _ := strconv.Atoi(r.URL.Query().Get("pageToken"))
+	if i >= len(names) {
+		return nil, ""
+	}
+	next := ""
+	if i+1 < len(names) {
+		next = strconv.Itoa(i + 1)
+	}
+	return []P{all[names[i]]}, next
 }
 
 // writeOperation answers with a done operation on target, whose result is

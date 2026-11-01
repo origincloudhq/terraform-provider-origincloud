@@ -46,15 +46,23 @@ func (d *DataSource[M, P]) Schema(_ context.Context, _ datasource.SchemaRequest,
 }
 
 func (d *DataSource[M, P]) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
+	if client := configuredClient(req, resp); client != nil {
+		d.client = client
+	}
+}
+
+// configuredClient returns the client the provider configured; nil while
+// validating, before the provider is configured, or after an error.
+func configuredClient(req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) *core.Client {
 	if req.ProviderData == nil {
-		return // validating, before the provider is configured
+		return nil
 	}
 	client, ok := req.ProviderData.(*core.Client)
 	if !ok {
 		resp.Diagnostics.AddError("Unexpected provider data", fmt.Sprintf("%T isn't a *core.Client", req.ProviderData))
-		return
+		return nil
 	}
-	d.client = client
+	return client
 }
 
 func (d *DataSource[M, P]) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
@@ -68,6 +76,59 @@ func (d *DataSource[M, P]) Read(ctx context.Context, req datasource.ReadRequest,
 	}
 	if err != nil {
 		resp.Diagnostics.AddError(fmt.Sprintf("Couldn't read %s%s", providerTypeName, d.spec.TypeName), err.Error())
+		return
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
+}
+
+// A ListDataSourceSpec maps one API resource type's List method (AIP-132)
+// onto a Terraform data source that reads everything the list returns into
+// M. The generated code fills it in.
+type ListDataSourceSpec[M any] struct {
+	// TypeName follows the provider's, such as "_location_zones".
+	TypeName string
+	Schema   schema.Schema
+
+	// List sets m's list from the API, every page of it, for the parent
+	// m's configuration names, if the list has one.
+	List func(ctx context.Context, client *core.Client, m *M) error
+}
+
+// NewListDataSource returns the constructor of the data source spec
+// describes.
+func NewListDataSource[M any](spec ListDataSourceSpec[M]) func() datasource.DataSource {
+	return func() datasource.DataSource { return &ListDataSource[M]{spec: spec} }
+}
+
+// A ListDataSource reads everything one List method returns.
+type ListDataSource[M any] struct {
+	spec   ListDataSourceSpec[M]
+	client *core.Client
+}
+
+var _ datasource.DataSourceWithConfigure = (*ListDataSource[struct{}])(nil)
+
+func (d *ListDataSource[M]) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + d.spec.TypeName
+}
+
+func (d *ListDataSource[M]) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+	resp.Schema = d.spec.Schema
+}
+
+func (d *ListDataSource[M]) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
+	if client := configuredClient(req, resp); client != nil {
+		d.client = client
+	}
+}
+
+func (d *ListDataSource[M]) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
+	var m M
+	if resp.Diagnostics.Append(req.Config.Get(ctx, &m)...); resp.Diagnostics.HasError() {
+		return
+	}
+	if err := d.spec.List(ctx, d.client, &m); err != nil {
+		resp.Diagnostics.AddError(fmt.Sprintf("Couldn't list %s%s", providerTypeName, d.spec.TypeName), err.Error())
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)

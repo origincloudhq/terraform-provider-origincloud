@@ -4,6 +4,7 @@ package provider
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
@@ -20,6 +21,9 @@ func New(version string) func() provider.Provider {
 
 type originCloud struct {
 	version string
+	// httpClient sends the calls, when set; tests set it to see the
+	// hosts called.
+	httpClient *http.Client
 }
 
 type config struct {
@@ -42,6 +46,7 @@ func (p *originCloud) Schema(_ context.Context, _ provider.SchemaRequest, resp *
 			"region": schema.StringAttribute{
 				MarkdownDescription: "The region whose front door the provider calls, such as `eu-central1`. " +
 					"Every front door serves every resource; a region only picks the nearest. " +
+					"A global service, such as location, is always called at its regionless host. " +
 					"Defaults to `ORIGINCLOUD_REGION`, and to the regionless endpoint when that is unset.",
 				Optional: true,
 			},
@@ -64,6 +69,9 @@ func (p *originCloud) Configure(ctx context.Context, req provider.ConfigureReque
 	}
 	if !cfg.Endpoint.IsNull() {
 		opts = append(opts, core.WithEndpoint(cfg.Endpoint.ValueString()))
+	}
+	if p.httpClient != nil {
+		opts = append(opts, core.WithHTTPClient(p.httpClient))
 	}
 	client, err := core.NewClient(ctx, opts...)
 	if err != nil {

@@ -37,6 +37,13 @@ to the plugin or `internal/framework`.
   service can also `Create` and `Delete` it, and a **data source** otherwise.
   Its name's variables before its own (`project`, `zone`) are required
   attributes that replace it.
+- A resource type the service also lists (`List<plural>`, AIP-132) gets a
+  second data source named after its plural, such as
+  `origincloud_pvs_volumes`, that reads every page of the list. The name's
+  variables before the resource's own are its required attributes; each
+  item has the data source's attributes, all computed. The list request's
+  other fields, such as a filter, are left unset; a required one fails
+  generation.
 - `REQUIRED` is required, `OUTPUT_ONLY` computed, `IMMUTABLE` replaces the
   resource when it changes. An `OPTIONAL` `IMMUTABLE` field is also computed,
   keeping the value the API chose when it was left out (the default storage
@@ -44,9 +51,11 @@ to the plugin or `internal/framework`.
 - Creates, updates and deletes wait on their operation. A resource whose
   create failed after it existed (the operation's metadata names it) is kept
   as tainted. A resource in `DELETED`, or not found, leaves the state.
-- Strings, integers, booleans, enums (computed only) and string maps are
-  supported; any other field fails generation with its name, so a new API
-  that uses one extends the plugin first.
+- Strings, integers, booleans, enums and repeated strings (lists of
+  strings; both computed only) and string maps are supported; any other
+  field fails generation with its name, so a new API that uses one extends
+  the plugin first. A list the API answers empty is an empty list, not
+  null.
 - A boolean that a pair of custom methods sets and clears, rather than an
   update, is a **toggle**, such as a snapshot's `protected`
   (`ProtectSnapshot`, `UnprotectSnapshot`). Nothing in the API marks such a

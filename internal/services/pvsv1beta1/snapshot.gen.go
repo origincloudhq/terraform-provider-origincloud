@@ -5,6 +5,7 @@ package pvsv1beta1
 
 import (
 	context "context"
+	schema1 "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	schema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	boolplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	planmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -184,6 +185,127 @@ func snapshotResource() framework.ResourceSpec[snapshotModel, *v1beta1.Snapshot]
 				},
 				ClearBeforeDelete: true,
 			},
+		},
+	}
+}
+
+// snapshotItemModel is an item of origincloud_pvs_snapshots.
+type snapshotItemModel struct {
+	Name             types.String `tfsdk:"name"`
+	Urn              types.String `tfsdk:"urn"`
+	SourceVolume     types.String `tfsdk:"source_volume"`
+	SourceSizeGib    types.Int64  `tfsdk:"source_size_gib"`
+	State            types.String `tfsdk:"state"`
+	StateReason      types.String `tfsdk:"state_reason"`
+	ProtectionState  types.String `tfsdk:"protection_state"`
+	ProtectionReason types.String `tfsdk:"protection_reason"`
+	Creator          types.String `tfsdk:"creator"`
+	Tags             types.Map    `tfsdk:"tags"`
+}
+
+func snapshotItemFromProto(p *v1beta1.Snapshot, m *snapshotItemModel) error {
+	m.Name = types.StringValue(p.GetName())
+	m.Urn = types.StringValue(p.GetUrn())
+	m.SourceVolume = types.StringValue(p.GetSourceVolume())
+	m.SourceSizeGib = types.Int64Value(int64(p.GetSourceSizeGib()))
+	m.State = types.StringValue(p.GetState().String())
+	m.StateReason = types.StringValue(p.GetStateReason())
+	m.ProtectionState = types.StringValue(p.GetProtectionState().String())
+	m.ProtectionReason = types.StringValue(p.GetProtectionReason())
+	m.Creator = types.StringValue(p.GetCreator())
+	m.Tags = framework.StringMap(p.GetTags())
+	return nil
+}
+
+// snapshotListModel is origincloud_pvs_snapshots's state.
+type snapshotListModel struct {
+	Project   types.String        `tfsdk:"project"`
+	Zone      types.String        `tfsdk:"zone"`
+	Snapshots []snapshotItemModel `tfsdk:"snapshots"`
+}
+
+func snapshotListSchema() schema1.Schema {
+	return schema1.Schema{
+		MarkdownDescription: "Lists the snapshots in a zone, oldest first. Deleted snapshots aren't listed. For every zone's snapshots, list the zones whose `services` name `pvs` with the `origincloud_location_zones` data source, then each zone's snapshots.",
+		Attributes: map[string]schema1.Attribute{
+			"project": schema1.StringAttribute{
+				MarkdownDescription: "The project whose snapshots to list.",
+				Required:            true,
+			},
+			"zone": schema1.StringAttribute{
+				MarkdownDescription: "The zone whose snapshots to list.",
+				Required:            true,
+			},
+			"snapshots": schema1.ListNestedAttribute{
+				MarkdownDescription: "The snapshots listed, from every page.",
+				Computed:            true,
+				NestedObject: schema1.NestedAttributeObject{
+					Attributes: map[string]schema1.Attribute{
+						"name": schema1.StringAttribute{
+							MarkdownDescription: "The snapshot's resource name.",
+							Computed:            true,
+						},
+						"urn": schema1.StringAttribute{
+							MarkdownDescription: "The snapshot's URN, the identifier access policies and the audit log use.",
+							Computed:            true,
+						},
+						"source_volume": schema1.StringAttribute{
+							MarkdownDescription: "The volume copied, in the same project and zone.",
+							Computed:            true,
+						},
+						"source_size_gib": schema1.Int64Attribute{
+							MarkdownDescription: "The source volume's size in GiB when it was copied: the least a volume created from the snapshot holds.",
+							Computed:            true,
+						},
+						"state": schema1.StringAttribute{
+							MarkdownDescription: "Where the copy is. One of `PENDING`, `COMPLETED`, `DELETING`, `DELETED`, `ERROR`.",
+							Computed:            true,
+						},
+						"state_reason": schema1.StringAttribute{
+							MarkdownDescription: "Why the snapshot is in `ERROR`; empty otherwise.",
+							Computed:            true,
+						},
+						"protection_state": schema1.StringAttribute{
+							MarkdownDescription: "Whether it is protected. One of `UNPROTECTED`, `PROTECTING`, `PROTECTED`, `UNPROTECTING`, `PROTECTION_FAILED`.",
+							Computed:            true,
+						},
+						"protection_reason": schema1.StringAttribute{
+							MarkdownDescription: "Why the last protection change failed, when `protection_state` is `PROTECTION_FAILED`.",
+							Computed:            true,
+						},
+						"creator": schema1.StringAttribute{
+							MarkdownDescription: "The principal that took the snapshot, such as `user:<id>` or `service_account:<id>`.",
+							Computed:            true,
+						},
+						"tags": schema1.MapAttribute{
+							MarkdownDescription: "Labels of your own, at most 50. The `origin:name` tag is the name the console shows.",
+							Computed:            true,
+							ElementType:         types.StringType,
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func snapshotListDataSource() framework.ListDataSourceSpec[snapshotListModel] {
+	return framework.ListDataSourceSpec[snapshotListModel]{
+		TypeName: "_pvs_snapshots",
+		Schema:   snapshotListSchema(),
+		List: func(ctx context.Context, client *core.Client, m *snapshotListModel) error {
+			m.Snapshots = []snapshotItemModel{}
+			for p, err := range v1beta1.NewSnapshotClient(client).AllSnapshots(ctx, &v1beta1.ListSnapshotsRequest{Parent: "projects/" + m.Project.ValueString() + "/zones/" + m.Zone.ValueString()}) {
+				if err != nil {
+					return err
+				}
+				var item snapshotItemModel
+				if err := snapshotItemFromProto(p, &item); err != nil {
+					return err
+				}
+				m.Snapshots = append(m.Snapshots, item)
+			}
+			return nil
 		},
 	}
 }
