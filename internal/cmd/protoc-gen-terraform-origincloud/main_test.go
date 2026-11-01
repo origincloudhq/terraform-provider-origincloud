@@ -102,18 +102,7 @@ func run(t *testing.T, change func(*descriptorpb.FileDescriptorProto)) (map[stri
 	if change != nil {
 		change(file)
 	}
-	req := &pluginpb.CodeGeneratorRequest{FileToGenerate: []string{file.GetName()}}
-	seen := map[string]bool{}
-	for _, dep := range file.GetDependency() {
-		d, err := protoregistry.GlobalFiles.FindFileByPath(dep)
-		if err != nil {
-			t.Fatal(err)
-		}
-		req.ProtoFile = appendWithImports(req.ProtoFile, d, seen)
-	}
-	req.ProtoFile = append(req.ProtoFile, file)
-
-	gen, err := protogen.Options{}.New(req)
+	gen, err := protogen.Options{}.New(request(t, file))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,6 +121,22 @@ func run(t *testing.T, change func(*descriptorpb.FileDescriptorProto)) (map[stri
 		files[f.GetName()] = f.GetContent()
 	}
 	return files, ""
+}
+
+// request returns the plugin's request to generate file.
+func request(t *testing.T, file *descriptorpb.FileDescriptorProto) *pluginpb.CodeGeneratorRequest {
+	t.Helper()
+	req := &pluginpb.CodeGeneratorRequest{FileToGenerate: []string{file.GetName()}}
+	seen := map[string]bool{}
+	for _, dep := range file.GetDependency() {
+		d, err := protoregistry.GlobalFiles.FindFileByPath(dep)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.ProtoFile = appendWithImports(req.ProtoFile, d, seen)
+	}
+	req.ProtoFile = append(req.ProtoFile, file)
+	return req
 }
 
 // appendWithImports appends d to files after its imports, each once.
@@ -251,46 +256,149 @@ func behaviors(b ...annotations.FieldBehavior) *descriptorpb.FieldOptions {
 	return options
 }
 
+// withField adds a field, in prototext, to the message named to, and the
+// messages after it, also in prototext, to the file.
+func withField(to, field string, messages ...string) func(*descriptorpb.FileDescriptorProto) {
+	return func(file *descriptorpb.FileDescriptorProto) {
+		f := new(descriptorpb.FieldDescriptorProto)
+		if err := prototext.Unmarshal([]byte(field), f); err != nil {
+			panic(err)
+		}
+		m := message(file, to)
+		m.Field = append(m.Field, f)
+		for _, text := range messages {
+			d := new(descriptorpb.DescriptorProto)
+			if err := prototext.Unmarshal([]byte(text), d); err != nil {
+				panic(err)
+			}
+			if d.GetOptions().GetMapEntry() {
+				m.NestedType = append(m.NestedType, d)
+			} else {
+				file.MessageType = append(file.MessageType, d)
+			}
+		}
+	}
+}
+
+// In an immutable field's elements, any change replaces the resource, so
+// an immutable field there needs no identity.
+func TestAnImmutableFieldsElementsMayBeImmutable(t *testing.T) {
+	files, failure := run(t, withField("Widget", `name: "routes" number: 9 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.widgets.v1.Route" options { [google.api.field_behavior]: IMMUTABLE }`,
+		`name: "Route" field { name: "dest" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: IMMUTABLE } }`))
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	contains(t, "widget.gen.go", files["internal/services/widgetsv1/widget.gen.go"],
+		`"dest": schema.StringAttribute{ MarkdownDescription: "", Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseNonNullStateForUnknown()}, },`,
+		"listplanmodifier.UseStateForUnknown(), framework.ListReplaceIfSent(",
+	)
+}
+
 func TestUnsupportedFieldsFailGeneration(t *testing.T) {
+	const optional = `options { [google.api.field_behavior]: OPTIONAL }`
 	for _, tc := range []struct {
 		name   string
 		change func(*descriptorpb.FileDescriptorProto)
 		want   string
 	}{
 		{
-			name: "repeated integers",
-			change: func(file *descriptorpb.FileDescriptorProto) {
-				m := message(file, "Gadget")
-				m.Field = append(m.Field, &descriptorpb.FieldDescriptorProto{
-					Name: proto.String("sizes"), Number: proto.Int32(3),
-					Label: descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_INT32.Enum(),
-				})
-			},
-			want: "Gadget: field sizes: repeated int32 fields aren't supported yet, only repeated strings",
+			name:   "repeated doubles",
+			change: withField("Gadget", `name: "sizes" number: 9 label: LABEL_REPEATED type: TYPE_DOUBLE options { [google.api.field_behavior]: OUTPUT_ONLY }`),
+			want:   "Gadget: field sizes: repeated double fields aren't supported yet",
 		},
 		{
-			name: "repeated messages",
-			change: func(file *descriptorpb.FileDescriptorProto) {
-				m := message(file, "Gadget")
-				m.Field = append(m.Field, &descriptorpb.FieldDescriptorProto{
-					Name: proto.String("names"), Number: proto.Int32(3),
-					Label: descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_MESSAGE.Enum(),
-					TypeName: proto.String(".test.widgets.v1.NameRequest"),
-				})
-			},
-			want: "Gadget: field names: repeated message fields aren't supported yet, only repeated strings",
+			name: "a map of strings to numbers",
+			change: withField("Widget", `name: "sizes" number: 9 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.widgets.v1.Widget.SizesEntry" `+optional,
+				`name: "SizesEntry" options { map_entry: true }
+				 field { name: "key" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING }
+				 field { name: "value" number: 2 label: LABEL_OPTIONAL type: TYPE_INT32 }`),
+			want: "Widget: field sizes: maps of strings to int32 aren't supported yet, only to strings and messages",
 		},
 		{
-			name: "a settable repeated field",
+			name: "a map keyed by numbers",
+			change: withField("Widget", `name: "sizes" number: 9 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.widgets.v1.Widget.SizesEntry" `+optional,
+				`name: "SizesEntry" options { map_entry: true }
+				 field { name: "key" number: 1 label: LABEL_OPTIONAL type: TYPE_INT32 }
+				 field { name: "value" number: 2 label: LABEL_OPTIONAL type: TYPE_STRING }`),
+			want: "Widget: field sizes: only maps keyed by strings are supported",
+		},
+		{
+			name:   "an unordered field that isn't repeated",
+			change: withField("Widget", `name: "owner" number: 9 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: OPTIONAL [google.api.field_behavior]: UNORDERED_LIST }`),
+			want:   "Widget: field owner: UNORDERED_LIST on a field that isn't repeated",
+		},
+		{
+			name: "an output-only field of a set's elements",
+			change: withField("Widget", `name: "ports" number: 9 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.widgets.v1.Port" options { [google.api.field_behavior]: OPTIONAL [google.api.field_behavior]: UNORDERED_LIST }`,
+				`name: "Port" field { name: "id" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: OUTPUT_ONLY } }`),
+			want: "Widget: field ports: Port: field id: a field of an UNORDERED_LIST element can't be OUTPUT_ONLY",
+		},
+		{
+			name: "an immutable field of a set's elements",
+			change: withField("Widget", `name: "ports" number: 9 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.widgets.v1.Port" options { [google.api.field_behavior]: OPTIONAL [google.api.field_behavior]: UNORDERED_LIST }`,
+				`name: "Port" field { name: "number" number: 1 label: LABEL_OPTIONAL type: TYPE_INT32 options { [google.api.field_behavior]: REQUIRED [google.api.field_behavior]: IMMUTABLE } }`),
+			want: "Widget: field ports: Port: field number: a field of a repeated or map field's elements can't be IMMUTABLE: an element has no identity",
+		},
+		{
+			name: "an immutable field in an immutable set's elements",
+			change: withField("Widget", `name: "ports" number: 9 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.widgets.v1.Port" options { [google.api.field_behavior]: IMMUTABLE [google.api.field_behavior]: UNORDERED_LIST }`,
+				`name: "Port" field { name: "number" number: 1 label: LABEL_OPTIONAL type: TYPE_INT32 options { [google.api.field_behavior]: IMMUTABLE } }`),
+			want: "Widget: field ports: Port: field number: a field of a repeated or map field's elements can't be IMMUTABLE",
+		},
+		{
+			name: "an immutable field the API chooses in a list's elements",
+			change: withField("Widget", `name: "rules" number: 9 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.widgets.v1.Rule" `+optional,
+				`name: "Rule" field { name: "zone" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: IMMUTABLE } }`),
+			want: "Widget: field rules: Rule: field zone: a field of a repeated or map field's elements can't be IMMUTABLE",
+		},
+		{
+			name: "a required immutable field in a list's elements",
+			change: withField("Widget", `name: "routes" number: 9 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.widgets.v1.Route" `+optional,
+				`name: "Route" field { name: "dest" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: REQUIRED [google.api.field_behavior]: IMMUTABLE } }`),
+			want: "Widget: field routes: Route: field dest: a field of a repeated or map field's elements can't be IMMUTABLE",
+		},
+		{
+			name: "an immutable field in a map's values, a level down",
+			change: withField("Widget", `name: "routes" number: 9 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.widgets.v1.Widget.RoutesEntry" `+optional,
+				`name: "RoutesEntry" options { map_entry: true }
+				 field { name: "key" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING }
+				 field { name: "value" number: 2 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".test.widgets.v1.Route" }`,
+				`name: "Route" field { name: "via" number: 1 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".test.widgets.v1.Hop" `+optional+` }`,
+				`name: "Hop" field { name: "metric" number: 1 label: LABEL_OPTIONAL type: TYPE_INT32 options { [google.api.field_behavior]: IMMUTABLE } }`),
+			want: "Widget: field routes: Route: field via: Hop: field metric: a field of a repeated or map field's elements can't be IMMUTABLE",
+		},
+		{
+			name: "a nested message's identifier",
+			change: withField("Widget", `name: "spec" number: 9 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".test.widgets.v1.Spec" `+optional,
+				`name: "Spec" field { name: "name" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: IDENTIFIER } }`),
+			want: "Widget: field spec: Spec: field name: a nested message's field can't be an IDENTIFIER",
+		},
+		{
+			name:   "another package's message",
+			change: withField("Widget", `name: "mask" number: 9 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".google.protobuf.FieldMask" `+optional),
+			want:   "Widget: field mask: google.protobuf.FieldMask is another package's message, which isn't supported yet",
+		},
+		{
+			name: "a message holding itself",
+			change: withField("Widget", `name: "tree" number: 9 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".test.widgets.v1.Tree" `+optional,
+				`name: "Tree" field { name: "children" number: 1 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.widgets.v1.Tree" options { [google.api.field_behavior]: OPTIONAL } }`),
+			want: "Widget: field tree: Tree: field children: test.widgets.v1.Tree holds itself, which isn't supported",
+		},
+		{
+			name: "a oneof's field",
 			change: func(file *descriptorpb.FileDescriptorProto) {
-				m := message(file, "Widget")
-				m.Field = append(m.Field, &descriptorpb.FieldDescriptorProto{
-					Name: proto.String("labels"), Number: proto.Int32(4),
-					Label: descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
-					Options: behaviors(annotations.FieldBehavior_OPTIONAL),
-				})
+				withField("Widget", `name: "owner" number: 9 label: LABEL_OPTIONAL type: TYPE_STRING oneof_index: 0 `+optional)(file)
+				message(file, "Widget").OneofDecl = []*descriptorpb.OneofDescriptorProto{{Name: proto.String("who")}}
 			},
-			want: "Widget: field labels: repeated fields that are set aren't supported yet, only output-only ones",
+			want: "Widget: field owner: fields of a oneof aren't supported yet",
+		},
+		{
+			name: "an explicitly present field",
+			change: func(file *descriptorpb.FileDescriptorProto) {
+				withField("Widget", `name: "owner" number: 9 label: LABEL_OPTIONAL type: TYPE_STRING oneof_index: 0 proto3_optional: true `+optional)(file)
+				message(file, "Widget").OneofDecl = []*descriptorpb.OneofDescriptorProto{{Name: proto.String("_owner")}}
+			},
+			want: "Widget: field owner: fields with explicit presence (proto3 optional) aren't supported yet",
 		},
 		{
 			name: "a list request's required field",

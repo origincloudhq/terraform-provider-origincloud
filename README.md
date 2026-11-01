@@ -102,6 +102,11 @@ Credentials come from the environment, the first of:
 - **Protection.** A snapshot is the source of new volumes only while it is
   protected. `protected = true` protects it, and destroying it unprotects it
   first.
+- **Lists and sets.** A repeated attribute is a list when the API keeps its
+  order, and a set when it doesn't: reordering a list is a change, reordering
+  a set isn't. An attribute left out stays null and one set to `[]` stays
+  `[]`; neither plans a change when the API answers with nothing. Changing
+  any part of a nested attribute updates it whole.
 - **Import.** Every resource is imported by its resource name:
 
   ```sh

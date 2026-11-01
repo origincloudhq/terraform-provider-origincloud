@@ -28,5 +28,9 @@ go get "${SDK_MODULE}@upgrade"
 go mod tidy
 sdk="$(go list -m -f '{{.Version}}' "${SDK_MODULE}")"
 
+# The test API's generated code follows the plugin and the protobuf
+# module, which go mod tidy may have moved.
+go test ./internal/cmd/protoc-gen-terraform-origincloud -run TestTestAPI -update
+
 echo "origincloudhq/api@${revision:0:12}, ${SDK_MODULE} ${sdk}"
 scripts/generate.sh --write

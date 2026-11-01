@@ -129,6 +129,7 @@ func volumeSchema() schema.Schema {
 				MarkdownDescription: "Labels of your own, at most 50. The `origin:name` tag is the name the console shows.",
 				Optional:            true,
 				ElementType:         types.StringType,
+				Validators:          []validator.Map{framework.ElementCheck{}},
 			},
 		},
 	}

@@ -10,6 +10,7 @@ import (
 	boolplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	planmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	stringplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	validator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	types "github.com/hashicorp/terraform-plugin-framework/types"
 	framework "github.com/origincloudhq/terraform-provider-origincloud/internal/framework"
 	core "go.origincloud.eu/sdk/core"
@@ -96,6 +97,7 @@ func snapshotSchema() schema.Schema {
 				MarkdownDescription: "Labels of your own, at most 50. The `origin:name` tag is the name the console shows.",
 				Optional:            true,
 				ElementType:         types.StringType,
+				Validators:          []validator.Map{framework.ElementCheck{}},
 			},
 			"protected": schema.BoolAttribute{
 				MarkdownDescription: "Whether the snapshot is protected: only a protected snapshot is the source of volumes and images, and it can't be deleted. Setting it to `true` protects the snapshot and `false` unprotects it, each waiting until done. The API refuses to unprotect a snapshot while a volume or an image is created from it. Destroying a protected snapshot unprotects it first. Left out, the snapshot's protection is left as it is.",
