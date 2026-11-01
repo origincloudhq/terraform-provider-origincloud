@@ -280,6 +280,20 @@ func withField(to, field string, messages ...string) func(*descriptorpb.FileDesc
 	}
 }
 
+// In an immutable field's elements, any change replaces the resource, so
+// an immutable field there needs no identity.
+func TestAnImmutableFieldsElementsMayBeImmutable(t *testing.T) {
+	files, failure := run(t, withField("Widget", `name: "routes" number: 9 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.widgets.v1.Route" options { [google.api.field_behavior]: IMMUTABLE }`,
+		`name: "Route" field { name: "dest" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: IMMUTABLE } }`))
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	contains(t, "widget.gen.go", files["internal/services/widgetsv1/widget.gen.go"],
+		`"dest": schema.StringAttribute{ MarkdownDescription: "", Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseNonNullStateForUnknown()}, },`,
+		"listplanmodifier.UseStateForUnknown(), framework.ListReplaceIfSent(",
+	)
+}
+
 func TestUnsupportedFieldsFailGeneration(t *testing.T) {
 	const optional = `options { [google.api.field_behavior]: OPTIONAL }`
 	for _, tc := range []struct {
@@ -324,6 +338,12 @@ func TestUnsupportedFieldsFailGeneration(t *testing.T) {
 			change: withField("Widget", `name: "ports" number: 9 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.widgets.v1.Port" options { [google.api.field_behavior]: OPTIONAL [google.api.field_behavior]: UNORDERED_LIST }`,
 				`name: "Port" field { name: "number" number: 1 label: LABEL_OPTIONAL type: TYPE_INT32 options { [google.api.field_behavior]: REQUIRED [google.api.field_behavior]: IMMUTABLE } }`),
 			want: "Widget: field ports: Port: field number: a field of a repeated or map field's elements can't be IMMUTABLE: an element has no identity",
+		},
+		{
+			name: "an immutable field in an immutable set's elements",
+			change: withField("Widget", `name: "ports" number: 9 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.widgets.v1.Port" options { [google.api.field_behavior]: IMMUTABLE [google.api.field_behavior]: UNORDERED_LIST }`,
+				`name: "Port" field { name: "number" number: 1 label: LABEL_OPTIONAL type: TYPE_INT32 options { [google.api.field_behavior]: IMMUTABLE } }`),
+			want: "Widget: field ports: Port: field number: a field of a repeated or map field's elements can't be IMMUTABLE",
 		},
 		{
 			name: "an immutable field the API chooses in a list's elements",

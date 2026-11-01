@@ -181,3 +181,20 @@ func TestElementCheck(t *testing.T) {
 		t.Error("OneOf accepted a value not among its own")
 	}
 }
+
+// Before the replace comparison, an unknown value the configuration leaves
+// out is the state's, as the plan modifiers nested in it plan it after.
+func TestKnownFillsWhatTheConfigurationLeavesOut(t *testing.T) {
+	state := types.ListValueMust(objectType, valueObjects(types.StringValue("443")))
+	plan := types.ListValueMust(objectType, valueObjects(types.StringUnknown()))
+	config := types.ListValueMust(objectType, valueObjects(types.StringNull()))
+	if got := known(plan, state, config); !got.Equal(state) {
+		t.Errorf("left out: %v, want %v", got, state)
+	}
+	// Unknown in the configuration, such as another resource's attribute:
+	// still unknown.
+	unknown := types.ListValueMust(objectType, valueObjects(types.StringUnknown()))
+	if got := known(plan, state, unknown); !got.Equal(plan) {
+		t.Errorf("configured unknown: %v, want %v", got, plan)
+	}
+}

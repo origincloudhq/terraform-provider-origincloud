@@ -125,6 +125,8 @@ message_type {
   name: "Peer"
   field { name: "address" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "address" options { [google.api.field_behavior]: REQUIRED } }
   field { name: "latency" number: 2 label: LABEL_OPTIONAL type: TYPE_INT32 json_name: "latency" options { [google.api.field_behavior]: OUTPUT_ONLY } }
+  # Immutable, in an immutable list's elements: the API chooses it.
+  field { name: "port" number: 3 label: LABEL_OPTIONAL type: TYPE_INT32 json_name: "port" options { [google.api.field_behavior]: IMMUTABLE } }
 }
 message_type {
   name: "GetFirewallRequest"

@@ -726,6 +726,7 @@ type Peer struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Address       string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
 	Latency       int32                  `protobuf:"varint,2,opt,name=latency,proto3" json:"latency,omitempty"`
+	Port          int32                  `protobuf:"varint,3,opt,name=port,proto3" json:"port,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -770,6 +771,13 @@ func (x *Peer) GetAddress() string {
 func (x *Peer) GetLatency() int32 {
 	if x != nil {
 		return x.Latency
+	}
+	return 0
+}
+
+func (x *Peer) GetPort() int32 {
+	if x != nil {
+		return x.Port
 	}
 	return 0
 }
@@ -1117,10 +1125,11 @@ const file_test_firewalls_v1_firewalls_proto_rawDesc = "" +
 	"\aOptions\x12\x17\n" +
 	"\x04tier\x18\x01 \x01(\tB\x03\xe0A\x05R\x04tier\x12\x19\n" +
 	"\x05slots\x18\x02 \x01(\x05B\x03\xe0A\x05R\x05slots\x12\x17\n" +
-	"\x04note\x18\x03 \x01(\tB\x03\xe0A\x01R\x04note\"D\n" +
+	"\x04note\x18\x03 \x01(\tB\x03\xe0A\x01R\x04note\"]\n" +
 	"\x04Peer\x12\x1d\n" +
 	"\aaddress\x18\x01 \x01(\tB\x03\xe0A\x02R\aaddress\x12\x1d\n" +
-	"\alatency\x18\x02 \x01(\x05B\x03\xe0A\x03R\alatency\"(\n" +
+	"\alatency\x18\x02 \x01(\x05B\x03\xe0A\x03R\alatency\x12\x17\n" +
+	"\x04port\x18\x03 \x01(\x05B\x03\xe0A\x05R\x04port\"(\n" +
 	"\x12GetFirewallRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"+\n" +
 	"\x15DeleteFirewallRequest\x12\x12\n" +

@@ -316,6 +316,7 @@ func TestImmutableNestedFields(t *testing.T) {
 				resource.TestCheckResourceAttr(firewall, "placement.group", "auto"),
 				resource.TestCheckResourceAttr(firewall, "placement.host", "host-auto"),
 				resource.TestCheckResourceAttr(firewall, "peers.0.latency", "2"),
+				resource.TestCheckResourceAttr(firewall, "peers.0.port", "443"),
 			),
 			// Another attribute changes: the immutable ones, whose
 			// output-only fields the plan doesn't know, don't replace it.
@@ -359,11 +360,24 @@ func TestImmutableNestedFields(t *testing.T) {
   options = { note = "y", tier = "premium" }`, plancheck.ResourceActionReplace,
 				resource.TestCheckResourceAttr(firewall, "options.tier", "premium"),
 			),
-			// So does the immutable list.
+			// So does the immutable list, and an element's immutable
+			// field configured differently.
 			step(`tags = ["c"]
   peers = [{ address = "p22" }]
   options = { note = "y", tier = "premium" }`, plancheck.ResourceActionReplace,
 				resource.TestCheckResourceAttr(firewall, "peers.0.latency", "3"),
+			),
+			step(`tags = ["c"]
+  peers = [{ address = "p22", port = 8443 }]
+  options = { note = "y", tier = "premium" }`, plancheck.ResourceActionReplace,
+				resource.TestCheckResourceAttr(firewall, "peers.0.port", "8443"),
+			),
+			// Its elements' chosen values stay while nothing else in it
+			// changes.
+			step(`tags = ["d"]
+  peers = [{ address = "p22" }]
+  options = { note = "y", tier = "premium" }`, plancheck.ResourceActionUpdate,
+				resource.TestCheckResourceAttr(firewall, "peers.0.port", "8443"),
 			),
 		},
 	})

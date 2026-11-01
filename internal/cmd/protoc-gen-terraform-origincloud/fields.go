@@ -265,10 +265,11 @@ func applyBehaviors(s scope, a *attribute, behaviors []annotations.FieldBehavior
 			return fmt.Errorf("a field of an UNORDERED_LIST element can't be OUTPUT_ONLY: the element the API answers with would differ from the one set")
 		}
 		a.computed = true
-	case s.inElements && immutable:
+	case immutable && (s.inSet || s.inElements && !s.replaced):
 		// Elements are matched by position or key, not by identity: a kept
 		// value could be planned for another element, and adding or
-		// reordering elements would replace the resource.
+		// reordering elements would replace the resource. In an immutable
+		// field's elements, any change replaces it anyway.
 		return fmt.Errorf("a field of a repeated or map field's elements can't be IMMUTABLE: an element has no identity to keep its value for, or to replace the resource on")
 	case has(annotations.FieldBehavior_REQUIRED):
 		a.required = true

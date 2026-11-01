@@ -178,6 +178,9 @@ func (f *fakeFirewalls) settle(firewall *firewallsv1.Firewall) {
 	}
 	for _, peer := range firewall.GetPeers() {
 		peer.Latency = int32(len(peer.GetAddress()))
+		if peer.Port == 0 {
+			peer.Port = 443
+		}
 	}
 	firewall.Status = &firewallsv1.Status{State: firewallsv1.Mode_OPEN, RuleCount: int32(len(firewall.GetRules()))}
 }

@@ -100,7 +100,10 @@ to the plugin or `internal/framework`.
     IMMUTABLE: an element has no identity to keep its value for, or to
     replace the resource on`): elements are matched by position or key, so a
     kept value could be planned for another element, and adding or
-    reordering elements would replace the resource;
+    reordering elements would replace the resource. The elements of an
+    immutable list or map may have one, since any change to them replaces
+    the resource anyway; a set's never, as an element whose value the API
+    chose would differ from the one set;
   - `UNORDERED_LIST` on a field that isn't repeated, and an `IDENTIFIER` in a
     nested message.
 - A boolean that a pair of custom methods sets and clears, rather than an

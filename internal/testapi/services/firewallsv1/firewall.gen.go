@@ -263,6 +263,13 @@ func firewallSchema() schema.Schema {
 							MarkdownDescription: "",
 							Computed:            true,
 						},
+						"port": schema.Int64Attribute{
+							MarkdownDescription: "",
+							Optional:            true,
+							Computed:            true,
+							Validators:          []validator.Int64{framework.Int32()},
+							PlanModifiers:       []planmodifier.Int64{int64planmodifier.UseNonNullStateForUnknown()},
+						},
 					},
 				},
 			},
@@ -507,6 +514,7 @@ func firewall_PeersAttrTypes() map[string]attr.Type {
 	return map[string]attr.Type{
 		"address": types.StringType,
 		"latency": types.Int64Type,
+		"port":    types.Int64Type,
 	}
 }
 
@@ -514,6 +522,7 @@ func firewall_PeersFromProto(p *firewallsv1.Peer, prior types.Object) types.Obje
 	return types.ObjectValueMust(firewall_PeersAttrTypes(), map[string]attr.Value{
 		"address": types.StringValue(p.GetAddress()),
 		"latency": types.Int64Value(int64(p.GetLatency())),
+		"port":    types.Int64Value(int64(p.GetPort())),
 	})
 }
 
@@ -523,6 +532,7 @@ func firewall_PeersToProto(o types.Object) *firewallsv1.Peer {
 	}
 	return &firewallsv1.Peer{
 		Address: framework.Attr(o, "address", types.StringNull()).ValueString(),
+		Port:    int32(framework.Attr(o, "port", types.Int64Null()).ValueInt64()),
 	}
 }
 
@@ -845,6 +855,7 @@ func firewallItem_PeersAttrTypes() map[string]attr.Type {
 	return map[string]attr.Type{
 		"address": types.StringType,
 		"latency": types.Int64Type,
+		"port":    types.Int64Type,
 	}
 }
 
@@ -852,6 +863,7 @@ func firewallItem_PeersFromProto(p *firewallsv1.Peer, prior types.Object) types.
 	return types.ObjectValueMust(firewallItem_PeersAttrTypes(), map[string]attr.Value{
 		"address": types.StringValue(p.GetAddress()),
 		"latency": types.Int64Value(int64(p.GetLatency())),
+		"port":    types.Int64Value(int64(p.GetPort())),
 	})
 }
 
@@ -1075,6 +1087,10 @@ func firewallListSchema() schema1.Schema {
 										Computed:            true,
 									},
 									"latency": schema1.Int64Attribute{
+										MarkdownDescription: "",
+										Computed:            true,
+									},
+									"port": schema1.Int64Attribute{
 										MarkdownDescription: "",
 										Computed:            true,
 									},
