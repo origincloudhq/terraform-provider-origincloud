@@ -133,7 +133,7 @@ func (f *fakeFirewalls) serve(w http.ResponseWriter, r *http.Request) {
 			fields := firewall.ProtoReflect().Descriptor().Fields()
 			for _, name := range strings.Split(mask, ",") {
 				field := fields.ByJSONName(name)
-				if field == nil || field.Name() == "name" || field.Name() == "status" {
+				if field == nil || field.Name() == "name" || field.Name() == "status" || field.Name() == "placement" || field.Name() == "peers" {
 					writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", name+" can't be updated")
 					return
 				}
@@ -152,8 +152,9 @@ func (f *fakeFirewalls) serve(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// settle sets what the API sets: the sets sorted, the rules' ids and the
-// status.
+// settle sets what the API sets: the sets sorted, the rules' ids, the
+// peers' latencies, the status, a placement when there is none and its
+// host, and an options' tier and slots when they are left out.
 func (f *fakeFirewalls) settle(firewall *firewallsv1.Firewall) {
 	slices.Sort(firewall.Tags)
 	slices.Sort(firewall.Modes)
@@ -162,6 +163,21 @@ func (f *fakeFirewalls) settle(firewall *firewallsv1.Firewall) {
 	}
 	for i, rule := range firewall.GetRules() {
 		rule.Id = fmt.Sprintf("rule-%d", i+1)
+	}
+	if firewall.Placement == nil {
+		firewall.Placement = &firewallsv1.Placement{Group: "auto"}
+	}
+	firewall.Placement.Host = "host-" + firewall.Placement.GetGroup()
+	if options := firewall.GetOptions(); options != nil {
+		if options.Tier == "" {
+			options.Tier = "standard"
+		}
+		if options.Slots == 0 {
+			options.Slots = 4
+		}
+	}
+	for _, peer := range firewall.GetPeers() {
+		peer.Latency = int32(len(peer.GetAddress()))
 	}
 	firewall.Status = &firewallsv1.Status{State: firewallsv1.Mode_OPEN, RuleCount: int32(len(firewall.GetRules()))}
 }

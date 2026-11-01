@@ -48,8 +48,10 @@ type attribute struct {
 	doc  string
 
 	required, optional, computed bool
-	// keep plans the state's value while it is unknown.
-	keep bool
+	// keep plans the state's value while it is unknown; a nested
+	// attribute's only when that value isn't null, as it is when the object
+	// holding it is new.
+	keep, inNested bool
 	// replace replaces the resource when the attribute changes; when it is
 	// also computed, only when it is set.
 	replace bool
@@ -77,12 +79,15 @@ type scope struct {
 	// computed: every attribute is computed, as a data source's are, and
 	// those under an output-only field.
 	computed bool
-	// nested is a nested message's field, inSet one of a settable set's
-	// elements.
-	nested, inSet bool
+	// nested is a nested message's field, inElements one of a settable
+	// list's, set's or map's elements, and inSet one of a settable set's.
+	nested, inElements, inSet bool
 	// replaced: the top-level attribute holding it already replaces the
 	// resource when it changes.
 	replaced bool
+	// chosen: an object holding it is one the API chooses when it is left
+	// out (optional and computed).
+	chosen bool
 	// prefix names the conversion functions of the object holding it.
 	prefix string
 	// seen are the messages holding it, which it can't hold in turn.
@@ -260,8 +265,11 @@ func applyBehaviors(s scope, a *attribute, behaviors []annotations.FieldBehavior
 			return fmt.Errorf("a field of an UNORDERED_LIST element can't be OUTPUT_ONLY: the element the API answers with would differ from the one set")
 		}
 		a.computed = true
-	case s.inSet && immutable:
-		return fmt.Errorf("a field of an UNORDERED_LIST element can't be IMMUTABLE")
+	case s.inElements && immutable:
+		// Elements are matched by position or key, not by identity: a kept
+		// value could be planned for another element, and adding or
+		// reordering elements would replace the resource.
+		return fmt.Errorf("a field of a repeated or map field's elements can't be IMMUTABLE: an element has no identity to keep its value for, or to replace the resource on")
 	case has(annotations.FieldBehavior_REQUIRED):
 		a.required = true
 		if s.nested {
@@ -283,6 +291,11 @@ func applyBehaviors(s scope, a *attribute, behaviors []annotations.FieldBehavior
 	default:
 		return fmt.Errorf("its field behaviors %v aren't supported", behaviors)
 	}
+	if s.chosen && (a.required || a.optional) {
+		// Left out, the object is the API's, and Terraform plans each of its
+		// fields from the configuration's null unless it is computed.
+		a.required, a.optional, a.computed, a.keep, a.replace = false, true, true, false, false
+	}
 	if a.replace {
 		a.doc = strings.TrimSpace(a.doc + " Changing it replaces the " + words(s.t.singular) + ".")
 	}
@@ -302,8 +315,11 @@ func nestedAttributes(s scope, a *attribute, m *protogen.Message) error {
 	child.nested = true
 	child.computed = s.computed || a.computedOnly()
 	child.inSet = s.inSet || a.kind == "Set" && !child.computed
+	child.inElements = s.inElements || a.collection() && !child.computed
 	child.replaced = s.replaced || a.replace
-	child.prefix = s.prefix + a.goName
+	child.chosen = s.chosen || a.kind == "Object" && a.optional && a.computed
+	// A separator per level: spec.rules and spec_rules don't meet.
+	child.prefix = s.prefix + "_" + a.goName
 	child.seen = append(slices.Clone(s.seen), m.Desc.FullName())
 	a.message, a.prefix, a.nested = m, child.prefix, []attribute{}
 	for _, f := range m.Fields {
@@ -311,6 +327,7 @@ func nestedAttributes(s scope, a *attribute, m *protogen.Message) error {
 		if err != nil {
 			return fmt.Errorf("%s: field %s: %w", m.Desc.Name(), f.Desc.Name(), err)
 		}
+		n.inNested = true
 		a.nested = append(a.nested, n)
 	}
 	return nil
@@ -358,11 +375,11 @@ func generateAttributes(g *protogen.GeneratedFile, schemaPackage protogen.GoImpo
 		}
 		settable := a.required || a.optional
 		switch {
-		case a.kind == "Int64" && a.int32 && !a.computed:
+		case a.kind == "Int64" && a.int32 && settable:
 			g.P("Validators: []", g.QualifiedGoIdent(validatorPackage.Ident("Int64")), "{", c.framework("Int32"), "()},")
 		case a.kind == "String" && a.enum != nil && settable:
 			g.P("Validators: []", g.QualifiedGoIdent(validatorPackage.Ident("String")), "{", c.framework("OneOf"), "(", quoted(enumNames(a.enum)), ")},")
-		case settable && (a.kind == "List" || a.kind == "Set" || a.kind == "Map" && a.message != nil):
+		case settable && a.collection():
 			var options []string
 			if a.enum != nil {
 				options = append(options, "OneOf: []string{"+quoted(enumNames(a.enum))+"}")
@@ -374,10 +391,18 @@ func generateAttributes(g *protogen.GeneratedFile, schemaPackage protogen.GoImpo
 		}
 		var modifiers []string
 		modifierPackage := protogen.GoImportPath("github.com/hashicorp/terraform-plugin-framework/resource/schema/" + strings.ToLower(a.kind) + "planmodifier")
-		if a.keep {
+		switch {
+		case a.keep && a.inNested:
+			modifiers = append(modifiers, g.QualifiedGoIdent(modifierPackage.Ident("UseNonNullStateForUnknown"))+"()")
+		case a.keep:
 			modifiers = append(modifiers, g.QualifiedGoIdent(modifierPackage.Ident("UseStateForUnknown"))+"()")
 		}
-		if a.replace && a.computed {
+		if a.replace && a.message != nil {
+			// What it sends, so that an output-only field changing doesn't
+			// replace the resource.
+			value := c.types(a.kind)
+			modifiers = append(modifiers, c.framework(a.kind+"ReplaceIfSent")+"(func(plan, state "+value+") bool { return "+sentSame(g, a, "plan", "state")+" }, "+fmt.Sprint(a.computed)+")")
+		} else if a.replace && a.computed {
 			modifiers = append(modifiers, g.QualifiedGoIdent(modifierPackage.Ident("RequiresReplaceIfConfigured"))+"()")
 		} else if a.replace {
 			modifiers = append(modifiers, g.QualifiedGoIdent(modifierPackage.Ident("RequiresReplace"))+"()")
@@ -508,20 +533,24 @@ func generateNested(g *protogen.GeneratedFile, attrs []attribute) {
 // the state. A nested message or repeated field is sent, and named, as a
 // whole.
 func updateChanged(g *protogen.GeneratedFile, a attribute) string {
-	c := conv{g}
-	plan, state := "plan."+a.goName, "state."+a.goName
-	switch {
-	case a.message == nil:
-		return "!" + plan + ".Equal(" + state + ")"
-	case a.kind == "Object":
-		return "!" + g.QualifiedGoIdent(protoPackage.Ident("Equal")) + "(" + c.toProto(a, plan) + ", " + c.toProto(a, state) + ")"
-	case a.kind == "List":
-		return "!" + c.framework("SameMessages") + "(" + c.toProto(a, plan) + ", " + c.toProto(a, state) + ")"
-	case a.kind == "Set":
-		return "!" + c.framework("SameMessageSets") + "(" + c.toProto(a, plan) + ", " + c.toProto(a, state) + ")"
-	default:
-		return "!" + c.framework("SameMessageMaps") + "(" + c.toProto(a, plan) + ", " + c.toProto(a, state) + ")"
+	if a.message == nil {
+		return "!plan." + a.goName + ".Equal(state." + a.goName + ")"
 	}
+	return "!" + sentSame(g, a, "plan."+a.goName, "state."+a.goName)
+}
+
+// sentSame returns the condition under which plan and state, values of an
+// attribute holding nested messages, send the same: their output-only
+// fields, which the plan doesn't know, don't count.
+func sentSame(g *protogen.GeneratedFile, a attribute, plan, state string) string {
+	c := conv{g}
+	same := map[string]string{
+		"Object": g.QualifiedGoIdent(protoPackage.Ident("Equal")),
+		"List":   c.framework("SameMessages"),
+		"Set":    c.framework("SameMessageSets"),
+		"Map":    c.framework("SameMessageMaps"),
+	}[a.kind]
+	return same + "(" + c.toProto(a, plan) + ", " + c.toProto(a, state) + ")"
 }
 
 // conv writes the expressions converting attributes.

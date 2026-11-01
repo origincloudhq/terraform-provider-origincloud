@@ -49,6 +49,21 @@ message_type {
   # A map of messages.
   field { name: "labels" number: 8 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.firewalls.v1.Firewall.LabelsEntry" json_name: "labels" options { [google.api.field_behavior]: OPTIONAL } }
   field { name: "default_mode" number: 9 label: LABEL_OPTIONAL type: TYPE_ENUM type_name: ".test.firewalls.v1.Mode" json_name: "defaultMode" options { [google.api.field_behavior]: OPTIONAL } }
+  # An immutable object the API chooses when it is left out, with an
+  # output-only field.
+  field { name: "placement" number: 10 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".test.firewalls.v1.Placement" json_name: "placement" options { [google.api.field_behavior]: IMMUTABLE } }
+  # A mutable object holding immutable fields the API chooses.
+  field { name: "options" number: 11 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".test.firewalls.v1.Options" json_name: "options" options { [google.api.field_behavior]: OPTIONAL } }
+  # An immutable list whose elements have an output-only field.
+  field { name: "peers" number: 12 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.firewalls.v1.Peer" json_name: "peers" options { [google.api.field_behavior]: IMMUTABLE } }
+  # A map of strings.
+  field { name: "annotations" number: 13 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.firewalls.v1.Firewall.AnnotationsEntry" json_name: "annotations" options { [google.api.field_behavior]: OPTIONAL } }
+  nested_type {
+    name: "AnnotationsEntry"
+    options { map_entry: true }
+    field { name: "key" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "key" }
+    field { name: "value" number: 2 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "value" }
+  }
   nested_type {
     name: "LabelsEntry"
     options { map_entry: true }
@@ -94,6 +109,22 @@ message_type {
   name: "Label"
   field { name: "value" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "value" options { [google.api.field_behavior]: REQUIRED } }
   field { name: "note" number: 2 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "note" options { [google.api.field_behavior]: OPTIONAL } }
+}
+message_type {
+  name: "Placement"
+  field { name: "group" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "group" options { [google.api.field_behavior]: REQUIRED } }
+  field { name: "host" number: 2 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "host" options { [google.api.field_behavior]: OUTPUT_ONLY } }
+}
+message_type {
+  name: "Options"
+  field { name: "tier" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "tier" options { [google.api.field_behavior]: IMMUTABLE } }
+  field { name: "slots" number: 2 label: LABEL_OPTIONAL type: TYPE_INT32 json_name: "slots" options { [google.api.field_behavior]: IMMUTABLE } }
+  field { name: "note" number: 3 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "note" options { [google.api.field_behavior]: OPTIONAL } }
+}
+message_type {
+  name: "Peer"
+  field { name: "address" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "address" options { [google.api.field_behavior]: REQUIRED } }
+  field { name: "latency" number: 2 label: LABEL_OPTIONAL type: TYPE_INT32 json_name: "latency" options { [google.api.field_behavior]: OUTPUT_ONLY } }
 }
 message_type {
   name: "GetFirewallRequest"

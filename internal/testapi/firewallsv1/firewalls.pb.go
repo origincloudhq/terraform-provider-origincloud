@@ -85,6 +85,10 @@ type Firewall struct {
 	Status        *Status                `protobuf:"bytes,7,opt,name=status,proto3" json:"status,omitempty"`
 	Labels        map[string]*Label      `protobuf:"bytes,8,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	DefaultMode   Mode                   `protobuf:"varint,9,opt,name=default_mode,json=defaultMode,proto3,enum=test.firewalls.v1.Mode" json:"default_mode,omitempty"`
+	Placement     *Placement             `protobuf:"bytes,10,opt,name=placement,proto3" json:"placement,omitempty"`
+	Options       *Options               `protobuf:"bytes,11,opt,name=options,proto3" json:"options,omitempty"`
+	Peers         []*Peer                `protobuf:"bytes,12,rep,name=peers,proto3" json:"peers,omitempty"`
+	Annotations   map[string]string      `protobuf:"bytes,13,rep,name=annotations,proto3" json:"annotations,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -180,6 +184,34 @@ func (x *Firewall) GetDefaultMode() Mode {
 		return x.DefaultMode
 	}
 	return Mode_MODE_UNSPECIFIED
+}
+
+func (x *Firewall) GetPlacement() *Placement {
+	if x != nil {
+		return x.Placement
+	}
+	return nil
+}
+
+func (x *Firewall) GetOptions() *Options {
+	if x != nil {
+		return x.Options
+	}
+	return nil
+}
+
+func (x *Firewall) GetPeers() []*Peer {
+	if x != nil {
+		return x.Peers
+	}
+	return nil
+}
+
+func (x *Firewall) GetAnnotations() map[string]string {
+	if x != nil {
+		return x.Annotations
+	}
+	return nil
 }
 
 type Rule struct {
@@ -578,6 +610,170 @@ func (x *Label) GetNote() string {
 	return ""
 }
 
+type Placement struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Group         string                 `protobuf:"bytes,1,opt,name=group,proto3" json:"group,omitempty"`
+	Host          string                 `protobuf:"bytes,2,opt,name=host,proto3" json:"host,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Placement) Reset() {
+	*x = Placement{}
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Placement) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Placement) ProtoMessage() {}
+
+func (x *Placement) ProtoReflect() protoreflect.Message {
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Placement.ProtoReflect.Descriptor instead.
+func (*Placement) Descriptor() ([]byte, []int) {
+	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *Placement) GetGroup() string {
+	if x != nil {
+		return x.Group
+	}
+	return ""
+}
+
+func (x *Placement) GetHost() string {
+	if x != nil {
+		return x.Host
+	}
+	return ""
+}
+
+type Options struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Tier          string                 `protobuf:"bytes,1,opt,name=tier,proto3" json:"tier,omitempty"`
+	Slots         int32                  `protobuf:"varint,2,opt,name=slots,proto3" json:"slots,omitempty"`
+	Note          string                 `protobuf:"bytes,3,opt,name=note,proto3" json:"note,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Options) Reset() {
+	*x = Options{}
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Options) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Options) ProtoMessage() {}
+
+func (x *Options) ProtoReflect() protoreflect.Message {
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Options.ProtoReflect.Descriptor instead.
+func (*Options) Descriptor() ([]byte, []int) {
+	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *Options) GetTier() string {
+	if x != nil {
+		return x.Tier
+	}
+	return ""
+}
+
+func (x *Options) GetSlots() int32 {
+	if x != nil {
+		return x.Slots
+	}
+	return 0
+}
+
+func (x *Options) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+type Peer struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Address       string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
+	Latency       int32                  `protobuf:"varint,2,opt,name=latency,proto3" json:"latency,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Peer) Reset() {
+	*x = Peer{}
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Peer) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Peer) ProtoMessage() {}
+
+func (x *Peer) ProtoReflect() protoreflect.Message {
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Peer.ProtoReflect.Descriptor instead.
+func (*Peer) Descriptor() ([]byte, []int) {
+	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *Peer) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *Peer) GetLatency() int32 {
+	if x != nil {
+		return x.Latency
+	}
+	return 0
+}
+
 type GetFirewallRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -587,7 +783,7 @@ type GetFirewallRequest struct {
 
 func (x *GetFirewallRequest) Reset() {
 	*x = GetFirewallRequest{}
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[8]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -599,7 +795,7 @@ func (x *GetFirewallRequest) String() string {
 func (*GetFirewallRequest) ProtoMessage() {}
 
 func (x *GetFirewallRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[8]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -612,7 +808,7 @@ func (x *GetFirewallRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetFirewallRequest.ProtoReflect.Descriptor instead.
 func (*GetFirewallRequest) Descriptor() ([]byte, []int) {
-	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{8}
+	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *GetFirewallRequest) GetName() string {
@@ -631,7 +827,7 @@ type DeleteFirewallRequest struct {
 
 func (x *DeleteFirewallRequest) Reset() {
 	*x = DeleteFirewallRequest{}
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[9]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -643,7 +839,7 @@ func (x *DeleteFirewallRequest) String() string {
 func (*DeleteFirewallRequest) ProtoMessage() {}
 
 func (x *DeleteFirewallRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[9]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -656,7 +852,7 @@ func (x *DeleteFirewallRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteFirewallRequest.ProtoReflect.Descriptor instead.
 func (*DeleteFirewallRequest) Descriptor() ([]byte, []int) {
-	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{9}
+	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *DeleteFirewallRequest) GetName() string {
@@ -675,7 +871,7 @@ type ListFirewallsRequest struct {
 
 func (x *ListFirewallsRequest) Reset() {
 	*x = ListFirewallsRequest{}
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[10]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -687,7 +883,7 @@ func (x *ListFirewallsRequest) String() string {
 func (*ListFirewallsRequest) ProtoMessage() {}
 
 func (x *ListFirewallsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[10]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -700,7 +896,7 @@ func (x *ListFirewallsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFirewallsRequest.ProtoReflect.Descriptor instead.
 func (*ListFirewallsRequest) Descriptor() ([]byte, []int) {
-	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{10}
+	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ListFirewallsRequest) GetParent() string {
@@ -719,7 +915,7 @@ type ListFirewallsResponse struct {
 
 func (x *ListFirewallsResponse) Reset() {
 	*x = ListFirewallsResponse{}
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[11]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -731,7 +927,7 @@ func (x *ListFirewallsResponse) String() string {
 func (*ListFirewallsResponse) ProtoMessage() {}
 
 func (x *ListFirewallsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[11]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -744,7 +940,7 @@ func (x *ListFirewallsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFirewallsResponse.ProtoReflect.Descriptor instead.
 func (*ListFirewallsResponse) Descriptor() ([]byte, []int) {
-	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{11}
+	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ListFirewallsResponse) GetFirewalls() []*Firewall {
@@ -764,7 +960,7 @@ type CreateFirewallRequest struct {
 
 func (x *CreateFirewallRequest) Reset() {
 	*x = CreateFirewallRequest{}
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[12]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -776,7 +972,7 @@ func (x *CreateFirewallRequest) String() string {
 func (*CreateFirewallRequest) ProtoMessage() {}
 
 func (x *CreateFirewallRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[12]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -789,7 +985,7 @@ func (x *CreateFirewallRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateFirewallRequest.ProtoReflect.Descriptor instead.
 func (*CreateFirewallRequest) Descriptor() ([]byte, []int) {
-	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{12}
+	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *CreateFirewallRequest) GetParent() string {
@@ -816,7 +1012,7 @@ type UpdateFirewallRequest struct {
 
 func (x *UpdateFirewallRequest) Reset() {
 	*x = UpdateFirewallRequest{}
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[13]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -828,7 +1024,7 @@ func (x *UpdateFirewallRequest) String() string {
 func (*UpdateFirewallRequest) ProtoMessage() {}
 
 func (x *UpdateFirewallRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[13]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -841,7 +1037,7 @@ func (x *UpdateFirewallRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateFirewallRequest.ProtoReflect.Descriptor instead.
 func (*UpdateFirewallRequest) Descriptor() ([]byte, []int) {
-	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{13}
+	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *UpdateFirewallRequest) GetFirewall() *Firewall {
@@ -862,7 +1058,7 @@ var File_test_firewalls_v1_firewalls_proto protoreflect.FileDescriptor
 
 const file_test_firewalls_v1_firewalls_proto_rawDesc = "" +
 	"\n" +
-	"!test/firewalls/v1/firewalls.proto\x12\x11test.firewalls.v1\x1a\x17google/api/client.proto\x1a\x1fgoogle/api/field_behavior.proto\x1a\x19google/api/resource.proto\x1a#google/longrunning/operations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a google/protobuf/field_mask.proto\"\xff\x04\n" +
+	"!test/firewalls/v1/firewalls.proto\x12\x11test.firewalls.v1\x1a\x17google/api/client.proto\x1a\x1fgoogle/api/field_behavior.proto\x1a\x19google/api/resource.proto\x1a#google/longrunning/operations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a google/protobuf/field_mask.proto\"\xc4\a\n" +
 	"\bFirewall\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tB\x03\xe0A\bR\x04name\x122\n" +
 	"\x05rules\x18\x02 \x03(\v2\x17.test.firewalls.v1.RuleB\x03\xe0A\x01R\x05rules\x12\x1a\n" +
@@ -874,7 +1070,15 @@ const file_test_firewalls_v1_firewalls_proto_rawDesc = "" +
 	"\x05modes\x18\x06 \x03(\x0e2\x17.test.firewalls.v1.ModeB\x06\xe0A\x01\xe0A\x06R\x05modes\x126\n" +
 	"\x06status\x18\a \x01(\v2\x19.test.firewalls.v1.StatusB\x03\xe0A\x03R\x06status\x12D\n" +
 	"\x06labels\x18\b \x03(\v2'.test.firewalls.v1.Firewall.LabelsEntryB\x03\xe0A\x01R\x06labels\x12?\n" +
-	"\fdefault_mode\x18\t \x01(\x0e2\x17.test.firewalls.v1.ModeB\x03\xe0A\x01R\vdefaultMode\x1aS\n" +
+	"\fdefault_mode\x18\t \x01(\x0e2\x17.test.firewalls.v1.ModeB\x03\xe0A\x01R\vdefaultMode\x12?\n" +
+	"\tplacement\x18\n" +
+	" \x01(\v2\x1c.test.firewalls.v1.PlacementB\x03\xe0A\x05R\tplacement\x129\n" +
+	"\aoptions\x18\v \x01(\v2\x1a.test.firewalls.v1.OptionsB\x03\xe0A\x01R\aoptions\x122\n" +
+	"\x05peers\x18\f \x03(\v2\x17.test.firewalls.v1.PeerB\x03\xe0A\x05R\x05peers\x12S\n" +
+	"\vannotations\x18\r \x03(\v2,.test.firewalls.v1.Firewall.AnnotationsEntryB\x03\xe0A\x01R\vannotations\x1a>\n" +
+	"\x10AnnotationsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1aS\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12.\n" +
 	"\x05value\x18\x02 \x01(\v2\x18.test.firewalls.v1.LabelR\x05value:\x028\x01:h\xeaAe\n" +
@@ -906,7 +1110,17 @@ const file_test_firewalls_v1_firewalls_proto_rawDesc = "" +
 	"rule_count\x18\x03 \x01(\x05B\x03\xe0A\x03R\truleCount\";\n" +
 	"\x05Label\x12\x19\n" +
 	"\x05value\x18\x01 \x01(\tB\x03\xe0A\x02R\x05value\x12\x17\n" +
-	"\x04note\x18\x02 \x01(\tB\x03\xe0A\x01R\x04note\"(\n" +
+	"\x04note\x18\x02 \x01(\tB\x03\xe0A\x01R\x04note\"?\n" +
+	"\tPlacement\x12\x19\n" +
+	"\x05group\x18\x01 \x01(\tB\x03\xe0A\x02R\x05group\x12\x17\n" +
+	"\x04host\x18\x02 \x01(\tB\x03\xe0A\x03R\x04host\"V\n" +
+	"\aOptions\x12\x17\n" +
+	"\x04tier\x18\x01 \x01(\tB\x03\xe0A\x05R\x04tier\x12\x19\n" +
+	"\x05slots\x18\x02 \x01(\x05B\x03\xe0A\x05R\x05slots\x12\x17\n" +
+	"\x04note\x18\x03 \x01(\tB\x03\xe0A\x01R\x04note\"D\n" +
+	"\x04Peer\x12\x1d\n" +
+	"\aaddress\x18\x01 \x01(\tB\x03\xe0A\x02R\aaddress\x12\x1d\n" +
+	"\alatency\x18\x02 \x01(\x05B\x03\xe0A\x03R\alatency\"(\n" +
 	"\x12GetFirewallRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"+\n" +
 	"\x15DeleteFirewallRequest\x12\x12\n" +
@@ -948,7 +1162,7 @@ func file_test_firewalls_v1_firewalls_proto_rawDescGZIP() []byte {
 }
 
 var file_test_firewalls_v1_firewalls_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_test_firewalls_v1_firewalls_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_test_firewalls_v1_firewalls_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_test_firewalls_v1_firewalls_proto_goTypes = []any{
 	(Mode)(0),                       // 0: test.firewalls.v1.Mode
 	(*Firewall)(nil),                // 1: test.firewalls.v1.Firewall
@@ -959,48 +1173,56 @@ var file_test_firewalls_v1_firewalls_proto_goTypes = []any{
 	(*Address)(nil),                 // 6: test.firewalls.v1.Address
 	(*Status)(nil),                  // 7: test.firewalls.v1.Status
 	(*Label)(nil),                   // 8: test.firewalls.v1.Label
-	(*GetFirewallRequest)(nil),      // 9: test.firewalls.v1.GetFirewallRequest
-	(*DeleteFirewallRequest)(nil),   // 10: test.firewalls.v1.DeleteFirewallRequest
-	(*ListFirewallsRequest)(nil),    // 11: test.firewalls.v1.ListFirewallsRequest
-	(*ListFirewallsResponse)(nil),   // 12: test.firewalls.v1.ListFirewallsResponse
-	(*CreateFirewallRequest)(nil),   // 13: test.firewalls.v1.CreateFirewallRequest
-	(*UpdateFirewallRequest)(nil),   // 14: test.firewalls.v1.UpdateFirewallRequest
-	nil,                             // 15: test.firewalls.v1.Firewall.LabelsEntry
-	(*fieldmaskpb.FieldMask)(nil),   // 16: google.protobuf.FieldMask
-	(*longrunningpb.Operation)(nil), // 17: google.longrunning.Operation
-	(*emptypb.Empty)(nil),           // 18: google.protobuf.Empty
+	(*Placement)(nil),               // 9: test.firewalls.v1.Placement
+	(*Options)(nil),                 // 10: test.firewalls.v1.Options
+	(*Peer)(nil),                    // 11: test.firewalls.v1.Peer
+	(*GetFirewallRequest)(nil),      // 12: test.firewalls.v1.GetFirewallRequest
+	(*DeleteFirewallRequest)(nil),   // 13: test.firewalls.v1.DeleteFirewallRequest
+	(*ListFirewallsRequest)(nil),    // 14: test.firewalls.v1.ListFirewallsRequest
+	(*ListFirewallsResponse)(nil),   // 15: test.firewalls.v1.ListFirewallsResponse
+	(*CreateFirewallRequest)(nil),   // 16: test.firewalls.v1.CreateFirewallRequest
+	(*UpdateFirewallRequest)(nil),   // 17: test.firewalls.v1.UpdateFirewallRequest
+	nil,                             // 18: test.firewalls.v1.Firewall.AnnotationsEntry
+	nil,                             // 19: test.firewalls.v1.Firewall.LabelsEntry
+	(*fieldmaskpb.FieldMask)(nil),   // 20: google.protobuf.FieldMask
+	(*longrunningpb.Operation)(nil), // 21: google.longrunning.Operation
+	(*emptypb.Empty)(nil),           // 22: google.protobuf.Empty
 }
 var file_test_firewalls_v1_firewalls_proto_depIdxs = []int32{
 	2,  // 0: test.firewalls.v1.Firewall.rules:type_name -> test.firewalls.v1.Rule
 	4,  // 1: test.firewalls.v1.Firewall.spec:type_name -> test.firewalls.v1.Spec
 	0,  // 2: test.firewalls.v1.Firewall.modes:type_name -> test.firewalls.v1.Mode
 	7,  // 3: test.firewalls.v1.Firewall.status:type_name -> test.firewalls.v1.Status
-	15, // 4: test.firewalls.v1.Firewall.labels:type_name -> test.firewalls.v1.Firewall.LabelsEntry
+	19, // 4: test.firewalls.v1.Firewall.labels:type_name -> test.firewalls.v1.Firewall.LabelsEntry
 	0,  // 5: test.firewalls.v1.Firewall.default_mode:type_name -> test.firewalls.v1.Mode
-	3,  // 6: test.firewalls.v1.Rule.ports:type_name -> test.firewalls.v1.PortRange
-	5,  // 7: test.firewalls.v1.Spec.interfaces:type_name -> test.firewalls.v1.Interface
-	6,  // 8: test.firewalls.v1.Interface.addresses:type_name -> test.firewalls.v1.Address
-	0,  // 9: test.firewalls.v1.Status.state:type_name -> test.firewalls.v1.Mode
-	1,  // 10: test.firewalls.v1.ListFirewallsResponse.firewalls:type_name -> test.firewalls.v1.Firewall
-	1,  // 11: test.firewalls.v1.CreateFirewallRequest.firewall:type_name -> test.firewalls.v1.Firewall
-	1,  // 12: test.firewalls.v1.UpdateFirewallRequest.firewall:type_name -> test.firewalls.v1.Firewall
-	16, // 13: test.firewalls.v1.UpdateFirewallRequest.update_mask:type_name -> google.protobuf.FieldMask
-	8,  // 14: test.firewalls.v1.Firewall.LabelsEntry.value:type_name -> test.firewalls.v1.Label
-	9,  // 15: test.firewalls.v1.FirewallService.GetFirewall:input_type -> test.firewalls.v1.GetFirewallRequest
-	11, // 16: test.firewalls.v1.FirewallService.ListFirewalls:input_type -> test.firewalls.v1.ListFirewallsRequest
-	13, // 17: test.firewalls.v1.FirewallService.CreateFirewall:input_type -> test.firewalls.v1.CreateFirewallRequest
-	14, // 18: test.firewalls.v1.FirewallService.UpdateFirewall:input_type -> test.firewalls.v1.UpdateFirewallRequest
-	10, // 19: test.firewalls.v1.FirewallService.DeleteFirewall:input_type -> test.firewalls.v1.DeleteFirewallRequest
-	1,  // 20: test.firewalls.v1.FirewallService.GetFirewall:output_type -> test.firewalls.v1.Firewall
-	12, // 21: test.firewalls.v1.FirewallService.ListFirewalls:output_type -> test.firewalls.v1.ListFirewallsResponse
-	17, // 22: test.firewalls.v1.FirewallService.CreateFirewall:output_type -> google.longrunning.Operation
-	1,  // 23: test.firewalls.v1.FirewallService.UpdateFirewall:output_type -> test.firewalls.v1.Firewall
-	18, // 24: test.firewalls.v1.FirewallService.DeleteFirewall:output_type -> google.protobuf.Empty
-	20, // [20:25] is the sub-list for method output_type
-	15, // [15:20] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	9,  // 6: test.firewalls.v1.Firewall.placement:type_name -> test.firewalls.v1.Placement
+	10, // 7: test.firewalls.v1.Firewall.options:type_name -> test.firewalls.v1.Options
+	11, // 8: test.firewalls.v1.Firewall.peers:type_name -> test.firewalls.v1.Peer
+	18, // 9: test.firewalls.v1.Firewall.annotations:type_name -> test.firewalls.v1.Firewall.AnnotationsEntry
+	3,  // 10: test.firewalls.v1.Rule.ports:type_name -> test.firewalls.v1.PortRange
+	5,  // 11: test.firewalls.v1.Spec.interfaces:type_name -> test.firewalls.v1.Interface
+	6,  // 12: test.firewalls.v1.Interface.addresses:type_name -> test.firewalls.v1.Address
+	0,  // 13: test.firewalls.v1.Status.state:type_name -> test.firewalls.v1.Mode
+	1,  // 14: test.firewalls.v1.ListFirewallsResponse.firewalls:type_name -> test.firewalls.v1.Firewall
+	1,  // 15: test.firewalls.v1.CreateFirewallRequest.firewall:type_name -> test.firewalls.v1.Firewall
+	1,  // 16: test.firewalls.v1.UpdateFirewallRequest.firewall:type_name -> test.firewalls.v1.Firewall
+	20, // 17: test.firewalls.v1.UpdateFirewallRequest.update_mask:type_name -> google.protobuf.FieldMask
+	8,  // 18: test.firewalls.v1.Firewall.LabelsEntry.value:type_name -> test.firewalls.v1.Label
+	12, // 19: test.firewalls.v1.FirewallService.GetFirewall:input_type -> test.firewalls.v1.GetFirewallRequest
+	14, // 20: test.firewalls.v1.FirewallService.ListFirewalls:input_type -> test.firewalls.v1.ListFirewallsRequest
+	16, // 21: test.firewalls.v1.FirewallService.CreateFirewall:input_type -> test.firewalls.v1.CreateFirewallRequest
+	17, // 22: test.firewalls.v1.FirewallService.UpdateFirewall:input_type -> test.firewalls.v1.UpdateFirewallRequest
+	13, // 23: test.firewalls.v1.FirewallService.DeleteFirewall:input_type -> test.firewalls.v1.DeleteFirewallRequest
+	1,  // 24: test.firewalls.v1.FirewallService.GetFirewall:output_type -> test.firewalls.v1.Firewall
+	15, // 25: test.firewalls.v1.FirewallService.ListFirewalls:output_type -> test.firewalls.v1.ListFirewallsResponse
+	21, // 26: test.firewalls.v1.FirewallService.CreateFirewall:output_type -> google.longrunning.Operation
+	1,  // 27: test.firewalls.v1.FirewallService.UpdateFirewall:output_type -> test.firewalls.v1.Firewall
+	22, // 28: test.firewalls.v1.FirewallService.DeleteFirewall:output_type -> google.protobuf.Empty
+	24, // [24:29] is the sub-list for method output_type
+	19, // [19:24] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_test_firewalls_v1_firewalls_proto_init() }
@@ -1014,7 +1236,7 @@ func file_test_firewalls_v1_firewalls_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_test_firewalls_v1_firewalls_proto_rawDesc), len(file_test_firewalls_v1_firewalls_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   15,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

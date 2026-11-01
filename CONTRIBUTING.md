@@ -66,9 +66,20 @@ to the plugin or `internal/framework`.
 - A nested message or a repeated field is sent whole. An update names, in its
   mask, the top-level field holding it when anything it sends changed;
   output-only fields within it don't count.
+- `IMMUTABLE` on a field holding nested messages replaces the resource when
+  what it sends changes, so its output-only fields don't. `IMMUTABLE` inside
+  a nested message replaces the resource when that field changes, and an
+  `OPTIONAL` `IMMUTABLE` one keeps the value the API chose; when the object
+  holding it is new, the value is unknown until the API answers.
+- An object the API chooses when it is left out (`IMMUTABLE`, not `REQUIRED`)
+  has only optional and computed fields in the schema: left out, Terraform
+  plans each field from the configuration unless it is computed, so a
+  required one would plan a change at every run. The API checks them.
 - An optional attribute left out stays null when the API answers with
   nothing, and one set to `[]` or `{}` stays as it was set. A computed list,
-  set or map is empty, not null. A null element is refused.
+  set or map is empty, not null; a computed object the API leaves out or
+  answers with all its fields zero is null. A null element is refused, in
+  maps of strings too.
 - Any other field fails generation with its name and the reason, so a new
   API that uses one extends the plugin first:
   - other scalars, such as `repeated double fields aren't supported yet`;
@@ -80,10 +91,16 @@ to the plugin or `internal/framework`.
     supported yet`), and a message holding itself (`… holds itself, which
     isn't supported`);
   - oneof fields, and proto3 `optional` fields;
-  - in the elements of a settable `UNORDERED_LIST` field, an `OUTPUT_ONLY` or
-    `IMMUTABLE` field (`a field of an UNORDERED_LIST element can't be
-    OUTPUT_ONLY`): the element the API answered with would differ from the
-    one set, and a set has no order to match them up by;
+  - in the elements of a settable `UNORDERED_LIST` field, an `OUTPUT_ONLY`
+    field (`a field of an UNORDERED_LIST element can't be OUTPUT_ONLY`): the
+    element the API answered with would differ from the one set, and a set
+    has no order to match them up by;
+  - in the elements of a settable repeated or map field, at any depth, an
+    `IMMUTABLE` field (`a field of a repeated or map field's elements can't be
+    IMMUTABLE: an element has no identity to keep its value for, or to
+    replace the resource on`): elements are matched by position or key, so a
+    kept value could be planned for another element, and adding or
+    reordering elements would replace the resource;
   - `UNORDERED_LIST` on a field that isn't repeated, and an `IDENTIFIER` in a
     nested message.
 - A boolean that a pair of custom methods sets and clears, rather than an

@@ -275,9 +275,96 @@ func TestNullElementsAreRefused(t *testing.T) {
 				Config:      firewallConfig(fake, `default_mode = "AJAR"`),
 				ExpectError: regexp.MustCompile(`value must be one of OPEN, CLOSED`),
 			},
+			{
+				Config:      firewallConfig(fake, `annotations = { a = null }`),
+				ExpectError: regexp.MustCompile(`Null element`),
+			},
+			// Optional and computed, an int32 is checked too.
+			{
+				Config:      firewallConfig(fake, `options = { slots = 3000000000 }`),
+				ExpectError: regexp.MustCompile(`value must be between`),
+			},
 		},
 	})
 	if n := fake.updateCount(); n != 0 || len(fake.firewalls) != 0 {
 		t.Errorf("a refused configuration reached the API")
 	}
+}
+
+// Immutable attributes holding nested messages: an object and a list the
+// API chooses when they are left out, both with output-only fields, and
+// immutable fields the API chooses in a mutable object.
+func TestImmutableNestedFields(t *testing.T) {
+	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
+	fake := newFakeFirewalls(t)
+	step := func(body string, action plancheck.ResourceActionType, check ...resource.TestCheckFunc) resource.TestStep {
+		return resource.TestStep{
+			Config: firewallConfig(fake, body),
+			ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+				plancheck.ExpectResourceAction(firewall, action),
+			}},
+			Check: resource.ComposeAggregateTestCheckFunc(check...),
+		}
+	}
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			// Left out, the placement is the API's; the plan after the
+			// apply is empty.
+			step(`tags = ["a"]
+  peers = [{ address = "p1" }]`, plancheck.ResourceActionCreate,
+				resource.TestCheckResourceAttr(firewall, "placement.group", "auto"),
+				resource.TestCheckResourceAttr(firewall, "placement.host", "host-auto"),
+				resource.TestCheckResourceAttr(firewall, "peers.0.latency", "2"),
+			),
+			// Another attribute changes: the immutable ones, whose
+			// output-only fields the plan doesn't know, don't replace it.
+			step(`tags = ["b"]
+  peers = [{ address = "p1" }]`, plancheck.ResourceActionUpdate),
+			// Configured differently, the placement replaces it.
+			step(`tags = ["b"]
+  peers = [{ address = "p1" }]
+  placement = { group = "g" }`, plancheck.ResourceActionReplace,
+				resource.TestCheckResourceAttr(firewall, "placement.host", "host-g"),
+			),
+			step(`tags = ["c"]
+  peers = [{ address = "p1" }]
+  placement = { group = "g" }`, plancheck.ResourceActionUpdate),
+			// Left out again, it stays as it is.
+			step(`tags = ["c"]
+  peers = [{ address = "p1" }]`, plancheck.ResourceActionNoop),
+			// A new object whose immutable fields the API chooses: they
+			// are unknown until it answers, not the state's null.
+			step(`tags = ["c"]
+  peers = [{ address = "p1" }]
+  options = { note = "x" }`, plancheck.ResourceActionUpdate,
+				resource.TestCheckResourceAttr(firewall, "options.tier", "standard"),
+				resource.TestCheckResourceAttr(firewall, "options.slots", "4"),
+			),
+			// Its mutable field changes; the chosen ones stay.
+			step(`tags = ["c"]
+  peers = [{ address = "p1" }]
+  options = { note = "y" }`, plancheck.ResourceActionUpdate,
+				resource.TestCheckResourceAttr(firewall, "options.tier", "standard"),
+				func(*terraform.State) error {
+					if _, sent := fake.lastMask(); sent.GetOptions().GetTier() != "standard" {
+						return fmt.Errorf("the update sent the options %v, without their tier", sent.GetOptions())
+					}
+					return nil
+				},
+			),
+			// Configured differently, an immutable field replaces it.
+			step(`tags = ["c"]
+  peers = [{ address = "p1" }]
+  options = { note = "y", tier = "premium" }`, plancheck.ResourceActionReplace,
+				resource.TestCheckResourceAttr(firewall, "options.tier", "premium"),
+			),
+			// So does the immutable list.
+			step(`tags = ["c"]
+  peers = [{ address = "p22" }]
+  options = { note = "y", tier = "premium" }`, plancheck.ResourceActionReplace,
+				resource.TestCheckResourceAttr(firewall, "peers.0.latency", "3"),
+			),
+		},
+	})
 }

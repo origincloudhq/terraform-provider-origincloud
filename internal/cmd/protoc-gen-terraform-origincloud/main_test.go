@@ -323,7 +323,29 @@ func TestUnsupportedFieldsFailGeneration(t *testing.T) {
 			name: "an immutable field of a set's elements",
 			change: withField("Widget", `name: "ports" number: 9 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.widgets.v1.Port" options { [google.api.field_behavior]: OPTIONAL [google.api.field_behavior]: UNORDERED_LIST }`,
 				`name: "Port" field { name: "number" number: 1 label: LABEL_OPTIONAL type: TYPE_INT32 options { [google.api.field_behavior]: REQUIRED [google.api.field_behavior]: IMMUTABLE } }`),
-			want: "Widget: field ports: Port: field number: a field of an UNORDERED_LIST element can't be IMMUTABLE",
+			want: "Widget: field ports: Port: field number: a field of a repeated or map field's elements can't be IMMUTABLE: an element has no identity",
+		},
+		{
+			name: "an immutable field the API chooses in a list's elements",
+			change: withField("Widget", `name: "rules" number: 9 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.widgets.v1.Rule" `+optional,
+				`name: "Rule" field { name: "zone" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: IMMUTABLE } }`),
+			want: "Widget: field rules: Rule: field zone: a field of a repeated or map field's elements can't be IMMUTABLE",
+		},
+		{
+			name: "a required immutable field in a list's elements",
+			change: withField("Widget", `name: "routes" number: 9 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.widgets.v1.Route" `+optional,
+				`name: "Route" field { name: "dest" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: REQUIRED [google.api.field_behavior]: IMMUTABLE } }`),
+			want: "Widget: field routes: Route: field dest: a field of a repeated or map field's elements can't be IMMUTABLE",
+		},
+		{
+			name: "an immutable field in a map's values, a level down",
+			change: withField("Widget", `name: "routes" number: 9 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.widgets.v1.Widget.RoutesEntry" `+optional,
+				`name: "RoutesEntry" options { map_entry: true }
+				 field { name: "key" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING }
+				 field { name: "value" number: 2 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".test.widgets.v1.Route" }`,
+				`name: "Route" field { name: "via" number: 1 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".test.widgets.v1.Hop" `+optional+` }`,
+				`name: "Hop" field { name: "metric" number: 1 label: LABEL_OPTIONAL type: TYPE_INT32 options { [google.api.field_behavior]: IMMUTABLE } }`),
+			want: "Widget: field routes: Route: field via: Hop: field metric: a field of a repeated or map field's elements can't be IMMUTABLE",
 		},
 		{
 			name: "a nested message's identifier",

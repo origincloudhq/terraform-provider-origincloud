@@ -8,6 +8,9 @@ import (
 	attr "github.com/hashicorp/terraform-plugin-framework/attr"
 	schema1 "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	schema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	int64planmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
+	listplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
+	objectplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
 	planmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	stringplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	validator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -32,6 +35,10 @@ type firewallModel struct {
 	Status      types.Object `tfsdk:"status"`
 	Labels      types.Map    `tfsdk:"labels"`
 	DefaultMode types.String `tfsdk:"default_mode"`
+	Placement   types.Object `tfsdk:"placement"`
+	Options     types.Object `tfsdk:"options"`
+	Peers       types.List   `tfsdk:"peers"`
+	Annotations types.Map    `tfsdk:"annotations"`
 }
 
 func firewallSchema() schema.Schema {
@@ -196,54 +203,123 @@ func firewallSchema() schema.Schema {
 				Optional:            true,
 				Validators:          []validator.String{framework.OneOf("OPEN", "CLOSED")},
 			},
+			"placement": schema.SingleNestedAttribute{
+				MarkdownDescription: "Changing it replaces the firewall.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.Object{objectplanmodifier.UseStateForUnknown(), framework.ObjectReplaceIfSent(func(plan, state types.Object) bool {
+					return proto.Equal(firewall_PlacementToProto(plan), firewall_PlacementToProto(state))
+				}, true)},
+				Attributes: map[string]schema.Attribute{
+					"group": schema.StringAttribute{
+						MarkdownDescription: "",
+						Optional:            true,
+						Computed:            true,
+					},
+					"host": schema.StringAttribute{
+						MarkdownDescription: "",
+						Computed:            true,
+					},
+				},
+			},
+			"options": schema.SingleNestedAttribute{
+				MarkdownDescription: "",
+				Optional:            true,
+				Attributes: map[string]schema.Attribute{
+					"tier": schema.StringAttribute{
+						MarkdownDescription: "Changing it replaces the firewall.",
+						Optional:            true,
+						Computed:            true,
+						PlanModifiers:       []planmodifier.String{stringplanmodifier.UseNonNullStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()},
+					},
+					"slots": schema.Int64Attribute{
+						MarkdownDescription: "Changing it replaces the firewall.",
+						Optional:            true,
+						Computed:            true,
+						Validators:          []validator.Int64{framework.Int32()},
+						PlanModifiers:       []planmodifier.Int64{int64planmodifier.UseNonNullStateForUnknown(), int64planmodifier.RequiresReplaceIfConfigured()},
+					},
+					"note": schema.StringAttribute{
+						MarkdownDescription: "",
+						Optional:            true,
+					},
+				},
+			},
+			"peers": schema.ListNestedAttribute{
+				MarkdownDescription: "Changing it replaces the firewall.",
+				Optional:            true,
+				Computed:            true,
+				Validators:          []validator.List{framework.ElementCheck{}},
+				PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown(), framework.ListReplaceIfSent(func(plan, state types.List) bool {
+					return framework.SameMessages(framework.Elements(plan, func(e attr.Value) *firewallsv1.Peer { return firewall_PeersToProto(e.(types.Object)) }), framework.Elements(state, func(e attr.Value) *firewallsv1.Peer { return firewall_PeersToProto(e.(types.Object)) }))
+				}, true)},
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"address": schema.StringAttribute{
+							MarkdownDescription: "",
+							Required:            true,
+						},
+						"latency": schema.Int64Attribute{
+							MarkdownDescription: "",
+							Computed:            true,
+						},
+					},
+				},
+			},
+			"annotations": schema.MapAttribute{
+				MarkdownDescription: "",
+				Optional:            true,
+				ElementType:         types.StringType,
+				Validators:          []validator.Map{framework.ElementCheck{}},
+			},
 		},
 	}
 }
 
-func firewallRulesAttrTypes() map[string]attr.Type {
+func firewall_RulesAttrTypes() map[string]attr.Type {
 	return map[string]attr.Type{
 		"protocol": types.StringType,
-		"ports":    types.ObjectType{AttrTypes: firewallRulesPortsAttrTypes()},
+		"ports":    types.ObjectType{AttrTypes: firewall_Rules_PortsAttrTypes()},
 		"sources":  types.ListType{ElemType: types.StringType},
 		"id":       types.StringType,
 	}
 }
 
-func firewallRulesFromProto(p *firewallsv1.Rule, prior types.Object) types.Object {
-	return types.ObjectValueMust(firewallRulesAttrTypes(), map[string]attr.Value{
+func firewall_RulesFromProto(p *firewallsv1.Rule, prior types.Object) types.Object {
+	return types.ObjectValueMust(firewall_RulesAttrTypes(), map[string]attr.Value{
 		"protocol": types.StringValue(p.GetProtocol()),
-		"ports":    framework.Object(p.GetPorts(), framework.Attr(prior, "ports", types.ObjectNull(firewallRulesPortsAttrTypes())), firewallRulesPortsAttrTypes(), firewallRulesPortsFromProto),
+		"ports":    framework.Object(p.GetPorts(), framework.Attr(prior, "ports", types.ObjectNull(firewall_Rules_PortsAttrTypes())), firewall_Rules_PortsAttrTypes(), firewall_Rules_PortsFromProto),
 		"sources":  framework.Optional(framework.Attr(prior, "sources", types.ListNull(types.StringType)), framework.StringList(p.GetSources()), len(p.GetSources()) == 0),
 		"id":       types.StringValue(p.GetId()),
 	})
 }
 
-func firewallRulesToProto(o types.Object) *firewallsv1.Rule {
+func firewall_RulesToProto(o types.Object) *firewallsv1.Rule {
 	if o.IsNull() || o.IsUnknown() {
 		return nil
 	}
 	return &firewallsv1.Rule{
 		Protocol: framework.Attr(o, "protocol", types.StringNull()).ValueString(),
-		Ports:    firewallRulesPortsToProto(framework.Attr(o, "ports", types.ObjectNull(firewallRulesPortsAttrTypes()))),
+		Ports:    firewall_Rules_PortsToProto(framework.Attr(o, "ports", types.ObjectNull(firewall_Rules_PortsAttrTypes()))),
 		Sources:  framework.Elements(framework.Attr(o, "sources", types.ListNull(types.StringType)), func(e attr.Value) string { return e.(types.String).ValueString() }),
 	}
 }
 
-func firewallRulesPortsAttrTypes() map[string]attr.Type {
+func firewall_Rules_PortsAttrTypes() map[string]attr.Type {
 	return map[string]attr.Type{
 		"first": types.Int64Type,
 		"last":  types.Int64Type,
 	}
 }
 
-func firewallRulesPortsFromProto(p *firewallsv1.PortRange, prior types.Object) types.Object {
-	return types.ObjectValueMust(firewallRulesPortsAttrTypes(), map[string]attr.Value{
+func firewall_Rules_PortsFromProto(p *firewallsv1.PortRange, prior types.Object) types.Object {
+	return types.ObjectValueMust(firewall_Rules_PortsAttrTypes(), map[string]attr.Value{
 		"first": types.Int64Value(int64(p.GetFirst())),
 		"last":  framework.Optional(framework.Attr(prior, "last", types.Int64Null()), types.Int64Value(int64(p.GetLast())), p.GetLast() == 0),
 	})
 }
 
-func firewallRulesPortsToProto(o types.Object) *firewallsv1.PortRange {
+func firewall_Rules_PortsToProto(o types.Object) *firewallsv1.PortRange {
 	if o.IsNull() || o.IsUnknown() {
 		return nil
 	}
@@ -253,74 +329,74 @@ func firewallRulesPortsToProto(o types.Object) *firewallsv1.PortRange {
 	}
 }
 
-func firewallSpecAttrTypes() map[string]attr.Type {
+func firewall_SpecAttrTypes() map[string]attr.Type {
 	return map[string]attr.Type{
 		"network":     types.StringType,
-		"interfaces":  types.SetType{ElemType: types.ObjectType{AttrTypes: firewallSpecInterfacesAttrTypes()}},
+		"interfaces":  types.SetType{ElemType: types.ObjectType{AttrTypes: firewall_Spec_InterfacesAttrTypes()}},
 		"description": types.StringType,
 	}
 }
 
-func firewallSpecFromProto(p *firewallsv1.Spec, prior types.Object) types.Object {
-	return types.ObjectValueMust(firewallSpecAttrTypes(), map[string]attr.Value{
+func firewall_SpecFromProto(p *firewallsv1.Spec, prior types.Object) types.Object {
+	return types.ObjectValueMust(firewall_SpecAttrTypes(), map[string]attr.Value{
 		"network":     types.StringValue(p.GetNetwork()),
-		"interfaces":  framework.MessageSet(firewallSpecInterfacesAttrTypes(), p.GetInterfaces(), framework.Attr(prior, "interfaces", types.SetNull(types.ObjectType{AttrTypes: firewallSpecInterfacesAttrTypes()})), firewallSpecInterfacesFromProto, firewallSpecInterfacesToProto),
+		"interfaces":  framework.MessageSet(firewall_Spec_InterfacesAttrTypes(), p.GetInterfaces(), framework.Attr(prior, "interfaces", types.SetNull(types.ObjectType{AttrTypes: firewall_Spec_InterfacesAttrTypes()})), firewall_Spec_InterfacesFromProto, firewall_Spec_InterfacesToProto),
 		"description": framework.Optional(framework.Attr(prior, "description", types.StringNull()), types.StringValue(p.GetDescription()), p.GetDescription() == ""),
 	})
 }
 
-func firewallSpecToProto(o types.Object) *firewallsv1.Spec {
+func firewall_SpecToProto(o types.Object) *firewallsv1.Spec {
 	if o.IsNull() || o.IsUnknown() {
 		return nil
 	}
 	return &firewallsv1.Spec{
 		Network:     framework.Attr(o, "network", types.StringNull()).ValueString(),
-		Interfaces:  framework.Elements(framework.Attr(o, "interfaces", types.SetNull(types.ObjectType{AttrTypes: firewallSpecInterfacesAttrTypes()})), func(e attr.Value) *firewallsv1.Interface { return firewallSpecInterfacesToProto(e.(types.Object)) }),
+		Interfaces:  framework.Elements(framework.Attr(o, "interfaces", types.SetNull(types.ObjectType{AttrTypes: firewall_Spec_InterfacesAttrTypes()})), func(e attr.Value) *firewallsv1.Interface { return firewall_Spec_InterfacesToProto(e.(types.Object)) }),
 		Description: framework.Attr(o, "description", types.StringNull()).ValueString(),
 	}
 }
 
-func firewallSpecInterfacesAttrTypes() map[string]attr.Type {
+func firewall_Spec_InterfacesAttrTypes() map[string]attr.Type {
 	return map[string]attr.Type{
 		"subnet":    types.StringType,
-		"addresses": types.ListType{ElemType: types.ObjectType{AttrTypes: firewallSpecInterfacesAddressesAttrTypes()}},
+		"addresses": types.ListType{ElemType: types.ObjectType{AttrTypes: firewall_Spec_Interfaces_AddressesAttrTypes()}},
 	}
 }
 
-func firewallSpecInterfacesFromProto(p *firewallsv1.Interface, prior types.Object) types.Object {
-	return types.ObjectValueMust(firewallSpecInterfacesAttrTypes(), map[string]attr.Value{
+func firewall_Spec_InterfacesFromProto(p *firewallsv1.Interface, prior types.Object) types.Object {
+	return types.ObjectValueMust(firewall_Spec_InterfacesAttrTypes(), map[string]attr.Value{
 		"subnet":    types.StringValue(p.GetSubnet()),
-		"addresses": framework.Optional(framework.Attr(prior, "addresses", types.ListNull(types.ObjectType{AttrTypes: firewallSpecInterfacesAddressesAttrTypes()})), framework.MessageList(firewallSpecInterfacesAddressesAttrTypes(), p.GetAddresses(), framework.Attr(prior, "addresses", types.ListNull(types.ObjectType{AttrTypes: firewallSpecInterfacesAddressesAttrTypes()})), firewallSpecInterfacesAddressesFromProto), len(p.GetAddresses()) == 0),
+		"addresses": framework.Optional(framework.Attr(prior, "addresses", types.ListNull(types.ObjectType{AttrTypes: firewall_Spec_Interfaces_AddressesAttrTypes()})), framework.MessageList(firewall_Spec_Interfaces_AddressesAttrTypes(), p.GetAddresses(), framework.Attr(prior, "addresses", types.ListNull(types.ObjectType{AttrTypes: firewall_Spec_Interfaces_AddressesAttrTypes()})), firewall_Spec_Interfaces_AddressesFromProto), len(p.GetAddresses()) == 0),
 	})
 }
 
-func firewallSpecInterfacesToProto(o types.Object) *firewallsv1.Interface {
+func firewall_Spec_InterfacesToProto(o types.Object) *firewallsv1.Interface {
 	if o.IsNull() || o.IsUnknown() {
 		return nil
 	}
 	return &firewallsv1.Interface{
 		Subnet: framework.Attr(o, "subnet", types.StringNull()).ValueString(),
-		Addresses: framework.Elements(framework.Attr(o, "addresses", types.ListNull(types.ObjectType{AttrTypes: firewallSpecInterfacesAddressesAttrTypes()})), func(e attr.Value) *firewallsv1.Address {
-			return firewallSpecInterfacesAddressesToProto(e.(types.Object))
+		Addresses: framework.Elements(framework.Attr(o, "addresses", types.ListNull(types.ObjectType{AttrTypes: firewall_Spec_Interfaces_AddressesAttrTypes()})), func(e attr.Value) *firewallsv1.Address {
+			return firewall_Spec_Interfaces_AddressesToProto(e.(types.Object))
 		}),
 	}
 }
 
-func firewallSpecInterfacesAddressesAttrTypes() map[string]attr.Type {
+func firewall_Spec_Interfaces_AddressesAttrTypes() map[string]attr.Type {
 	return map[string]attr.Type{
 		"ip":      types.StringType,
 		"primary": types.BoolType,
 	}
 }
 
-func firewallSpecInterfacesAddressesFromProto(p *firewallsv1.Address, prior types.Object) types.Object {
-	return types.ObjectValueMust(firewallSpecInterfacesAddressesAttrTypes(), map[string]attr.Value{
+func firewall_Spec_Interfaces_AddressesFromProto(p *firewallsv1.Address, prior types.Object) types.Object {
+	return types.ObjectValueMust(firewall_Spec_Interfaces_AddressesAttrTypes(), map[string]attr.Value{
 		"ip":      types.StringValue(p.GetIp()),
 		"primary": framework.Optional(framework.Attr(prior, "primary", types.BoolNull()), types.BoolValue(p.GetPrimary()), !p.GetPrimary()),
 	})
 }
 
-func firewallSpecInterfacesAddressesToProto(o types.Object) *firewallsv1.Address {
+func firewall_Spec_Interfaces_AddressesToProto(o types.Object) *firewallsv1.Address {
 	if o.IsNull() || o.IsUnknown() {
 		return nil
 	}
@@ -330,7 +406,7 @@ func firewallSpecInterfacesAddressesToProto(o types.Object) *firewallsv1.Address
 	}
 }
 
-func firewallStatusAttrTypes() map[string]attr.Type {
+func firewall_StatusAttrTypes() map[string]attr.Type {
 	return map[string]attr.Type{
 		"state":      types.StringType,
 		"messages":   types.ListType{ElemType: types.StringType},
@@ -338,36 +414,36 @@ func firewallStatusAttrTypes() map[string]attr.Type {
 	}
 }
 
-func firewallStatusFromProto(p *firewallsv1.Status, prior types.Object) types.Object {
-	return types.ObjectValueMust(firewallStatusAttrTypes(), map[string]attr.Value{
+func firewall_StatusFromProto(p *firewallsv1.Status, prior types.Object) types.Object {
+	return types.ObjectValueMust(firewall_StatusAttrTypes(), map[string]attr.Value{
 		"state":      types.StringValue(p.GetState().String()),
 		"messages":   framework.StringList(p.GetMessages()),
 		"rule_count": types.Int64Value(int64(p.GetRuleCount())),
 	})
 }
 
-func firewallStatusToProto(o types.Object) *firewallsv1.Status {
+func firewall_StatusToProto(o types.Object) *firewallsv1.Status {
 	if o.IsNull() || o.IsUnknown() {
 		return nil
 	}
 	return &firewallsv1.Status{}
 }
 
-func firewallLabelsAttrTypes() map[string]attr.Type {
+func firewall_LabelsAttrTypes() map[string]attr.Type {
 	return map[string]attr.Type{
 		"value": types.StringType,
 		"note":  types.StringType,
 	}
 }
 
-func firewallLabelsFromProto(p *firewallsv1.Label, prior types.Object) types.Object {
-	return types.ObjectValueMust(firewallLabelsAttrTypes(), map[string]attr.Value{
+func firewall_LabelsFromProto(p *firewallsv1.Label, prior types.Object) types.Object {
+	return types.ObjectValueMust(firewall_LabelsAttrTypes(), map[string]attr.Value{
 		"value": types.StringValue(p.GetValue()),
 		"note":  framework.Optional(framework.Attr(prior, "note", types.StringNull()), types.StringValue(p.GetNote()), p.GetNote() == ""),
 	})
 }
 
-func firewallLabelsToProto(o types.Object) *firewallsv1.Label {
+func firewall_LabelsToProto(o types.Object) *firewallsv1.Label {
 	if o.IsNull() || o.IsUnknown() {
 		return nil
 	}
@@ -377,18 +453,95 @@ func firewallLabelsToProto(o types.Object) *firewallsv1.Label {
 	}
 }
 
+func firewall_PlacementAttrTypes() map[string]attr.Type {
+	return map[string]attr.Type{
+		"group": types.StringType,
+		"host":  types.StringType,
+	}
+}
+
+func firewall_PlacementFromProto(p *firewallsv1.Placement, prior types.Object) types.Object {
+	return types.ObjectValueMust(firewall_PlacementAttrTypes(), map[string]attr.Value{
+		"group": types.StringValue(p.GetGroup()),
+		"host":  types.StringValue(p.GetHost()),
+	})
+}
+
+func firewall_PlacementToProto(o types.Object) *firewallsv1.Placement {
+	if o.IsNull() || o.IsUnknown() {
+		return nil
+	}
+	return &firewallsv1.Placement{
+		Group: framework.Attr(o, "group", types.StringNull()).ValueString(),
+	}
+}
+
+func firewall_OptionsAttrTypes() map[string]attr.Type {
+	return map[string]attr.Type{
+		"tier":  types.StringType,
+		"slots": types.Int64Type,
+		"note":  types.StringType,
+	}
+}
+
+func firewall_OptionsFromProto(p *firewallsv1.Options, prior types.Object) types.Object {
+	return types.ObjectValueMust(firewall_OptionsAttrTypes(), map[string]attr.Value{
+		"tier":  types.StringValue(p.GetTier()),
+		"slots": types.Int64Value(int64(p.GetSlots())),
+		"note":  framework.Optional(framework.Attr(prior, "note", types.StringNull()), types.StringValue(p.GetNote()), p.GetNote() == ""),
+	})
+}
+
+func firewall_OptionsToProto(o types.Object) *firewallsv1.Options {
+	if o.IsNull() || o.IsUnknown() {
+		return nil
+	}
+	return &firewallsv1.Options{
+		Tier:  framework.Attr(o, "tier", types.StringNull()).ValueString(),
+		Slots: int32(framework.Attr(o, "slots", types.Int64Null()).ValueInt64()),
+		Note:  framework.Attr(o, "note", types.StringNull()).ValueString(),
+	}
+}
+
+func firewall_PeersAttrTypes() map[string]attr.Type {
+	return map[string]attr.Type{
+		"address": types.StringType,
+		"latency": types.Int64Type,
+	}
+}
+
+func firewall_PeersFromProto(p *firewallsv1.Peer, prior types.Object) types.Object {
+	return types.ObjectValueMust(firewall_PeersAttrTypes(), map[string]attr.Value{
+		"address": types.StringValue(p.GetAddress()),
+		"latency": types.Int64Value(int64(p.GetLatency())),
+	})
+}
+
+func firewall_PeersToProto(o types.Object) *firewallsv1.Peer {
+	if o.IsNull() || o.IsUnknown() {
+		return nil
+	}
+	return &firewallsv1.Peer{
+		Address: framework.Attr(o, "address", types.StringNull()).ValueString(),
+	}
+}
+
 func firewallToProto(m *firewallModel) *firewallsv1.Firewall {
 	return &firewallsv1.Firewall{
 		Name:       m.Name.ValueString(),
-		Rules:      framework.Elements(m.Rules, func(e attr.Value) *firewallsv1.Rule { return firewallRulesToProto(e.(types.Object)) }),
+		Rules:      framework.Elements(m.Rules, func(e attr.Value) *firewallsv1.Rule { return firewall_RulesToProto(e.(types.Object)) }),
 		Tags:       framework.Elements(m.Tags, func(e attr.Value) string { return e.(types.String).ValueString() }),
-		Spec:       firewallSpecToProto(m.Spec),
+		Spec:       firewall_SpecToProto(m.Spec),
 		Priorities: framework.Elements(m.Priorities, func(e attr.Value) int32 { return int32(e.(types.Int64).ValueInt64()) }),
 		Modes: framework.Elements(m.Modes, func(e attr.Value) firewallsv1.Mode {
 			return firewallsv1.Mode(firewallsv1.Mode_value[e.(types.String).ValueString()])
 		}),
-		Labels:      framework.MapElements(m.Labels, func(e attr.Value) *firewallsv1.Label { return firewallLabelsToProto(e.(types.Object)) }),
+		Labels:      framework.MapElements(m.Labels, func(e attr.Value) *firewallsv1.Label { return firewall_LabelsToProto(e.(types.Object)) }),
 		DefaultMode: firewallsv1.Mode(firewallsv1.Mode_value[m.DefaultMode.ValueString()]),
+		Placement:   firewall_PlacementToProto(m.Placement),
+		Options:     firewall_OptionsToProto(m.Options),
+		Peers:       framework.Elements(m.Peers, func(e attr.Value) *firewallsv1.Peer { return firewall_PeersToProto(e.(types.Object)) }),
+		Annotations: framework.StringMapToProto(m.Annotations),
 	}
 }
 
@@ -400,14 +553,18 @@ func firewallFromProto(p *firewallsv1.Firewall, m *firewallModel) error {
 	m.ID = types.StringValue(p.GetName())
 	m.Project = types.StringValue(values[0])
 	m.Name = types.StringValue(p.GetName())
-	m.Rules = framework.Optional(m.Rules, framework.MessageList(firewallRulesAttrTypes(), p.GetRules(), m.Rules, firewallRulesFromProto), len(p.GetRules()) == 0)
+	m.Rules = framework.Optional(m.Rules, framework.MessageList(firewall_RulesAttrTypes(), p.GetRules(), m.Rules, firewall_RulesFromProto), len(p.GetRules()) == 0)
 	m.Tags = framework.Optional(m.Tags, framework.StringSet(p.GetTags()), len(p.GetTags()) == 0)
-	m.Spec = framework.Object(p.GetSpec(), m.Spec, firewallSpecAttrTypes(), firewallSpecFromProto)
+	m.Spec = framework.Object(p.GetSpec(), m.Spec, firewall_SpecAttrTypes(), firewall_SpecFromProto)
 	m.Priorities = framework.Optional(m.Priorities, framework.ListOf(types.Int64Type, p.GetPriorities(), func(v int32) types.Int64 { return types.Int64Value(int64(v)) }), len(p.GetPriorities()) == 0)
 	m.Modes = framework.Optional(m.Modes, framework.SetOf(types.StringType, p.GetModes(), func(v firewallsv1.Mode) types.String { return types.StringValue(v.String()) }), len(p.GetModes()) == 0)
-	m.Status = framework.Object(p.GetStatus(), types.ObjectNull(firewallStatusAttrTypes()), firewallStatusAttrTypes(), firewallStatusFromProto)
-	m.Labels = framework.Optional(m.Labels, framework.MessageMap(firewallLabelsAttrTypes(), p.GetLabels(), m.Labels, firewallLabelsFromProto), len(p.GetLabels()) == 0)
+	m.Status = framework.Object(p.GetStatus(), types.ObjectNull(firewall_StatusAttrTypes()), firewall_StatusAttrTypes(), firewall_StatusFromProto)
+	m.Labels = framework.Optional(m.Labels, framework.MessageMap(firewall_LabelsAttrTypes(), p.GetLabels(), m.Labels, firewall_LabelsFromProto), len(p.GetLabels()) == 0)
 	m.DefaultMode = framework.Optional(m.DefaultMode, types.StringValue(p.GetDefaultMode().String()), p.GetDefaultMode() == 0)
+	m.Placement = framework.Object(p.GetPlacement(), m.Placement, firewall_PlacementAttrTypes(), firewall_PlacementFromProto)
+	m.Options = framework.Object(p.GetOptions(), m.Options, firewall_OptionsAttrTypes(), firewall_OptionsFromProto)
+	m.Peers = framework.MessageList(firewall_PeersAttrTypes(), p.GetPeers(), m.Peers, firewall_PeersFromProto)
+	m.Annotations = framework.Optional(m.Annotations, framework.StringMap(p.GetAnnotations()), len(p.GetAnnotations()) == 0)
 	return nil
 }
 
@@ -420,13 +577,13 @@ func firewallResource() framework.ResourceSpec[firewallModel, *firewallsv1.Firew
 		FromProto: firewallFromProto,
 		UpdateMask: func(plan, state *firewallModel) []string {
 			var mask []string
-			if !framework.SameMessages(framework.Elements(plan.Rules, func(e attr.Value) *firewallsv1.Rule { return firewallRulesToProto(e.(types.Object)) }), framework.Elements(state.Rules, func(e attr.Value) *firewallsv1.Rule { return firewallRulesToProto(e.(types.Object)) })) {
+			if !framework.SameMessages(framework.Elements(plan.Rules, func(e attr.Value) *firewallsv1.Rule { return firewall_RulesToProto(e.(types.Object)) }), framework.Elements(state.Rules, func(e attr.Value) *firewallsv1.Rule { return firewall_RulesToProto(e.(types.Object)) })) {
 				mask = append(mask, "rules")
 			}
 			if !plan.Tags.Equal(state.Tags) {
 				mask = append(mask, "tags")
 			}
-			if !proto.Equal(firewallSpecToProto(plan.Spec), firewallSpecToProto(state.Spec)) {
+			if !proto.Equal(firewall_SpecToProto(plan.Spec), firewall_SpecToProto(state.Spec)) {
 				mask = append(mask, "spec")
 			}
 			if !plan.Priorities.Equal(state.Priorities) {
@@ -435,11 +592,17 @@ func firewallResource() framework.ResourceSpec[firewallModel, *firewallsv1.Firew
 			if !plan.Modes.Equal(state.Modes) {
 				mask = append(mask, "modes")
 			}
-			if !framework.SameMessageMaps(framework.MapElements(plan.Labels, func(e attr.Value) *firewallsv1.Label { return firewallLabelsToProto(e.(types.Object)) }), framework.MapElements(state.Labels, func(e attr.Value) *firewallsv1.Label { return firewallLabelsToProto(e.(types.Object)) })) {
+			if !framework.SameMessageMaps(framework.MapElements(plan.Labels, func(e attr.Value) *firewallsv1.Label { return firewall_LabelsToProto(e.(types.Object)) }), framework.MapElements(state.Labels, func(e attr.Value) *firewallsv1.Label { return firewall_LabelsToProto(e.(types.Object)) })) {
 				mask = append(mask, "labels")
 			}
 			if !plan.DefaultMode.Equal(state.DefaultMode) {
 				mask = append(mask, "default_mode")
+			}
+			if !proto.Equal(firewall_OptionsToProto(plan.Options), firewall_OptionsToProto(state.Options)) {
+				mask = append(mask, "options")
+			}
+			if !plan.Annotations.Equal(state.Annotations) {
+				mask = append(mask, "annotations")
 			}
 			return mask
 		},
@@ -473,120 +636,124 @@ type firewallItemModel struct {
 	Status      types.Object `tfsdk:"status"`
 	Labels      types.Map    `tfsdk:"labels"`
 	DefaultMode types.String `tfsdk:"default_mode"`
+	Placement   types.Object `tfsdk:"placement"`
+	Options     types.Object `tfsdk:"options"`
+	Peers       types.List   `tfsdk:"peers"`
+	Annotations types.Map    `tfsdk:"annotations"`
 }
 
-func firewallItemRulesAttrTypes() map[string]attr.Type {
+func firewallItem_RulesAttrTypes() map[string]attr.Type {
 	return map[string]attr.Type{
 		"protocol": types.StringType,
-		"ports":    types.ObjectType{AttrTypes: firewallItemRulesPortsAttrTypes()},
+		"ports":    types.ObjectType{AttrTypes: firewallItem_Rules_PortsAttrTypes()},
 		"sources":  types.ListType{ElemType: types.StringType},
 		"id":       types.StringType,
 	}
 }
 
-func firewallItemRulesFromProto(p *firewallsv1.Rule, prior types.Object) types.Object {
-	return types.ObjectValueMust(firewallItemRulesAttrTypes(), map[string]attr.Value{
+func firewallItem_RulesFromProto(p *firewallsv1.Rule, prior types.Object) types.Object {
+	return types.ObjectValueMust(firewallItem_RulesAttrTypes(), map[string]attr.Value{
 		"protocol": types.StringValue(p.GetProtocol()),
-		"ports":    framework.Object(p.GetPorts(), types.ObjectNull(firewallItemRulesPortsAttrTypes()), firewallItemRulesPortsAttrTypes(), firewallItemRulesPortsFromProto),
+		"ports":    framework.Object(p.GetPorts(), types.ObjectNull(firewallItem_Rules_PortsAttrTypes()), firewallItem_Rules_PortsAttrTypes(), firewallItem_Rules_PortsFromProto),
 		"sources":  framework.StringList(p.GetSources()),
 		"id":       types.StringValue(p.GetId()),
 	})
 }
 
-func firewallItemRulesToProto(o types.Object) *firewallsv1.Rule {
+func firewallItem_RulesToProto(o types.Object) *firewallsv1.Rule {
 	if o.IsNull() || o.IsUnknown() {
 		return nil
 	}
 	return &firewallsv1.Rule{}
 }
 
-func firewallItemRulesPortsAttrTypes() map[string]attr.Type {
+func firewallItem_Rules_PortsAttrTypes() map[string]attr.Type {
 	return map[string]attr.Type{
 		"first": types.Int64Type,
 		"last":  types.Int64Type,
 	}
 }
 
-func firewallItemRulesPortsFromProto(p *firewallsv1.PortRange, prior types.Object) types.Object {
-	return types.ObjectValueMust(firewallItemRulesPortsAttrTypes(), map[string]attr.Value{
+func firewallItem_Rules_PortsFromProto(p *firewallsv1.PortRange, prior types.Object) types.Object {
+	return types.ObjectValueMust(firewallItem_Rules_PortsAttrTypes(), map[string]attr.Value{
 		"first": types.Int64Value(int64(p.GetFirst())),
 		"last":  types.Int64Value(int64(p.GetLast())),
 	})
 }
 
-func firewallItemRulesPortsToProto(o types.Object) *firewallsv1.PortRange {
+func firewallItem_Rules_PortsToProto(o types.Object) *firewallsv1.PortRange {
 	if o.IsNull() || o.IsUnknown() {
 		return nil
 	}
 	return &firewallsv1.PortRange{}
 }
 
-func firewallItemSpecAttrTypes() map[string]attr.Type {
+func firewallItem_SpecAttrTypes() map[string]attr.Type {
 	return map[string]attr.Type{
 		"network":     types.StringType,
-		"interfaces":  types.SetType{ElemType: types.ObjectType{AttrTypes: firewallItemSpecInterfacesAttrTypes()}},
+		"interfaces":  types.SetType{ElemType: types.ObjectType{AttrTypes: firewallItem_Spec_InterfacesAttrTypes()}},
 		"description": types.StringType,
 	}
 }
 
-func firewallItemSpecFromProto(p *firewallsv1.Spec, prior types.Object) types.Object {
-	return types.ObjectValueMust(firewallItemSpecAttrTypes(), map[string]attr.Value{
+func firewallItem_SpecFromProto(p *firewallsv1.Spec, prior types.Object) types.Object {
+	return types.ObjectValueMust(firewallItem_SpecAttrTypes(), map[string]attr.Value{
 		"network":     types.StringValue(p.GetNetwork()),
-		"interfaces":  framework.MessageSet(firewallItemSpecInterfacesAttrTypes(), p.GetInterfaces(), types.SetNull(types.ObjectType{AttrTypes: firewallItemSpecInterfacesAttrTypes()}), firewallItemSpecInterfacesFromProto, firewallItemSpecInterfacesToProto),
+		"interfaces":  framework.MessageSet(firewallItem_Spec_InterfacesAttrTypes(), p.GetInterfaces(), types.SetNull(types.ObjectType{AttrTypes: firewallItem_Spec_InterfacesAttrTypes()}), firewallItem_Spec_InterfacesFromProto, firewallItem_Spec_InterfacesToProto),
 		"description": types.StringValue(p.GetDescription()),
 	})
 }
 
-func firewallItemSpecToProto(o types.Object) *firewallsv1.Spec {
+func firewallItem_SpecToProto(o types.Object) *firewallsv1.Spec {
 	if o.IsNull() || o.IsUnknown() {
 		return nil
 	}
 	return &firewallsv1.Spec{}
 }
 
-func firewallItemSpecInterfacesAttrTypes() map[string]attr.Type {
+func firewallItem_Spec_InterfacesAttrTypes() map[string]attr.Type {
 	return map[string]attr.Type{
 		"subnet":    types.StringType,
-		"addresses": types.ListType{ElemType: types.ObjectType{AttrTypes: firewallItemSpecInterfacesAddressesAttrTypes()}},
+		"addresses": types.ListType{ElemType: types.ObjectType{AttrTypes: firewallItem_Spec_Interfaces_AddressesAttrTypes()}},
 	}
 }
 
-func firewallItemSpecInterfacesFromProto(p *firewallsv1.Interface, prior types.Object) types.Object {
-	return types.ObjectValueMust(firewallItemSpecInterfacesAttrTypes(), map[string]attr.Value{
+func firewallItem_Spec_InterfacesFromProto(p *firewallsv1.Interface, prior types.Object) types.Object {
+	return types.ObjectValueMust(firewallItem_Spec_InterfacesAttrTypes(), map[string]attr.Value{
 		"subnet":    types.StringValue(p.GetSubnet()),
-		"addresses": framework.MessageList(firewallItemSpecInterfacesAddressesAttrTypes(), p.GetAddresses(), types.ListNull(types.ObjectType{AttrTypes: firewallItemSpecInterfacesAddressesAttrTypes()}), firewallItemSpecInterfacesAddressesFromProto),
+		"addresses": framework.MessageList(firewallItem_Spec_Interfaces_AddressesAttrTypes(), p.GetAddresses(), types.ListNull(types.ObjectType{AttrTypes: firewallItem_Spec_Interfaces_AddressesAttrTypes()}), firewallItem_Spec_Interfaces_AddressesFromProto),
 	})
 }
 
-func firewallItemSpecInterfacesToProto(o types.Object) *firewallsv1.Interface {
+func firewallItem_Spec_InterfacesToProto(o types.Object) *firewallsv1.Interface {
 	if o.IsNull() || o.IsUnknown() {
 		return nil
 	}
 	return &firewallsv1.Interface{}
 }
 
-func firewallItemSpecInterfacesAddressesAttrTypes() map[string]attr.Type {
+func firewallItem_Spec_Interfaces_AddressesAttrTypes() map[string]attr.Type {
 	return map[string]attr.Type{
 		"ip":      types.StringType,
 		"primary": types.BoolType,
 	}
 }
 
-func firewallItemSpecInterfacesAddressesFromProto(p *firewallsv1.Address, prior types.Object) types.Object {
-	return types.ObjectValueMust(firewallItemSpecInterfacesAddressesAttrTypes(), map[string]attr.Value{
+func firewallItem_Spec_Interfaces_AddressesFromProto(p *firewallsv1.Address, prior types.Object) types.Object {
+	return types.ObjectValueMust(firewallItem_Spec_Interfaces_AddressesAttrTypes(), map[string]attr.Value{
 		"ip":      types.StringValue(p.GetIp()),
 		"primary": types.BoolValue(p.GetPrimary()),
 	})
 }
 
-func firewallItemSpecInterfacesAddressesToProto(o types.Object) *firewallsv1.Address {
+func firewallItem_Spec_Interfaces_AddressesToProto(o types.Object) *firewallsv1.Address {
 	if o.IsNull() || o.IsUnknown() {
 		return nil
 	}
 	return &firewallsv1.Address{}
 }
 
-func firewallItemStatusAttrTypes() map[string]attr.Type {
+func firewallItem_StatusAttrTypes() map[string]attr.Type {
 	return map[string]attr.Type{
 		"state":      types.StringType,
 		"messages":   types.ListType{ElemType: types.StringType},
@@ -594,52 +761,121 @@ func firewallItemStatusAttrTypes() map[string]attr.Type {
 	}
 }
 
-func firewallItemStatusFromProto(p *firewallsv1.Status, prior types.Object) types.Object {
-	return types.ObjectValueMust(firewallItemStatusAttrTypes(), map[string]attr.Value{
+func firewallItem_StatusFromProto(p *firewallsv1.Status, prior types.Object) types.Object {
+	return types.ObjectValueMust(firewallItem_StatusAttrTypes(), map[string]attr.Value{
 		"state":      types.StringValue(p.GetState().String()),
 		"messages":   framework.StringList(p.GetMessages()),
 		"rule_count": types.Int64Value(int64(p.GetRuleCount())),
 	})
 }
 
-func firewallItemStatusToProto(o types.Object) *firewallsv1.Status {
+func firewallItem_StatusToProto(o types.Object) *firewallsv1.Status {
 	if o.IsNull() || o.IsUnknown() {
 		return nil
 	}
 	return &firewallsv1.Status{}
 }
 
-func firewallItemLabelsAttrTypes() map[string]attr.Type {
+func firewallItem_LabelsAttrTypes() map[string]attr.Type {
 	return map[string]attr.Type{
 		"value": types.StringType,
 		"note":  types.StringType,
 	}
 }
 
-func firewallItemLabelsFromProto(p *firewallsv1.Label, prior types.Object) types.Object {
-	return types.ObjectValueMust(firewallItemLabelsAttrTypes(), map[string]attr.Value{
+func firewallItem_LabelsFromProto(p *firewallsv1.Label, prior types.Object) types.Object {
+	return types.ObjectValueMust(firewallItem_LabelsAttrTypes(), map[string]attr.Value{
 		"value": types.StringValue(p.GetValue()),
 		"note":  types.StringValue(p.GetNote()),
 	})
 }
 
-func firewallItemLabelsToProto(o types.Object) *firewallsv1.Label {
+func firewallItem_LabelsToProto(o types.Object) *firewallsv1.Label {
 	if o.IsNull() || o.IsUnknown() {
 		return nil
 	}
 	return &firewallsv1.Label{}
 }
 
+func firewallItem_PlacementAttrTypes() map[string]attr.Type {
+	return map[string]attr.Type{
+		"group": types.StringType,
+		"host":  types.StringType,
+	}
+}
+
+func firewallItem_PlacementFromProto(p *firewallsv1.Placement, prior types.Object) types.Object {
+	return types.ObjectValueMust(firewallItem_PlacementAttrTypes(), map[string]attr.Value{
+		"group": types.StringValue(p.GetGroup()),
+		"host":  types.StringValue(p.GetHost()),
+	})
+}
+
+func firewallItem_PlacementToProto(o types.Object) *firewallsv1.Placement {
+	if o.IsNull() || o.IsUnknown() {
+		return nil
+	}
+	return &firewallsv1.Placement{}
+}
+
+func firewallItem_OptionsAttrTypes() map[string]attr.Type {
+	return map[string]attr.Type{
+		"tier":  types.StringType,
+		"slots": types.Int64Type,
+		"note":  types.StringType,
+	}
+}
+
+func firewallItem_OptionsFromProto(p *firewallsv1.Options, prior types.Object) types.Object {
+	return types.ObjectValueMust(firewallItem_OptionsAttrTypes(), map[string]attr.Value{
+		"tier":  types.StringValue(p.GetTier()),
+		"slots": types.Int64Value(int64(p.GetSlots())),
+		"note":  types.StringValue(p.GetNote()),
+	})
+}
+
+func firewallItem_OptionsToProto(o types.Object) *firewallsv1.Options {
+	if o.IsNull() || o.IsUnknown() {
+		return nil
+	}
+	return &firewallsv1.Options{}
+}
+
+func firewallItem_PeersAttrTypes() map[string]attr.Type {
+	return map[string]attr.Type{
+		"address": types.StringType,
+		"latency": types.Int64Type,
+	}
+}
+
+func firewallItem_PeersFromProto(p *firewallsv1.Peer, prior types.Object) types.Object {
+	return types.ObjectValueMust(firewallItem_PeersAttrTypes(), map[string]attr.Value{
+		"address": types.StringValue(p.GetAddress()),
+		"latency": types.Int64Value(int64(p.GetLatency())),
+	})
+}
+
+func firewallItem_PeersToProto(o types.Object) *firewallsv1.Peer {
+	if o.IsNull() || o.IsUnknown() {
+		return nil
+	}
+	return &firewallsv1.Peer{}
+}
+
 func firewallItemFromProto(p *firewallsv1.Firewall, m *firewallItemModel) error {
 	m.Name = types.StringValue(p.GetName())
-	m.Rules = framework.MessageList(firewallItemRulesAttrTypes(), p.GetRules(), types.ListNull(types.ObjectType{AttrTypes: firewallItemRulesAttrTypes()}), firewallItemRulesFromProto)
+	m.Rules = framework.MessageList(firewallItem_RulesAttrTypes(), p.GetRules(), types.ListNull(types.ObjectType{AttrTypes: firewallItem_RulesAttrTypes()}), firewallItem_RulesFromProto)
 	m.Tags = framework.StringSet(p.GetTags())
-	m.Spec = framework.Object(p.GetSpec(), types.ObjectNull(firewallItemSpecAttrTypes()), firewallItemSpecAttrTypes(), firewallItemSpecFromProto)
+	m.Spec = framework.Object(p.GetSpec(), types.ObjectNull(firewallItem_SpecAttrTypes()), firewallItem_SpecAttrTypes(), firewallItem_SpecFromProto)
 	m.Priorities = framework.ListOf(types.Int64Type, p.GetPriorities(), func(v int32) types.Int64 { return types.Int64Value(int64(v)) })
 	m.Modes = framework.SetOf(types.StringType, p.GetModes(), func(v firewallsv1.Mode) types.String { return types.StringValue(v.String()) })
-	m.Status = framework.Object(p.GetStatus(), types.ObjectNull(firewallItemStatusAttrTypes()), firewallItemStatusAttrTypes(), firewallItemStatusFromProto)
-	m.Labels = framework.MessageMap(firewallItemLabelsAttrTypes(), p.GetLabels(), types.MapNull(types.ObjectType{AttrTypes: firewallItemLabelsAttrTypes()}), firewallItemLabelsFromProto)
+	m.Status = framework.Object(p.GetStatus(), types.ObjectNull(firewallItem_StatusAttrTypes()), firewallItem_StatusAttrTypes(), firewallItem_StatusFromProto)
+	m.Labels = framework.MessageMap(firewallItem_LabelsAttrTypes(), p.GetLabels(), types.MapNull(types.ObjectType{AttrTypes: firewallItem_LabelsAttrTypes()}), firewallItem_LabelsFromProto)
 	m.DefaultMode = types.StringValue(p.GetDefaultMode().String())
+	m.Placement = framework.Object(p.GetPlacement(), types.ObjectNull(firewallItem_PlacementAttrTypes()), firewallItem_PlacementAttrTypes(), firewallItem_PlacementFromProto)
+	m.Options = framework.Object(p.GetOptions(), types.ObjectNull(firewallItem_OptionsAttrTypes()), firewallItem_OptionsAttrTypes(), firewallItem_OptionsFromProto)
+	m.Peers = framework.MessageList(firewallItem_PeersAttrTypes(), p.GetPeers(), types.ListNull(types.ObjectType{AttrTypes: firewallItem_PeersAttrTypes()}), firewallItem_PeersFromProto)
+	m.Annotations = framework.StringMap(p.GetAnnotations())
 	return nil
 }
 
@@ -796,6 +1032,59 @@ func firewallListSchema() schema1.Schema {
 						"default_mode": schema1.StringAttribute{
 							MarkdownDescription: "One of `OPEN`, `CLOSED`.",
 							Computed:            true,
+						},
+						"placement": schema1.SingleNestedAttribute{
+							MarkdownDescription: "",
+							Computed:            true,
+							Attributes: map[string]schema1.Attribute{
+								"group": schema1.StringAttribute{
+									MarkdownDescription: "",
+									Computed:            true,
+								},
+								"host": schema1.StringAttribute{
+									MarkdownDescription: "",
+									Computed:            true,
+								},
+							},
+						},
+						"options": schema1.SingleNestedAttribute{
+							MarkdownDescription: "",
+							Computed:            true,
+							Attributes: map[string]schema1.Attribute{
+								"tier": schema1.StringAttribute{
+									MarkdownDescription: "",
+									Computed:            true,
+								},
+								"slots": schema1.Int64Attribute{
+									MarkdownDescription: "",
+									Computed:            true,
+								},
+								"note": schema1.StringAttribute{
+									MarkdownDescription: "",
+									Computed:            true,
+								},
+							},
+						},
+						"peers": schema1.ListNestedAttribute{
+							MarkdownDescription: "",
+							Computed:            true,
+							NestedObject: schema1.NestedAttributeObject{
+								Attributes: map[string]schema1.Attribute{
+									"address": schema1.StringAttribute{
+										MarkdownDescription: "",
+										Computed:            true,
+									},
+									"latency": schema1.Int64Attribute{
+										MarkdownDescription: "",
+										Computed:            true,
+									},
+								},
+							},
+						},
+						"annotations": schema1.MapAttribute{
+							MarkdownDescription: "",
+							Computed:            true,
+							ElementType:         types.StringType,
 						},
 					},
 				},

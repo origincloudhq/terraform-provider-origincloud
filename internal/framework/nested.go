@@ -120,13 +120,17 @@ func MessageList[P proto.Message](attrTypes map[string]attr.Type, items []P, pri
 // that sends the same, as to converts it, if any.
 func MessageSet[P proto.Message](attrTypes map[string]attr.Type, items []P, prior types.Set, from func(P, types.Object) types.Object, to func(types.Object) P) types.Set {
 	priors := objects(prior)
+	priorSent := make([]P, len(priors))
+	for j, p := range priors {
+		priorSent[j] = to(p)
+	}
 	used := make([]bool, len(priors))
 	elements := make([]attr.Value, len(items))
 	for i, item := range items {
 		e := types.ObjectNull(attrTypes)
 		sent := to(from(item, e))
 		for j, p := range priors {
-			if !used[j] && proto.Equal(to(p), sent) {
+			if !used[j] && proto.Equal(priorSent[j], sent) {
 				e, used[j] = p, true
 				break
 			}
