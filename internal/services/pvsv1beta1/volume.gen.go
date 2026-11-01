@@ -265,7 +265,7 @@ type volumeListModel struct {
 
 func volumeListSchema() schema1.Schema {
 	return schema1.Schema{
-		MarkdownDescription: "Lists the volumes in a zone, oldest first. Deleted volumes aren't listed.",
+		MarkdownDescription: "Lists the volumes in a zone, oldest first. Deleted volumes aren't listed. For every zone's volumes, list the zones whose `services` name `pvs` with the location service (`location.origincloudapis.eu`), then each zone's volumes.",
 		Attributes: map[string]schema1.Attribute{
 			"project": schema1.StringAttribute{
 				MarkdownDescription: "The project whose volumes to list.",

@@ -36,4 +36,4 @@ provider "origincloud" {
 ### Optional
 
 - `endpoint` (String) The URL every call goes to instead, such as a test server's.
-- `region` (String) The region whose front door the provider calls, such as `eu-central1`. Every front door serves every resource; a region only picks the nearest. Defaults to `ORIGINCLOUD_REGION`, and to the regionless endpoint when that is unset.
+- `region` (String) The region whose front door the provider calls, such as `eu-central1`. Every front door serves every resource; a region only picks the nearest. A global service, such as location, is always called at its regionless host. Defaults to `ORIGINCLOUD_REGION`, and to the regionless endpoint when that is unset.

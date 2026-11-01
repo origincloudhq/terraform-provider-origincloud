@@ -13,6 +13,10 @@ data sources are generated from the API definitions in
 | Data source | `origincloud_pvs_storage_classes` | Every storage class |
 | Data source | `origincloud_pvs_volumes` | The volumes in a zone |
 | Data source | `origincloud_pvs_snapshots` | The snapshots in a zone |
+| Data source | `origincloud_location_region` | A region and its zones |
+| Data source | `origincloud_location_regions` | Every region |
+| Data source | `origincloud_location_zone` | A zone, its region and the services it offers |
+| Data source | `origincloud_location_zones` | Every zone |
 
 ## Using it
 
@@ -46,6 +50,22 @@ resource "origincloud_pvs_snapshot" "data" {
 }
 ```
 
+A list of zonal resources, such as `origincloud_pvs_volumes`, covers one
+zone. For every zone's, list the zones that offer the service first:
+
+```hcl
+data "origincloud_location_zones" "all" {}
+
+data "origincloud_pvs_volumes" "each" {
+  for_each = toset([
+    for z in data.origincloud_location_zones.all.zones :
+    trimprefix(z.name, "zones/") if contains(z.services, "pvs")
+  ])
+  project = "my-project-123"
+  zone    = each.key
+}
+```
+
 `terraform init`, or `tofu init`, installs it from the
 [Terraform Registry](https://registry.terraform.io/providers/origincloudhq/origincloud)
 or the [OpenTofu registry](https://search.opentofu.org/provider/origincloudhq/origincloud),
@@ -64,7 +84,7 @@ Credentials come from the environment, the first of:
 
 | Argument | |
 |---|---|
-| `region` | The region whose front door the provider calls, such as `eu-central1`. Every front door serves every resource; a region only picks the nearest. Defaults to `ORIGINCLOUD_REGION`, and to the regionless endpoint when that is unset. |
+| `region` | The region whose front door the provider calls, such as `eu-central1`. Every front door serves every resource; a region only picks the nearest. A global service, such as location, is always called at its regionless host. Defaults to `ORIGINCLOUD_REGION`, and to the regionless endpoint when that is unset. |
 | `endpoint` | The URL every call goes to instead, such as a test server's. |
 
 ## Behaviour
@@ -90,8 +110,8 @@ Credentials come from the environment, the first of:
 
 ## Versions
 
-The resources follow their API's version: PVS is `v1beta1`, a preview that may
-change in incompatible ways, like the API itself.
+The resources follow their API's version: PVS and location are `v1beta1`, a
+preview that may change in incompatible ways, like the API itself.
 
 ## Contributing
 
