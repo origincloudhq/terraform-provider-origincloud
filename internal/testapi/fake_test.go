@@ -86,7 +86,10 @@ type fakeFirewalls struct {
 }
 
 func newFakeFirewalls(t *testing.T) *fakeFirewalls {
-	f := &fakeFirewalls{firewalls: map[string]*firewallsv1.Firewall{}, keys: map[string]*firewallsv1.Key{}}
+	f := &fakeFirewalls{firewalls: map[string]*firewallsv1.Firewall{}, keys: map[string]*firewallsv1.Key{
+		// A public key, in the other pattern.
+		"keys/pub-1": {Name: "keys/pub-1", State: firewallsv1.Key_ENABLED, Algorithm: proto.String("ed25519"), Usage: &firewallsv1.Key_Sign{Sign: true}},
+	}}
 	f.Server = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.Close)
 	return f
@@ -97,7 +100,7 @@ func (f *fakeFirewalls) serve(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 	path := strings.TrimPrefix(r.URL.Path, "/v1/")
 	body, _ := io.ReadAll(r.Body)
-	if strings.Contains(path, "/keys") {
+	if strings.HasPrefix(path, "keys/") || strings.Contains(path, "/keys") {
 		f.serveKey(w, r, path, body)
 		return
 	}
@@ -239,6 +242,15 @@ var keyCreated = time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
 func (f *fakeFirewalls) serveKey(w http.ResponseWriter, r *http.Request, path string, body []byte) {
 	name, method, _ := strings.Cut(path, ":")
 	switch {
+	case strings.HasSuffix(path, "/keys") && r.Method == http.MethodGet:
+		list := &firewallsv1.ListKeysResponse{}
+		for _, name := range slices.Sorted(maps.Keys(f.keys)) {
+			if strings.HasPrefix(name, path+"/") {
+				list.Keys = append(list.Keys, f.keys[name])
+			}
+		}
+		writeMessage(w, list)
+		return
 	case strings.HasSuffix(path, "/keys") && r.Method == http.MethodPost:
 		key := new(firewallsv1.Key)
 		if err := protojson.Unmarshal(body, key); err != nil {
@@ -300,6 +312,10 @@ func (f *fakeFirewalls) serveKey(w http.ResponseWriter, r *http.Request, path st
 			imported.ImportTime = timestamppb.New(keyCreated)
 		}
 		writeMessage(w, key)
+	case r.Method == http.MethodDelete && key.GetAlgorithm() == "doomed":
+		// Terminated, but the delete fails.
+		key.State = firewallsv1.Key_TERMINATED
+		writeError(w, http.StatusServiceUnavailable, "INTERNAL", "the delete failed after terminating "+name)
 	case r.Method == http.MethodDelete:
 		key.State = firewallsv1.Key_TERMINATED
 		result, _ := anypb.New(&emptypb.Empty{})
@@ -307,7 +323,8 @@ func (f *fakeFirewalls) serveKey(w http.ResponseWriter, r *http.Request, path st
 	}
 }
 
-// settleKey sets the values the API chooses for what was left out.
+// settleKey sets the values the API chooses for what was left out, and
+// sorts the sets.
 func (f *fakeFirewalls) settleKey(key *firewallsv1.Key) {
 	if key.Algorithm == nil {
 		key.Algorithm = proto.String("ed25519")
@@ -315,6 +332,17 @@ func (f *fakeFirewalls) settleKey(key *firewallsv1.Key) {
 	if key.Bits == nil {
 		key.Bits = proto.Int32(256)
 	}
+	windows := append(append([]*firewallsv1.Window{}, key.Pools...), key.Frozen...)
+	if key.Primary != nil {
+		windows = append(windows, key.Primary)
+	}
+	for _, w := range windows {
+		if w.Weight == nil {
+			w.Weight = proto.Int32(int32(10 * len(w.GetName())))
+		}
+	}
+	slices.SortFunc(key.Pools, func(a, b *firewallsv1.Window) int { return cmp.Compare(a.GetName(), b.GetName()) })
+	slices.SortFunc(key.Frozen, func(a, b *firewallsv1.Window) int { return cmp.Compare(a.GetName(), b.GetName()) })
 }
 
 // terminate terminates a key, as an action outside Terraform.
@@ -322,6 +350,12 @@ func (f *fakeFirewalls) terminate(name string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.keys[name].State = firewallsv1.Key_TERMINATED
+}
+
+func (f *fakeFirewalls) key(name string) *firewallsv1.Key {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return proto.Clone(f.keys[name]).(*firewallsv1.Key)
 }
 
 func (f *fakeFirewalls) lastKeyMask() string {

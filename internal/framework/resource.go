@@ -241,6 +241,13 @@ func (r *Resource[M, P]) Delete(ctx context.Context, req resource.DeleteRequest,
 		return
 	}
 	if err := r.spec.Delete(ctx, r.client, name); err != nil && !NotFound(err) {
+		// Gone meanwhile, such as an instance terminated while its delete
+		// was refused, it is deleted all the same.
+		if r.spec.Gone != nil {
+			if got, getErr := r.spec.Get(ctx, r.client, name); NotFound(getErr) || getErr == nil && r.spec.Gone(got) {
+				return
+			}
+		}
 		resp.Diagnostics.AddError(r.summary("delete"), err.Error())
 	}
 }

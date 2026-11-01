@@ -301,6 +301,9 @@ func snapshotListDataSource() framework.ListDataSourceSpec[snapshotListModel] {
 				if err != nil {
 					return err
 				}
+				if p.GetState() == v1beta1.Snapshot_DELETED {
+					continue
+				}
 				var item snapshotItemModel
 				if err := snapshotItemFromProto(p, &item); err != nil {
 					return err

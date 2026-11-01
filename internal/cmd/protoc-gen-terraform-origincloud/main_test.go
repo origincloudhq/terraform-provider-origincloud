@@ -295,20 +295,46 @@ func TestAnImmutableFieldsElementsMayBeImmutable(t *testing.T) {
 	)
 }
 
-// A resource type with two patterns, as images have, a project's and the
-// public ones, is created in the first.
-func TestAResourceWithTwoPatternsIsCreatedInTheFirst(t *testing.T) {
-	files, failure := run(t, func(file *descriptorpb.FileDescriptorProto) {
+// twoPatterns gives Widget a second pattern, before its own, and binds
+// CreateWidget's parent to parent when it isn't empty.
+func twoPatterns(parent string) func(*descriptorpb.FileDescriptorProto) {
+	return func(file *descriptorpb.FileDescriptorProto) {
 		r := proto.GetExtension(message(file, "Widget").GetOptions(), annotations.E_Resource).(*annotations.ResourceDescriptor)
-		r.Pattern = append(r.Pattern, "widgets/{widget}")
-	})
+		r.Pattern = append([]string{"widgets/{widget}"}, r.Pattern...)
+		if parent == "" {
+			return
+		}
+		for _, m := range file.GetService()[0].GetMethod() {
+			if m.GetName() == "CreateWidget" {
+				proto.SetExtension(m.Options, annotations.E_Http, &annotations.HttpRule{Pattern: &annotations.HttpRule_Post{Post: "/v1/{parent=" + parent + "}/widgets"}, Body: "widget"})
+			}
+		}
+	}
+}
+
+// A resource type with two patterns, as images have, a project's and the
+// public ones, is created in the one its create's parent takes, and read by
+// name in any through a data source.
+func TestAResourceWithTwoPatterns(t *testing.T) {
+	files, failure := run(t, twoPatterns("projects/*"))
 	if failure != "" {
 		t.Fatal(failure)
 	}
-	contains(t, "widget.gen.go", files["internal/services/widgetsv1/widget.gen.go"],
+	widget := files["internal/services/widgetsv1/widget.gen.go"]
+	contains(t, "widget.gen.go", widget,
 		`Parent: "projects/" + plan.Project.ValueString(),`,
 		`framework.NameValues("projects/{project}/widgets/{widget}", p.GetName())`,
+		"func widgetByNameDataSource() framework.DataSourceSpec[widgetByNameModel, *v1.Widget]",
 	)
+	contains(t, "services.gen.go", files["internal/services/widgetsv1/services.gen.go"], "framework.NewDataSource(widgetByNameDataSource()),")
+	for _, tc := range []struct{ parent, want string }{
+		{"", "Widget: CreateWidget has no HTTP binding of its parent to choose one of the patterns"},
+		{"organizations/*", "Widget: CreateWidget's parent organizations/* is that of none of the patterns"},
+	} {
+		if _, failure := run(t, twoPatterns(tc.parent)); !strings.Contains(failure, tc.want) {
+			t.Errorf("generation failed with %q, want %q", failure, tc.want)
+		}
+	}
 }
 
 // A secret declared for a field the API hasn't, or that isn't an
@@ -383,6 +409,12 @@ func TestUnsupportedFieldsFailGeneration(t *testing.T) {
 			change: withField("Widget", `name: "ports" number: 9 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.widgets.v1.Port" options { [google.api.field_behavior]: IMMUTABLE [google.api.field_behavior]: UNORDERED_LIST }`,
 				`name: "Port" field { name: "number" number: 1 label: LABEL_OPTIONAL type: TYPE_INT32 options { [google.api.field_behavior]: IMMUTABLE } }`),
 			want: "Widget: field ports: Port: field number: a field of a repeated or map field's elements can't be IMMUTABLE",
+		},
+		{
+			name: "a field with presence in a list's elements",
+			change: withField("Widget", `name: "windows" number: 9 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.widgets.v1.Window" `+optional,
+				`name: "Window" field { name: "weight" number: 1 label: LABEL_OPTIONAL type: TYPE_INT32 oneof_index: 0 proto3_optional: true `+optional+` } oneof_decl { name: "_weight" }`),
+			want: "Widget: field windows: Window: field weight: a field with explicit presence (proto3 optional) can't be in a list's elements",
 		},
 		{
 			name: "an immutable field the API chooses in a list's elements",

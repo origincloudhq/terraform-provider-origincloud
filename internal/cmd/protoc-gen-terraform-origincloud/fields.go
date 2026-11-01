@@ -48,8 +48,8 @@ type attribute struct {
 	// wellKnown is a string's google.protobuf type: Timestamp or Duration.
 	wellKnown string
 	// presence: the field has explicit presence (proto3 optional), so
-	// unset is null.
-	presence bool
+	// unset is null. chosenObject: a message field marked optional.
+	presence, chosenObject bool
 	// oneof is the oneof the field is a member of; oneofRequired says that
 	// one of its members must be set.
 	oneof         *protogen.Oneof
@@ -94,6 +94,8 @@ type scope struct {
 	// nested is a nested message's field, inElements one of a settable
 	// list's, set's or map's elements, and inSet one of a settable set's.
 	nested, inElements, inSet bool
+	// inList is one of a settable list's elements, matched by position.
+	inList bool
 	// replaced: the top-level attribute holding it already replaces the
 	// resource when it changes.
 	replaced bool
@@ -130,6 +132,9 @@ func attributes(t resourceType, forResource bool, prefix string) ([]attribute, e
 		if err != nil {
 			return nil, fmt.Errorf("field %s: %w", f.Desc.Name(), err)
 		}
+		if a.sensitive && !forResource {
+			continue // a secret is the create's only: no read has it
+		}
 		if slices.ContainsFunc(attrs, func(b attribute) bool { return b.name == a.name }) {
 			return nil, fmt.Errorf("field %s: the attribute %s is already the name's", f.Desc.Name(), a.name)
 		}
@@ -159,6 +164,10 @@ func attributes(t resourceType, forResource bool, prefix string) ([]attribute, e
 func fieldAttribute(s scope, f *protogen.Field) (attribute, error) {
 	a := attribute{name: string(f.Desc.Name()), goName: f.GoName, field: f, doc: prose(f.Comments.Leading)}
 	switch {
+	case f.Desc.HasOptionalKeyword() && f.Desc.Kind() == protoreflect.MessageKind:
+		// A message field has presence anyway: optional, it is an object
+		// the API chooses when it is left out.
+		a.chosenObject = true
 	case f.Desc.HasOptionalKeyword():
 		a.presence = true
 	case f.Oneof != nil:
@@ -311,11 +320,17 @@ func applyBehaviors(s scope, a *attribute, behaviors []annotations.FieldBehavior
 		// The API chooses a value left out, such as the default storage
 		// class, which the state then keeps.
 		a.optional, a.computed, a.keep, a.replace = true, true, true, !s.replaced
+	case (a.presence || a.chosenObject) && s.inList && !s.replaced:
+		// Kept by position, a value could be planned for another element.
+		return fmt.Errorf("a field with explicit presence (proto3 optional) can't be in a list's elements: they are matched by position, so the value kept for one could be planned for another")
 	case has(annotations.FieldBehavior_OPTIONAL):
 		a.optional = true
 		// With explicit presence, the API chooses the value left out, and
 		// the state keeps it until one is set.
-		a.computed, a.keep = a.presence, a.presence
+		a.computed, a.keep = a.presence || a.chosenObject, a.presence || a.chosenObject
+		if a.presence || a.chosenObject {
+			a.doc = strings.TrimSpace(a.doc + " Left out, the API chooses it; removing it keeps the current value.")
+		}
 		if !s.nested {
 			a.replace = !updatable
 			a.updatable = updatable
@@ -351,6 +366,7 @@ func nestedAttributes(s scope, a *attribute, m *protogen.Message) error {
 	child.computed = s.computed || a.computedOnly()
 	child.inSet = s.inSet || a.kind == "Set" && !child.computed
 	child.inElements = s.inElements || a.collection() && !child.computed
+	child.inList = s.inList || a.kind == "List" && !child.computed
 	child.replaced = s.replaced || a.replace
 	child.chosen = s.chosen || a.kind == "Object" && a.optional && a.computed
 	// A separator per level: spec.rules and spec_rules don't meet.
@@ -440,10 +456,19 @@ func generateAttributes(g *protogen.GeneratedFile, schemaPackage protogen.GoImpo
 			// replace the resource.
 			value := c.types(a.kind)
 			modifiers = append(modifiers, c.framework(a.kind+"ReplaceIfSent")+"(func(plan, state "+value+") bool { return "+sentSame(g, a, "plan", "state")+" }, "+fmt.Sprint(a.computed)+")")
+		} else if a.replace && a.wellKnown != "" {
+			// The same instant or length, however written.
+			same := g.QualifiedGoIdent(protoPackage.Ident("Equal")) + "(" + c.toProto(a, "plan") + ", " + c.toProto(a, "state") + ")"
+			modifiers = append(modifiers, c.framework("StringReplaceIfSent")+"(func(plan, state "+c.types("String")+") bool { return "+same+" }, "+fmt.Sprint(a.computed)+")")
 		} else if a.replace && a.computed {
 			modifiers = append(modifiers, g.QualifiedGoIdent(modifierPackage.Ident("RequiresReplaceIfConfigured"))+"()")
 		} else if a.replace {
 			modifiers = append(modifiers, g.QualifiedGoIdent(modifierPackage.Ident("RequiresReplace"))+"()")
+		}
+		if a.oneof != nil && a.keep {
+			// Kept from the state, it would be sent though another member is
+			// configured.
+			modifiers = append(modifiers, c.framework("OneofOthers")+"{"+quoted(oneofOthers(a, attrs))+"}")
 		}
 		if len(modifiers) > 0 {
 			g.P("PlanModifiers: []", g.QualifiedGoIdent(planPackage.Ident(a.kind)), "{", strings.Join(modifiers, ", "), "},")
@@ -459,6 +484,18 @@ func generateAttributes(g *protogen.GeneratedFile, schemaPackage protogen.GoImpo
 		g.P("},")
 	}
 	g.P("},")
+}
+
+// oneofOthers returns the names of the other settable members of a's
+// oneof, among attrs.
+func oneofOthers(a attribute, attrs []attribute) []string {
+	var others []string
+	for _, b := range attrs {
+		if b.oneof == a.oneof && b.name != a.name && (b.required || b.optional) {
+			others = append(others, b.name)
+		}
+	}
+	return others
 }
 
 // attributeValidators returns the validators of a, one of attrs.

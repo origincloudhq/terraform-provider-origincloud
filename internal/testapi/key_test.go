@@ -3,6 +3,7 @@ package testapi
 import (
 	"fmt"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -143,7 +144,7 @@ func TestKeyLifecycle(t *testing.T) {
 			fake.mu.Lock()
 			defer fake.mu.Unlock()
 			for name, k := range fake.keys {
-				if k.GetState() != firewallsv1.Key_TERMINATED {
+				if strings.HasPrefix(name, "projects/") && k.GetState() != firewallsv1.Key_TERMINATED {
 					return fmt.Errorf("%s is %s", name, k.GetState())
 				}
 			}
@@ -185,7 +186,7 @@ resource "origincloud_keys_key" "k" {
 			},
 		},
 	})
-	if len(fake.keys) != 0 {
+	if len(fake.keys) != 1 { // the public key
 		t.Errorf("a refused configuration reached the API")
 	}
 }

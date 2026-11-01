@@ -104,8 +104,12 @@ Credentials come from the environment, the first of:
   and durations strings in seconds, such as `90s`. A timestamp written in
   another time zone stays as written while it is the same instant.
 - **Secrets.** A value the API returns only once, when the resource is
-  created, such as a generated private key, is sensitive and stays in the
-  state from then on. An imported resource has none.
+  created, such as a generated private key, stays in the state from then on.
+  It is sensitive, which hides it in plans and output, but the state holds
+  it as plain text: protect the state. An imported resource has none.
+- **Values the API chooses.** An optional attribute the API fills in when it
+  is left out, such as a default, keeps the API's value; removing it from the
+  configuration keeps the current value rather than resetting it.
 - **Protection.** A snapshot is the source of new volumes only while it is
   protected. `protected = true` protects it, and destroying it unprotects it
   first.

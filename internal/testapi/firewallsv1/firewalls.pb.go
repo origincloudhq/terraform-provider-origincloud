@@ -855,7 +855,16 @@ type Key struct {
 	//
 	//	*Key_Sign
 	//	*Key_Encrypt
-	Usage         isKey_Usage `protobuf_oneof:"usage"`
+	Usage     isKey_Usage            `protobuf_oneof:"usage"`
+	NotBefore *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=not_before,json=notBefore,proto3" json:"not_before,omitempty"`
+	Pools     []*Window              `protobuf:"bytes,15,rep,name=pools,proto3" json:"pools,omitempty"`
+	Frozen    []*Window              `protobuf:"bytes,19,rep,name=frozen,proto3" json:"frozen,omitempty"`
+	// Types that are valid to be assigned to Target:
+	//
+	//	*Key_Zone
+	//	*Key_Region
+	Target        isKey_Target `protobuf_oneof:"target"`
+	Primary       *Window      `protobuf:"bytes,18,opt,name=primary,proto3,oneof" json:"primary,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -996,6 +1005,59 @@ func (x *Key) GetEncrypt() bool {
 	return false
 }
 
+func (x *Key) GetNotBefore() *timestamppb.Timestamp {
+	if x != nil {
+		return x.NotBefore
+	}
+	return nil
+}
+
+func (x *Key) GetPools() []*Window {
+	if x != nil {
+		return x.Pools
+	}
+	return nil
+}
+
+func (x *Key) GetFrozen() []*Window {
+	if x != nil {
+		return x.Frozen
+	}
+	return nil
+}
+
+func (x *Key) GetTarget() isKey_Target {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+func (x *Key) GetZone() string {
+	if x != nil {
+		if x, ok := x.Target.(*Key_Zone); ok {
+			return x.Zone
+		}
+	}
+	return ""
+}
+
+func (x *Key) GetRegion() string {
+	if x != nil {
+		if x, ok := x.Target.(*Key_Region); ok {
+			return x.Region
+		}
+	}
+	return ""
+}
+
+func (x *Key) GetPrimary() *Window {
+	if x != nil {
+		return x.Primary
+	}
+	return nil
+}
+
 type isKey_Source interface {
 	isKey_Source()
 }
@@ -1028,6 +1090,162 @@ func (*Key_Sign) isKey_Usage() {}
 
 func (*Key_Encrypt) isKey_Usage() {}
 
+type isKey_Target interface {
+	isKey_Target()
+}
+
+type Key_Zone struct {
+	Zone string `protobuf:"bytes,16,opt,name=zone,proto3,oneof"`
+}
+
+type Key_Region struct {
+	Region string `protobuf:"bytes,17,opt,name=region,proto3,oneof"`
+}
+
+func (*Key_Zone) isKey_Target() {}
+
+func (*Key_Region) isKey_Target() {}
+
+type Window struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Weight        *int32                 `protobuf:"varint,2,opt,name=weight,proto3,oneof" json:"weight,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Window) Reset() {
+	*x = Window{}
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Window) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Window) ProtoMessage() {}
+
+func (x *Window) ProtoReflect() protoreflect.Message {
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Window.ProtoReflect.Descriptor instead.
+func (*Window) Descriptor() ([]byte, []int) {
+	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *Window) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Window) GetWeight() int32 {
+	if x != nil && x.Weight != nil {
+		return *x.Weight
+	}
+	return 0
+}
+
+type ListKeysRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Parent        string                 `protobuf:"bytes,1,opt,name=parent,proto3" json:"parent,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListKeysRequest) Reset() {
+	*x = ListKeysRequest{}
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListKeysRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListKeysRequest) ProtoMessage() {}
+
+func (x *ListKeysRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListKeysRequest.ProtoReflect.Descriptor instead.
+func (*ListKeysRequest) Descriptor() ([]byte, []int) {
+	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ListKeysRequest) GetParent() string {
+	if x != nil {
+		return x.Parent
+	}
+	return ""
+}
+
+type ListKeysResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Keys          []*Key                 `protobuf:"bytes,1,rep,name=keys,proto3" json:"keys,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListKeysResponse) Reset() {
+	*x = ListKeysResponse{}
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListKeysResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListKeysResponse) ProtoMessage() {}
+
+func (x *ListKeysResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListKeysResponse.ProtoReflect.Descriptor instead.
+func (*ListKeysResponse) Descriptor() ([]byte, []int) {
+	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ListKeysResponse) GetKeys() []*Key {
+	if x != nil {
+		return x.Keys
+	}
+	return nil
+}
+
 type Origin struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Fingerprint   string                 `protobuf:"bytes,1,opt,name=fingerprint,proto3" json:"fingerprint,omitempty"`
@@ -1038,7 +1256,7 @@ type Origin struct {
 
 func (x *Origin) Reset() {
 	*x = Origin{}
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[12]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1050,7 +1268,7 @@ func (x *Origin) String() string {
 func (*Origin) ProtoMessage() {}
 
 func (x *Origin) ProtoReflect() protoreflect.Message {
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[12]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1063,7 +1281,7 @@ func (x *Origin) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Origin.ProtoReflect.Descriptor instead.
 func (*Origin) Descriptor() ([]byte, []int) {
-	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{12}
+	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *Origin) GetFingerprint() string {
@@ -1089,7 +1307,7 @@ type KeyNameRequest struct {
 
 func (x *KeyNameRequest) Reset() {
 	*x = KeyNameRequest{}
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[13]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1101,7 +1319,7 @@ func (x *KeyNameRequest) String() string {
 func (*KeyNameRequest) ProtoMessage() {}
 
 func (x *KeyNameRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[13]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1114,7 +1332,7 @@ func (x *KeyNameRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KeyNameRequest.ProtoReflect.Descriptor instead.
 func (*KeyNameRequest) Descriptor() ([]byte, []int) {
-	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{13}
+	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *KeyNameRequest) GetName() string {
@@ -1134,7 +1352,7 @@ type CreateKeyRequest struct {
 
 func (x *CreateKeyRequest) Reset() {
 	*x = CreateKeyRequest{}
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[14]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1146,7 +1364,7 @@ func (x *CreateKeyRequest) String() string {
 func (*CreateKeyRequest) ProtoMessage() {}
 
 func (x *CreateKeyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[14]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1159,7 +1377,7 @@ func (x *CreateKeyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateKeyRequest.ProtoReflect.Descriptor instead.
 func (*CreateKeyRequest) Descriptor() ([]byte, []int) {
-	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{14}
+	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *CreateKeyRequest) GetParent() string {
@@ -1186,7 +1404,7 @@ type UpdateKeyRequest struct {
 
 func (x *UpdateKeyRequest) Reset() {
 	*x = UpdateKeyRequest{}
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[15]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1198,7 +1416,7 @@ func (x *UpdateKeyRequest) String() string {
 func (*UpdateKeyRequest) ProtoMessage() {}
 
 func (x *UpdateKeyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[15]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1211,7 +1429,7 @@ func (x *UpdateKeyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateKeyRequest.ProtoReflect.Descriptor instead.
 func (*UpdateKeyRequest) Descriptor() ([]byte, []int) {
-	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{15}
+	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *UpdateKeyRequest) GetKey() *Key {
@@ -1237,7 +1455,7 @@ type GetFirewallRequest struct {
 
 func (x *GetFirewallRequest) Reset() {
 	*x = GetFirewallRequest{}
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[16]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1249,7 +1467,7 @@ func (x *GetFirewallRequest) String() string {
 func (*GetFirewallRequest) ProtoMessage() {}
 
 func (x *GetFirewallRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[16]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1262,7 +1480,7 @@ func (x *GetFirewallRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetFirewallRequest.ProtoReflect.Descriptor instead.
 func (*GetFirewallRequest) Descriptor() ([]byte, []int) {
-	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{16}
+	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *GetFirewallRequest) GetName() string {
@@ -1281,7 +1499,7 @@ type DeleteFirewallRequest struct {
 
 func (x *DeleteFirewallRequest) Reset() {
 	*x = DeleteFirewallRequest{}
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[17]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1293,7 +1511,7 @@ func (x *DeleteFirewallRequest) String() string {
 func (*DeleteFirewallRequest) ProtoMessage() {}
 
 func (x *DeleteFirewallRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[17]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1306,7 +1524,7 @@ func (x *DeleteFirewallRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteFirewallRequest.ProtoReflect.Descriptor instead.
 func (*DeleteFirewallRequest) Descriptor() ([]byte, []int) {
-	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{17}
+	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *DeleteFirewallRequest) GetName() string {
@@ -1325,7 +1543,7 @@ type ListFirewallsRequest struct {
 
 func (x *ListFirewallsRequest) Reset() {
 	*x = ListFirewallsRequest{}
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[18]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1337,7 +1555,7 @@ func (x *ListFirewallsRequest) String() string {
 func (*ListFirewallsRequest) ProtoMessage() {}
 
 func (x *ListFirewallsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[18]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1350,7 +1568,7 @@ func (x *ListFirewallsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFirewallsRequest.ProtoReflect.Descriptor instead.
 func (*ListFirewallsRequest) Descriptor() ([]byte, []int) {
-	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{18}
+	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ListFirewallsRequest) GetParent() string {
@@ -1369,7 +1587,7 @@ type ListFirewallsResponse struct {
 
 func (x *ListFirewallsResponse) Reset() {
 	*x = ListFirewallsResponse{}
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[19]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1381,7 +1599,7 @@ func (x *ListFirewallsResponse) String() string {
 func (*ListFirewallsResponse) ProtoMessage() {}
 
 func (x *ListFirewallsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[19]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1394,7 +1612,7 @@ func (x *ListFirewallsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFirewallsResponse.ProtoReflect.Descriptor instead.
 func (*ListFirewallsResponse) Descriptor() ([]byte, []int) {
-	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{19}
+	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ListFirewallsResponse) GetFirewalls() []*Firewall {
@@ -1414,7 +1632,7 @@ type CreateFirewallRequest struct {
 
 func (x *CreateFirewallRequest) Reset() {
 	*x = CreateFirewallRequest{}
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[20]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1426,7 +1644,7 @@ func (x *CreateFirewallRequest) String() string {
 func (*CreateFirewallRequest) ProtoMessage() {}
 
 func (x *CreateFirewallRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[20]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1439,7 +1657,7 @@ func (x *CreateFirewallRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateFirewallRequest.ProtoReflect.Descriptor instead.
 func (*CreateFirewallRequest) Descriptor() ([]byte, []int) {
-	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{20}
+	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *CreateFirewallRequest) GetParent() string {
@@ -1466,7 +1684,7 @@ type UpdateFirewallRequest struct {
 
 func (x *UpdateFirewallRequest) Reset() {
 	*x = UpdateFirewallRequest{}
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[21]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1478,7 +1696,7 @@ func (x *UpdateFirewallRequest) String() string {
 func (*UpdateFirewallRequest) ProtoMessage() {}
 
 func (x *UpdateFirewallRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[21]
+	mi := &file_test_firewalls_v1_firewalls_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1491,7 +1709,7 @@ func (x *UpdateFirewallRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateFirewallRequest.ProtoReflect.Descriptor instead.
 func (*UpdateFirewallRequest) Descriptor() ([]byte, []int) {
-	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{21}
+	return file_test_firewalls_v1_firewalls_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *UpdateFirewallRequest) GetFirewall() *Firewall {
@@ -1512,7 +1730,7 @@ var File_test_firewalls_v1_firewalls_proto protoreflect.FileDescriptor
 
 const file_test_firewalls_v1_firewalls_proto_rawDesc = "" +
 	"\n" +
-	"!test/firewalls/v1/firewalls.proto\x12\x11test.firewalls.v1\x1a\x17google/api/client.proto\x1a\x1fgoogle/api/field_behavior.proto\x1a\x19google/api/resource.proto\x1a#google/longrunning/operations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a google/protobuf/field_mask.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1egoogle/protobuf/duration.proto\"\xc4\a\n" +
+	"!test/firewalls/v1/firewalls.proto\x12\x11test.firewalls.v1\x1a\x17google/api/client.proto\x1a\x1fgoogle/api/field_behavior.proto\x1a\x19google/api/resource.proto\x1a#google/longrunning/operations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a google/protobuf/field_mask.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1cgoogle/api/annotations.proto\"\xc4\a\n" +
 	"\bFirewall\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tB\x03\xe0A\bR\x04name\x122\n" +
 	"\x05rules\x18\x02 \x03(\v2\x17.test.firewalls.v1.RuleB\x03\xe0A\x01R\x05rules\x12\x1a\n" +
@@ -1575,7 +1793,7 @@ const file_test_firewalls_v1_firewalls_proto_rawDesc = "" +
 	"\x04Peer\x12\x1d\n" +
 	"\aaddress\x18\x01 \x01(\tB\x03\xe0A\x02R\aaddress\x12\x1d\n" +
 	"\alatency\x18\x02 \x01(\x05B\x03\xe0A\x03R\alatency\x12\x17\n" +
-	"\x04port\x18\x03 \x01(\x05B\x03\xe0A\x05R\x04port\"\xdd\x05\n" +
+	"\x04port\x18\x03 \x01(\x05B\x03\xe0A\x05R\x04port\"\xac\b\n" +
 	"\x03Key\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tB\x03\xe0A\bR\x04name\x12@\n" +
 	"\vcreate_time\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampB\x03\xe0A\x03R\n" +
@@ -1585,25 +1803,44 @@ const file_test_firewalls_v1_firewalls_proto_rawDesc = "" +
 	"\x0frotation_period\x18\x04 \x01(\v2\x19.google.protobuf.DurationB\x03\xe0A\x01R\x0erotationPeriod\x12\x1b\n" +
 	"\x06secret\x18\x05 \x01(\tB\x03\xe0A\x03R\x06secret\x127\n" +
 	"\x05state\x18\x06 \x01(\x0e2\x1c.test.firewalls.v1.Key.StateB\x03\xe0A\x03R\x05state\x12&\n" +
-	"\talgorithm\x18\a \x01(\tB\x03\xe0A\x01H\x02R\talgorithm\x88\x01\x01\x12\x1c\n" +
-	"\x04bits\x18\b \x01(\x05B\x03\xe0A\x01H\x03R\x04bits\x88\x01\x01\x12\x19\n" +
+	"\talgorithm\x18\a \x01(\tB\x03\xe0A\x01H\x03R\talgorithm\x88\x01\x01\x12\x1c\n" +
+	"\x04bits\x18\b \x01(\x05B\x03\xe0A\x01H\x04R\x04bits\x88\x01\x01\x12\x19\n" +
 	"\x04seed\x18\t \x01(\tB\x03\xe0A\x01H\x00R\x04seed\x12<\n" +
 	"\bimported\x18\n" +
 	" \x01(\v2\x19.test.firewalls.v1.OriginB\x03\xe0A\x01H\x00R\bimported\x12\x19\n" +
 	"\x04sign\x18\v \x01(\bB\x03\xe0A\x02H\x01R\x04sign\x12\x1f\n" +
-	"\aencrypt\x18\f \x01(\bB\x03\xe0A\x02H\x01R\aencrypt\"I\n" +
+	"\aencrypt\x18\f \x01(\bB\x03\xe0A\x02H\x01R\aencrypt\x12>\n" +
+	"\n" +
+	"not_before\x18\r \x01(\v2\x1a.google.protobuf.TimestampB\x03\xe0A\x05R\tnotBefore\x127\n" +
+	"\x05pools\x18\x0f \x03(\v2\x19.test.firewalls.v1.WindowB\x06\xe0A\x01\xe0A\x06R\x05pools\x129\n" +
+	"\x06frozen\x18\x13 \x03(\v2\x19.test.firewalls.v1.WindowB\x06\xe0A\x05\xe0A\x06R\x06frozen\x12\x19\n" +
+	"\x04zone\x18\x10 \x01(\tB\x03\xe0A\x05H\x02R\x04zone\x12\x1d\n" +
+	"\x06region\x18\x11 \x01(\tB\x03\xe0A\x01H\x02R\x06region\x12=\n" +
+	"\aprimary\x18\x12 \x01(\v2\x19.test.firewalls.v1.WindowB\x03\xe0A\x01H\x05R\aprimary\x88\x01\x01\"I\n" +
 	"\x05State\x12\x15\n" +
 	"\x11STATE_UNSPECIFIED\x10\x00\x12\v\n" +
 	"\aENABLED\x10\x01\x12\f\n" +
 	"\bDISABLED\x10\x02\x12\x0e\n" +
 	"\n" +
-	"TERMINATED\x10\x03:J\xeaAG\n" +
-	"\x1bkeys.origincloudapis.eu/Key\x12\x1dprojects/{project}/keys/{key}*\x04keys2\x03keyB\b\n" +
+	"TERMINATED\x10\x03:V\xeaAS\n" +
+	"\x1bkeys.origincloudapis.eu/Key\x12\n" +
+	"keys/{key}\x12\x1dprojects/{project}/keys/{key}*\x04keys2\x03keyB\b\n" +
 	"\x06sourceB\a\n" +
-	"\x05usageB\f\n" +
+	"\x05usageB\b\n" +
+	"\x06targetB\f\n" +
 	"\n" +
 	"_algorithmB\a\n" +
-	"\x05_bits\"q\n" +
+	"\x05_bitsB\n" +
+	"\n" +
+	"\b_primary\"N\n" +
+	"\x06Window\x12\x17\n" +
+	"\x04name\x18\x01 \x01(\tB\x03\xe0A\x02R\x04name\x12 \n" +
+	"\x06weight\x18\x02 \x01(\x05B\x03\xe0A\x01H\x00R\x06weight\x88\x01\x01B\t\n" +
+	"\a_weight\")\n" +
+	"\x0fListKeysRequest\x12\x16\n" +
+	"\x06parent\x18\x01 \x01(\tR\x06parent\">\n" +
+	"\x10ListKeysResponse\x12*\n" +
+	"\x04keys\x18\x01 \x03(\v2\x16.test.firewalls.v1.KeyR\x04keys\"q\n" +
 	"\x06Origin\x12%\n" +
 	"\vfingerprint\x18\x01 \x01(\tB\x03\xe0A\x02R\vfingerprint\x12@\n" +
 	"\vimport_time\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampB\x03\xe0A\x03R\n" +
@@ -1643,11 +1880,12 @@ const file_test_firewalls_v1_firewalls_proto_rawDesc = "" +
 	"\x0eCreateFirewall\x12(.test.firewalls.v1.CreateFirewallRequest\x1a\x1d.google.longrunning.Operation\"\x17\xcaA\x14\n" +
 	"\bFirewall\x12\bFirewall\x12W\n" +
 	"\x0eUpdateFirewall\x12(.test.firewalls.v1.UpdateFirewallRequest\x1a\x1b.test.firewalls.v1.Firewall\x12R\n" +
-	"\x0eDeleteFirewall\x12(.test.firewalls.v1.DeleteFirewallRequest\x1a\x16.google.protobuf.Empty\x1a\x1f\xcaA\x1cfirewalls.origincloudapis.eu2\xae\x04\n" +
+	"\x0eDeleteFirewall\x12(.test.firewalls.v1.DeleteFirewallRequest\x1a\x16.google.protobuf.Empty\x1a\x1f\xcaA\x1cfirewalls.origincloudapis.eu2\xae\x05\n" +
 	"\n" +
 	"KeyService\x12C\n" +
-	"\x06GetKey\x12!.test.firewalls.v1.KeyNameRequest\x1a\x16.test.firewalls.v1.Key\x12H\n" +
-	"\tCreateKey\x12#.test.firewalls.v1.CreateKeyRequest\x1a\x16.test.firewalls.v1.Key\x12H\n" +
+	"\x06GetKey\x12!.test.firewalls.v1.KeyNameRequest\x1a\x16.test.firewalls.v1.Key\x12S\n" +
+	"\bListKeys\x12\".test.firewalls.v1.ListKeysRequest\x1a#.test.firewalls.v1.ListKeysResponse\x12s\n" +
+	"\tCreateKey\x12#.test.firewalls.v1.CreateKeyRequest\x1a\x16.test.firewalls.v1.Key\")\x82\xd3\xe4\x93\x02#:\x03key\"\x1c/v1/{parent=projects/*}/keys\x12H\n" +
 	"\tUpdateKey\x12#.test.firewalls.v1.UpdateKeyRequest\x1a\x16.test.firewalls.v1.Key\x12n\n" +
 	"\tDeleteKey\x12!.test.firewalls.v1.KeyNameRequest\x1a\x1d.google.longrunning.Operation\"\x1f\xcaA\x1c\n" +
 	"\x15google.protobuf.Empty\x12\x03Key\x12\\\n" +
@@ -1672,7 +1910,7 @@ func file_test_firewalls_v1_firewalls_proto_rawDescGZIP() []byte {
 }
 
 var file_test_firewalls_v1_firewalls_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_test_firewalls_v1_firewalls_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_test_firewalls_v1_firewalls_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
 var file_test_firewalls_v1_firewalls_proto_goTypes = []any{
 	(Mode)(0),                       // 0: test.firewalls.v1.Mode
 	(Key_State)(0),                  // 1: test.firewalls.v1.Key.State
@@ -1688,80 +1926,90 @@ var file_test_firewalls_v1_firewalls_proto_goTypes = []any{
 	(*Options)(nil),                 // 11: test.firewalls.v1.Options
 	(*Peer)(nil),                    // 12: test.firewalls.v1.Peer
 	(*Key)(nil),                     // 13: test.firewalls.v1.Key
-	(*Origin)(nil),                  // 14: test.firewalls.v1.Origin
-	(*KeyNameRequest)(nil),          // 15: test.firewalls.v1.KeyNameRequest
-	(*CreateKeyRequest)(nil),        // 16: test.firewalls.v1.CreateKeyRequest
-	(*UpdateKeyRequest)(nil),        // 17: test.firewalls.v1.UpdateKeyRequest
-	(*GetFirewallRequest)(nil),      // 18: test.firewalls.v1.GetFirewallRequest
-	(*DeleteFirewallRequest)(nil),   // 19: test.firewalls.v1.DeleteFirewallRequest
-	(*ListFirewallsRequest)(nil),    // 20: test.firewalls.v1.ListFirewallsRequest
-	(*ListFirewallsResponse)(nil),   // 21: test.firewalls.v1.ListFirewallsResponse
-	(*CreateFirewallRequest)(nil),   // 22: test.firewalls.v1.CreateFirewallRequest
-	(*UpdateFirewallRequest)(nil),   // 23: test.firewalls.v1.UpdateFirewallRequest
-	nil,                             // 24: test.firewalls.v1.Firewall.AnnotationsEntry
-	nil,                             // 25: test.firewalls.v1.Firewall.LabelsEntry
-	(*timestamppb.Timestamp)(nil),   // 26: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),     // 27: google.protobuf.Duration
-	(*fieldmaskpb.FieldMask)(nil),   // 28: google.protobuf.FieldMask
-	(*longrunningpb.Operation)(nil), // 29: google.longrunning.Operation
-	(*emptypb.Empty)(nil),           // 30: google.protobuf.Empty
+	(*Window)(nil),                  // 14: test.firewalls.v1.Window
+	(*ListKeysRequest)(nil),         // 15: test.firewalls.v1.ListKeysRequest
+	(*ListKeysResponse)(nil),        // 16: test.firewalls.v1.ListKeysResponse
+	(*Origin)(nil),                  // 17: test.firewalls.v1.Origin
+	(*KeyNameRequest)(nil),          // 18: test.firewalls.v1.KeyNameRequest
+	(*CreateKeyRequest)(nil),        // 19: test.firewalls.v1.CreateKeyRequest
+	(*UpdateKeyRequest)(nil),        // 20: test.firewalls.v1.UpdateKeyRequest
+	(*GetFirewallRequest)(nil),      // 21: test.firewalls.v1.GetFirewallRequest
+	(*DeleteFirewallRequest)(nil),   // 22: test.firewalls.v1.DeleteFirewallRequest
+	(*ListFirewallsRequest)(nil),    // 23: test.firewalls.v1.ListFirewallsRequest
+	(*ListFirewallsResponse)(nil),   // 24: test.firewalls.v1.ListFirewallsResponse
+	(*CreateFirewallRequest)(nil),   // 25: test.firewalls.v1.CreateFirewallRequest
+	(*UpdateFirewallRequest)(nil),   // 26: test.firewalls.v1.UpdateFirewallRequest
+	nil,                             // 27: test.firewalls.v1.Firewall.AnnotationsEntry
+	nil,                             // 28: test.firewalls.v1.Firewall.LabelsEntry
+	(*timestamppb.Timestamp)(nil),   // 29: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),     // 30: google.protobuf.Duration
+	(*fieldmaskpb.FieldMask)(nil),   // 31: google.protobuf.FieldMask
+	(*longrunningpb.Operation)(nil), // 32: google.longrunning.Operation
+	(*emptypb.Empty)(nil),           // 33: google.protobuf.Empty
 }
 var file_test_firewalls_v1_firewalls_proto_depIdxs = []int32{
 	3,  // 0: test.firewalls.v1.Firewall.rules:type_name -> test.firewalls.v1.Rule
 	5,  // 1: test.firewalls.v1.Firewall.spec:type_name -> test.firewalls.v1.Spec
 	0,  // 2: test.firewalls.v1.Firewall.modes:type_name -> test.firewalls.v1.Mode
 	8,  // 3: test.firewalls.v1.Firewall.status:type_name -> test.firewalls.v1.Status
-	25, // 4: test.firewalls.v1.Firewall.labels:type_name -> test.firewalls.v1.Firewall.LabelsEntry
+	28, // 4: test.firewalls.v1.Firewall.labels:type_name -> test.firewalls.v1.Firewall.LabelsEntry
 	0,  // 5: test.firewalls.v1.Firewall.default_mode:type_name -> test.firewalls.v1.Mode
 	10, // 6: test.firewalls.v1.Firewall.placement:type_name -> test.firewalls.v1.Placement
 	11, // 7: test.firewalls.v1.Firewall.options:type_name -> test.firewalls.v1.Options
 	12, // 8: test.firewalls.v1.Firewall.peers:type_name -> test.firewalls.v1.Peer
-	24, // 9: test.firewalls.v1.Firewall.annotations:type_name -> test.firewalls.v1.Firewall.AnnotationsEntry
+	27, // 9: test.firewalls.v1.Firewall.annotations:type_name -> test.firewalls.v1.Firewall.AnnotationsEntry
 	4,  // 10: test.firewalls.v1.Rule.ports:type_name -> test.firewalls.v1.PortRange
 	6,  // 11: test.firewalls.v1.Spec.interfaces:type_name -> test.firewalls.v1.Interface
 	7,  // 12: test.firewalls.v1.Interface.addresses:type_name -> test.firewalls.v1.Address
 	0,  // 13: test.firewalls.v1.Status.state:type_name -> test.firewalls.v1.Mode
-	26, // 14: test.firewalls.v1.Key.create_time:type_name -> google.protobuf.Timestamp
-	26, // 15: test.firewalls.v1.Key.expire_time:type_name -> google.protobuf.Timestamp
-	27, // 16: test.firewalls.v1.Key.rotation_period:type_name -> google.protobuf.Duration
+	29, // 14: test.firewalls.v1.Key.create_time:type_name -> google.protobuf.Timestamp
+	29, // 15: test.firewalls.v1.Key.expire_time:type_name -> google.protobuf.Timestamp
+	30, // 16: test.firewalls.v1.Key.rotation_period:type_name -> google.protobuf.Duration
 	1,  // 17: test.firewalls.v1.Key.state:type_name -> test.firewalls.v1.Key.State
-	14, // 18: test.firewalls.v1.Key.imported:type_name -> test.firewalls.v1.Origin
-	26, // 19: test.firewalls.v1.Origin.import_time:type_name -> google.protobuf.Timestamp
-	13, // 20: test.firewalls.v1.CreateKeyRequest.key:type_name -> test.firewalls.v1.Key
-	13, // 21: test.firewalls.v1.UpdateKeyRequest.key:type_name -> test.firewalls.v1.Key
-	28, // 22: test.firewalls.v1.UpdateKeyRequest.update_mask:type_name -> google.protobuf.FieldMask
-	2,  // 23: test.firewalls.v1.ListFirewallsResponse.firewalls:type_name -> test.firewalls.v1.Firewall
-	2,  // 24: test.firewalls.v1.CreateFirewallRequest.firewall:type_name -> test.firewalls.v1.Firewall
-	2,  // 25: test.firewalls.v1.UpdateFirewallRequest.firewall:type_name -> test.firewalls.v1.Firewall
-	28, // 26: test.firewalls.v1.UpdateFirewallRequest.update_mask:type_name -> google.protobuf.FieldMask
-	9,  // 27: test.firewalls.v1.Firewall.LabelsEntry.value:type_name -> test.firewalls.v1.Label
-	18, // 28: test.firewalls.v1.FirewallService.GetFirewall:input_type -> test.firewalls.v1.GetFirewallRequest
-	20, // 29: test.firewalls.v1.FirewallService.ListFirewalls:input_type -> test.firewalls.v1.ListFirewallsRequest
-	22, // 30: test.firewalls.v1.FirewallService.CreateFirewall:input_type -> test.firewalls.v1.CreateFirewallRequest
-	23, // 31: test.firewalls.v1.FirewallService.UpdateFirewall:input_type -> test.firewalls.v1.UpdateFirewallRequest
-	19, // 32: test.firewalls.v1.FirewallService.DeleteFirewall:input_type -> test.firewalls.v1.DeleteFirewallRequest
-	15, // 33: test.firewalls.v1.KeyService.GetKey:input_type -> test.firewalls.v1.KeyNameRequest
-	16, // 34: test.firewalls.v1.KeyService.CreateKey:input_type -> test.firewalls.v1.CreateKeyRequest
-	17, // 35: test.firewalls.v1.KeyService.UpdateKey:input_type -> test.firewalls.v1.UpdateKeyRequest
-	15, // 36: test.firewalls.v1.KeyService.DeleteKey:input_type -> test.firewalls.v1.KeyNameRequest
-	15, // 37: test.firewalls.v1.KeyService.EnableKey:input_type -> test.firewalls.v1.KeyNameRequest
-	15, // 38: test.firewalls.v1.KeyService.DisableKey:input_type -> test.firewalls.v1.KeyNameRequest
-	2,  // 39: test.firewalls.v1.FirewallService.GetFirewall:output_type -> test.firewalls.v1.Firewall
-	21, // 40: test.firewalls.v1.FirewallService.ListFirewalls:output_type -> test.firewalls.v1.ListFirewallsResponse
-	29, // 41: test.firewalls.v1.FirewallService.CreateFirewall:output_type -> google.longrunning.Operation
-	2,  // 42: test.firewalls.v1.FirewallService.UpdateFirewall:output_type -> test.firewalls.v1.Firewall
-	30, // 43: test.firewalls.v1.FirewallService.DeleteFirewall:output_type -> google.protobuf.Empty
-	13, // 44: test.firewalls.v1.KeyService.GetKey:output_type -> test.firewalls.v1.Key
-	13, // 45: test.firewalls.v1.KeyService.CreateKey:output_type -> test.firewalls.v1.Key
-	13, // 46: test.firewalls.v1.KeyService.UpdateKey:output_type -> test.firewalls.v1.Key
-	29, // 47: test.firewalls.v1.KeyService.DeleteKey:output_type -> google.longrunning.Operation
-	29, // 48: test.firewalls.v1.KeyService.EnableKey:output_type -> google.longrunning.Operation
-	29, // 49: test.firewalls.v1.KeyService.DisableKey:output_type -> google.longrunning.Operation
-	39, // [39:50] is the sub-list for method output_type
-	28, // [28:39] is the sub-list for method input_type
-	28, // [28:28] is the sub-list for extension type_name
-	28, // [28:28] is the sub-list for extension extendee
-	0,  // [0:28] is the sub-list for field type_name
+	17, // 18: test.firewalls.v1.Key.imported:type_name -> test.firewalls.v1.Origin
+	29, // 19: test.firewalls.v1.Key.not_before:type_name -> google.protobuf.Timestamp
+	14, // 20: test.firewalls.v1.Key.pools:type_name -> test.firewalls.v1.Window
+	14, // 21: test.firewalls.v1.Key.frozen:type_name -> test.firewalls.v1.Window
+	14, // 22: test.firewalls.v1.Key.primary:type_name -> test.firewalls.v1.Window
+	13, // 23: test.firewalls.v1.ListKeysResponse.keys:type_name -> test.firewalls.v1.Key
+	29, // 24: test.firewalls.v1.Origin.import_time:type_name -> google.protobuf.Timestamp
+	13, // 25: test.firewalls.v1.CreateKeyRequest.key:type_name -> test.firewalls.v1.Key
+	13, // 26: test.firewalls.v1.UpdateKeyRequest.key:type_name -> test.firewalls.v1.Key
+	31, // 27: test.firewalls.v1.UpdateKeyRequest.update_mask:type_name -> google.protobuf.FieldMask
+	2,  // 28: test.firewalls.v1.ListFirewallsResponse.firewalls:type_name -> test.firewalls.v1.Firewall
+	2,  // 29: test.firewalls.v1.CreateFirewallRequest.firewall:type_name -> test.firewalls.v1.Firewall
+	2,  // 30: test.firewalls.v1.UpdateFirewallRequest.firewall:type_name -> test.firewalls.v1.Firewall
+	31, // 31: test.firewalls.v1.UpdateFirewallRequest.update_mask:type_name -> google.protobuf.FieldMask
+	9,  // 32: test.firewalls.v1.Firewall.LabelsEntry.value:type_name -> test.firewalls.v1.Label
+	21, // 33: test.firewalls.v1.FirewallService.GetFirewall:input_type -> test.firewalls.v1.GetFirewallRequest
+	23, // 34: test.firewalls.v1.FirewallService.ListFirewalls:input_type -> test.firewalls.v1.ListFirewallsRequest
+	25, // 35: test.firewalls.v1.FirewallService.CreateFirewall:input_type -> test.firewalls.v1.CreateFirewallRequest
+	26, // 36: test.firewalls.v1.FirewallService.UpdateFirewall:input_type -> test.firewalls.v1.UpdateFirewallRequest
+	22, // 37: test.firewalls.v1.FirewallService.DeleteFirewall:input_type -> test.firewalls.v1.DeleteFirewallRequest
+	18, // 38: test.firewalls.v1.KeyService.GetKey:input_type -> test.firewalls.v1.KeyNameRequest
+	15, // 39: test.firewalls.v1.KeyService.ListKeys:input_type -> test.firewalls.v1.ListKeysRequest
+	19, // 40: test.firewalls.v1.KeyService.CreateKey:input_type -> test.firewalls.v1.CreateKeyRequest
+	20, // 41: test.firewalls.v1.KeyService.UpdateKey:input_type -> test.firewalls.v1.UpdateKeyRequest
+	18, // 42: test.firewalls.v1.KeyService.DeleteKey:input_type -> test.firewalls.v1.KeyNameRequest
+	18, // 43: test.firewalls.v1.KeyService.EnableKey:input_type -> test.firewalls.v1.KeyNameRequest
+	18, // 44: test.firewalls.v1.KeyService.DisableKey:input_type -> test.firewalls.v1.KeyNameRequest
+	2,  // 45: test.firewalls.v1.FirewallService.GetFirewall:output_type -> test.firewalls.v1.Firewall
+	24, // 46: test.firewalls.v1.FirewallService.ListFirewalls:output_type -> test.firewalls.v1.ListFirewallsResponse
+	32, // 47: test.firewalls.v1.FirewallService.CreateFirewall:output_type -> google.longrunning.Operation
+	2,  // 48: test.firewalls.v1.FirewallService.UpdateFirewall:output_type -> test.firewalls.v1.Firewall
+	33, // 49: test.firewalls.v1.FirewallService.DeleteFirewall:output_type -> google.protobuf.Empty
+	13, // 50: test.firewalls.v1.KeyService.GetKey:output_type -> test.firewalls.v1.Key
+	16, // 51: test.firewalls.v1.KeyService.ListKeys:output_type -> test.firewalls.v1.ListKeysResponse
+	13, // 52: test.firewalls.v1.KeyService.CreateKey:output_type -> test.firewalls.v1.Key
+	13, // 53: test.firewalls.v1.KeyService.UpdateKey:output_type -> test.firewalls.v1.Key
+	32, // 54: test.firewalls.v1.KeyService.DeleteKey:output_type -> google.longrunning.Operation
+	32, // 55: test.firewalls.v1.KeyService.EnableKey:output_type -> google.longrunning.Operation
+	32, // 56: test.firewalls.v1.KeyService.DisableKey:output_type -> google.longrunning.Operation
+	45, // [45:57] is the sub-list for method output_type
+	33, // [33:45] is the sub-list for method input_type
+	33, // [33:33] is the sub-list for extension type_name
+	33, // [33:33] is the sub-list for extension extendee
+	0,  // [0:33] is the sub-list for field type_name
 }
 
 func init() { file_test_firewalls_v1_firewalls_proto_init() }
@@ -1774,14 +2022,17 @@ func file_test_firewalls_v1_firewalls_proto_init() {
 		(*Key_Imported)(nil),
 		(*Key_Sign)(nil),
 		(*Key_Encrypt)(nil),
+		(*Key_Zone)(nil),
+		(*Key_Region)(nil),
 	}
+	file_test_firewalls_v1_firewalls_proto_msgTypes[12].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_test_firewalls_v1_firewalls_proto_rawDesc), len(file_test_firewalls_v1_firewalls_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   24,
+			NumMessages:   27,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

@@ -37,8 +37,11 @@ to the plugin or `internal/framework`.
   service can also `Create` and `Delete` it, and a **data source** otherwise.
   Its name's variables before its own (`project`, `zone`) are required
   attributes that replace it. A resource type with several patterns, such
-  as a project's images and the public ones, is created in the first; the
-  data source reads any by name.
+  as a project's images and the public ones, is created in the pattern
+  whose parent its create's HTTP binding takes (`{parent=projects/*}`):
+  without such a binding, or with one no pattern matches, generation fails.
+  It also gets a data source of the same name, which reads one in any
+  pattern by its resource name.
 - A field referring to another resource (`google.api.resource_reference`) is
   a string the API checks, so a reference that may take several patterns
   needs nothing of its own.
@@ -46,9 +49,9 @@ to the plugin or `internal/framework`.
   second data source named after its plural, such as
   `origincloud_pvs_volumes`, that reads every page of the list. The name's
   variables before the resource's own are its required attributes; each
-  item has the data source's attributes, all computed. The list request's
-  other fields, such as a filter, are left unset; a required one fails
-  generation.
+  item has the data source's attributes, all computed, except secrets. The
+  list request's other fields, such as a filter, are left unset; a required
+  one fails generation. Items in a terminal state are left out.
 - `REQUIRED` is required, `OUTPUT_ONLY` computed, `IMMUTABLE` replaces the
   resource when it changes. An `OPTIONAL` `IMMUTABLE` field is also computed,
   keeping the value the API chose when it was left out (the default storage
@@ -58,8 +61,8 @@ to the plugin or `internal/framework`.
   answers. A resource whose create failed after it existed (the operation's
   metadata names it) is kept as tainted.
 - A resource not found, or whose `state` is a terminal value, `DELETED` or
-  `TERMINATED`, is gone: it leaves the state at a refresh, and isn't deleted
-  again.
+  `TERMINATED`, is gone: it leaves the state at a refresh, isn't deleted
+  again, and a delete that fails while it goes there succeeds.
 - Fields of these kinds are supported, settable or computed:
   - strings, integers, booleans and enums; a settable enum takes its
     values' names only;
@@ -121,14 +124,22 @@ to the plugin or `internal/framework`.
   `2026-11-01T12:00:00Z`, and a `google.protobuf.Duration` a string in
   seconds, such as `90s`: their JSON forms. Unset is null, a settable one is
   validated, and a value written differently, in another time zone, is kept
-  while it is the same instant or length. An update names it when the
-  instant or length changes.
+  while it is the same instant or length. An update names it, and an
+  immutable one replaces the resource, only when the instant or length
+  changes.
 - A field with explicit presence (proto3 `optional`) that is `OPTIONAL` is
-  optional and computed: left out, it keeps the value the API chose, and it
-  can still be changed. Unset is null.
+  optional and computed: left out, the API chooses it, and it can still be
+  changed; removing it from the configuration keeps the current value
+  rather than clearing it. Unset is null. A message field marked `optional`
+  is an object the API may choose, the same way. Neither may be in a list's
+  elements, which are matched by position, unless the list is immutable (`a
+  field with explicit presence (proto3 optional) can't be in a list's
+  elements`); a set's and a map's elements may have them.
 - A oneof's members are attributes of their own, of which at most one may be
   set; exactly one when its members are `REQUIRED`. A member that isn't the
-  one the oneof holds is null.
+  one the oneof holds is null. A member the state keeps, such as an
+  immutable one the API chose, is planned null while the configuration
+  sets another, so that the other is sent.
 - A boolean that a pair of custom methods sets and clears, rather than an
   update, is a **toggle**, such as a snapshot's `protected`
   (`ProtectSnapshot`, `UnprotectSnapshot`). Nothing in the API marks such a
@@ -139,7 +150,8 @@ to the plugin or `internal/framework`.
   such as a generated private key, is a **secret**: sensitive, and kept from
   the create on, though the API never answers with it again. Nothing in the
   API marks such a field either, so each is declared in `secrets.go`, which
-  generation checks against the API. An imported resource has none.
+  generation checks against the API. An imported resource has none, and
+  data sources leave it out: no read answers with it.
 
 The plugin's tests include a test API, `internal/testapi/firewalls.prototext`,
 with a firewall, whose fields are nested messages, lists, sets and maps,

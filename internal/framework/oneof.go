@@ -8,8 +8,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 // A Oneof validates an attribute that is a member of a oneof: no other
@@ -90,4 +92,61 @@ func (v Oneof) ValidateSet(ctx context.Context, req validator.SetRequest, resp *
 
 func (v Oneof) ValidateMap(ctx context.Context, req validator.MapRequest, resp *validator.MapResponse) {
 	v.validate(ctx, req.Config, req.Path, req.ConfigValue, &resp.Diagnostics)
+}
+
+// OneofOthers plans a oneof member that the state keeps, such as an
+// immutable one the API chose, as null when the configuration sets
+// another member, Others: the request would otherwise send the kept one.
+type OneofOthers []string
+
+var (
+	_ planmodifier.String = OneofOthers{}
+	_ planmodifier.Int64  = OneofOthers{}
+	_ planmodifier.Bool   = OneofOthers{}
+	_ planmodifier.Object = OneofOthers{}
+)
+
+func (o OneofOthers) Description(context.Context) string {
+	return "null while another of " + strings.Join(o, ", ") + " is set"
+}
+
+func (o OneofOthers) MarkdownDescription(ctx context.Context) string { return o.Description(ctx) }
+
+// otherSet says that the configuration sets another member than the one
+// at p, whose configured value is config.
+func (o OneofOthers) otherSet(ctx context.Context, cfg tfsdk.Config, p path.Path, config attr.Value) bool {
+	if !config.IsNull() {
+		return false
+	}
+	for _, other := range o {
+		var v attr.Value
+		if d := cfg.GetAttribute(ctx, p.ParentPath().AtName(other), &v); !d.HasError() && v != nil && !v.IsNull() {
+			return true
+		}
+	}
+	return false
+}
+
+func (o OneofOthers) PlanModifyString(ctx context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
+	if o.otherSet(ctx, req.Config, req.Path, req.ConfigValue) {
+		resp.PlanValue = types.StringNull()
+	}
+}
+
+func (o OneofOthers) PlanModifyInt64(ctx context.Context, req planmodifier.Int64Request, resp *planmodifier.Int64Response) {
+	if o.otherSet(ctx, req.Config, req.Path, req.ConfigValue) {
+		resp.PlanValue = types.Int64Null()
+	}
+}
+
+func (o OneofOthers) PlanModifyBool(ctx context.Context, req planmodifier.BoolRequest, resp *planmodifier.BoolResponse) {
+	if o.otherSet(ctx, req.Config, req.Path, req.ConfigValue) {
+		resp.PlanValue = types.BoolNull()
+	}
+}
+
+func (o OneofOthers) PlanModifyObject(ctx context.Context, req planmodifier.ObjectRequest, resp *planmodifier.ObjectResponse) {
+	if o.otherSet(ctx, req.Config, req.Path, req.ConfigValue) {
+		resp.PlanValue = types.ObjectNull(req.PlanValue.AttributeTypes(ctx))
+	}
 }

@@ -77,6 +77,12 @@ func (c *KeyClient) GetKey(ctx context.Context, req *KeyNameRequest) (*Key, erro
 	return out, err
 }
 
+func (c *KeyClient) ListKeys(ctx context.Context, req *ListKeysRequest) (*ListKeysResponse, error) {
+	out := new(ListKeysResponse)
+	err := c.service.Call(ctx, core.Request{Method: http.MethodGet, Path: "/v1/" + req.GetParent() + "/keys", Idempotent: true}, out)
+	return out, err
+}
+
 func (c *KeyClient) CreateKey(ctx context.Context, req *CreateKeyRequest) (*Key, error) {
 	out := new(Key)
 	err := c.service.Call(ctx, core.Request{Method: http.MethodPost, Path: "/v1/" + req.GetParent() + "/keys", Body: req.GetKey()}, out)
