@@ -94,6 +94,7 @@ jobs:
                   side=""
                   case "${path}" in
                     go.mod | go.sum) if [[ "${sdk_only}" == true ]]; then side=--theirs; fi ;;
+                    internal/testapi/*) ;;
                     API_REVISION | *.gen.go | docs/*) side=--ours ;;
                   esac
                   if [[ -n "${side}" ]]; then

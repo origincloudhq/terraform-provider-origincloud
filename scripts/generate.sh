@@ -51,8 +51,9 @@ template="$(printf '{"version":"v2","plugins":[{"local":"%s","out":"%s","strateg
   "${tmp}/bin/protoc-gen-terraform-origincloud" "${tmp}/gen" "${opts}")"
 (cd "${ROOT}" && go run "${BUF}" generate "${tmp}/api" --template "${template}")
 
-# The generated files, relative to the repository.
-generated() { (cd "$1" && find . -name '*.gen.go' -not -path './dist/*' | LC_ALL=C sort); }
+# The generated files, relative to the repository; not the test API's
+# (internal/testapi), which the plugin's tests generate and check.
+generated() { (cd "$1" && find . -name '*.gen.go' -not -path './dist/*' -not -path './internal/testapi/*' | LC_ALL=C sort); }
 
 # Writes the provider in $1's docs/, and checks their layout. The copy
 # checked below is outside any git repository, so the build stamps no VCS
