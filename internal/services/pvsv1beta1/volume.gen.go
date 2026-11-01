@@ -363,6 +363,9 @@ func volumeListDataSource() framework.ListDataSourceSpec[volumeListModel] {
 				if err != nil {
 					return err
 				}
+				if p.GetState() == v1beta1.Volume_DELETED {
+					continue
+				}
 				var item volumeItemModel
 				if err := volumeItemFromProto(p, &item); err != nil {
 					return err

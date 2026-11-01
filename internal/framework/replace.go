@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -89,6 +90,14 @@ func known(plan, state, config attr.Value) attr.Value {
 
 func replaces(ifConfigured, configNull, same bool) bool {
 	return !(ifConfigured && configNull) && !same
+}
+
+// StringReplaceIfSent is for a timestamp or a duration, whose spelling
+// can differ while it sends the same instant or length.
+func StringReplaceIfSent(same func(plan, state types.String) bool, ifConfigured bool) planmodifier.String {
+	return stringplanmodifier.RequiresReplaceIf(func(_ context.Context, req planmodifier.StringRequest, resp *stringplanmodifier.RequiresReplaceIfFuncResponse) {
+		resp.RequiresReplace = replaces(ifConfigured, req.ConfigValue.IsNull(), same(known(req.PlanValue, req.StateValue, req.ConfigValue).(types.String), req.StateValue))
+	}, replaceDescription, replaceDescription)
 }
 
 func ObjectReplaceIfSent(same func(plan, state types.Object) bool, ifConfigured bool) planmodifier.Object {

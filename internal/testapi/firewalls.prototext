@@ -1,5 +1,7 @@
-# A test API, as a FileDescriptorProto: a resource whose fields are nested
-# messages, repeated fields, ordered and unordered, and a map of messages.
+# A test API, as a FileDescriptorProto: a firewall, whose fields are nested
+# messages, repeated fields, ordered and unordered, and maps; and a key,
+# created synchronously, with timestamps and durations, fields with explicit
+# presence, oneofs, a secret, a toggle and a terminal state.
 # The plugin's tests generate the provider's code for it, and the protobuf
 # messages, into this directory; this package's tests run Terraform against
 # a fake of it.
@@ -9,7 +11,8 @@ name: "test/firewalls/v1/firewalls.proto"
 package: "test.firewalls.v1"
 dependency: [
   "google/api/client.proto", "google/api/field_behavior.proto", "google/api/resource.proto",
-  "google/longrunning/operations.proto", "google/protobuf/empty.proto", "google/protobuf/field_mask.proto"
+  "google/longrunning/operations.proto", "google/protobuf/empty.proto", "google/protobuf/field_mask.proto",
+  "google/protobuf/timestamp.proto", "google/protobuf/duration.proto", "google/api/annotations.proto"
 ]
 syntax: "proto3"
 options { go_package: "github.com/origincloudhq/terraform-provider-origincloud/internal/testapi/firewallsv1;firewallsv1" }
@@ -24,6 +27,33 @@ service {
   }
   method { name: "UpdateFirewall" input_type: ".test.firewalls.v1.UpdateFirewallRequest" output_type: ".test.firewalls.v1.Firewall" }
   method { name: "DeleteFirewall" input_type: ".test.firewalls.v1.DeleteFirewallRequest" output_type: ".google.protobuf.Empty" }
+}
+service {
+  name: "KeyService"
+  options { [google.api.default_host]: "keys.origincloudapis.eu" }
+  method { name: "GetKey" input_type: ".test.firewalls.v1.KeyNameRequest" output_type: ".test.firewalls.v1.Key" }
+  method { name: "ListKeys" input_type: ".test.firewalls.v1.ListKeysRequest" output_type: ".test.firewalls.v1.ListKeysResponse" }
+  # Synchronous: answers with the key. Its parent picks the pattern keys are
+  # created in, of two.
+  method {
+    name: "CreateKey" input_type: ".test.firewalls.v1.CreateKeyRequest" output_type: ".test.firewalls.v1.Key"
+    options { [google.api.http] { post: "/v1/{parent=projects/*}/keys" body: "key" } }
+  }
+  method { name: "UpdateKey" input_type: ".test.firewalls.v1.UpdateKeyRequest" output_type: ".test.firewalls.v1.Key" }
+  # Done once the key is TERMINATED, which stays readable.
+  method {
+    name: "DeleteKey" input_type: ".test.firewalls.v1.KeyNameRequest" output_type: ".google.longrunning.Operation"
+    options { [google.longrunning.operation_info] { response_type: "google.protobuf.Empty" metadata_type: "Key" } }
+  }
+  # A toggle's pair of methods (enabled), each answering with an operation.
+  method {
+    name: "EnableKey" input_type: ".test.firewalls.v1.KeyNameRequest" output_type: ".google.longrunning.Operation"
+    options { [google.longrunning.operation_info] { response_type: "Key" metadata_type: "Key" } }
+  }
+  method {
+    name: "DisableKey" input_type: ".test.firewalls.v1.KeyNameRequest" output_type: ".google.longrunning.Operation"
+    options { [google.longrunning.operation_info] { response_type: "Key" metadata_type: "Key" } }
+  }
 }
 enum_type {
   name: "Mode"
@@ -127,6 +157,84 @@ message_type {
   field { name: "latency" number: 2 label: LABEL_OPTIONAL type: TYPE_INT32 json_name: "latency" options { [google.api.field_behavior]: OUTPUT_ONLY } }
   # Immutable, in an immutable list's elements: the API chooses it.
   field { name: "port" number: 3 label: LABEL_OPTIONAL type: TYPE_INT32 json_name: "port" options { [google.api.field_behavior]: IMMUTABLE } }
+}
+message_type {
+  name: "Key"
+  # A project's keys, and the public ones, which are read by name only.
+  options { [google.api.resource] { type: "keys.origincloudapis.eu/Key" pattern: "keys/{key}" pattern: "projects/{project}/keys/{key}" singular: "key" plural: "keys" } }
+  field { name: "name" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "name" options { [google.api.field_behavior]: IDENTIFIER } }
+  field { name: "create_time" number: 2 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".google.protobuf.Timestamp" json_name: "createTime" options { [google.api.field_behavior]: OUTPUT_ONLY } }
+  field { name: "expire_time" number: 3 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".google.protobuf.Timestamp" json_name: "expireTime" options { [google.api.field_behavior]: OPTIONAL } }
+  field { name: "rotation_period" number: 4 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".google.protobuf.Duration" json_name: "rotationPeriod" options { [google.api.field_behavior]: OPTIONAL } }
+  # In the create's response only (a secret).
+  field { name: "secret" number: 5 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "secret" options { [google.api.field_behavior]: OUTPUT_ONLY } }
+  field { name: "state" number: 6 label: LABEL_OPTIONAL type: TYPE_ENUM type_name: ".test.firewalls.v1.Key.State" json_name: "state" options { [google.api.field_behavior]: OUTPUT_ONLY } }
+  # Explicit presence: the API chooses the value left out.
+  field { name: "algorithm" number: 7 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "algorithm" oneof_index: 3 proto3_optional: true options { [google.api.field_behavior]: OPTIONAL } }
+  field { name: "bits" number: 8 label: LABEL_OPTIONAL type: TYPE_INT32 json_name: "bits" oneof_index: 4 proto3_optional: true options { [google.api.field_behavior]: OPTIONAL } }
+  # A oneof, which may be left unset.
+  field { name: "seed" number: 9 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "seed" oneof_index: 0 options { [google.api.field_behavior]: OPTIONAL } }
+  field { name: "imported" number: 10 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".test.firewalls.v1.Origin" json_name: "imported" oneof_index: 0 options { [google.api.field_behavior]: OPTIONAL } }
+  # A oneof one of whose members must be set.
+  field { name: "sign" number: 11 label: LABEL_OPTIONAL type: TYPE_BOOL json_name: "sign" oneof_index: 1 options { [google.api.field_behavior]: REQUIRED } }
+  field { name: "encrypt" number: 12 label: LABEL_OPTIONAL type: TYPE_BOOL json_name: "encrypt" oneof_index: 1 options { [google.api.field_behavior]: REQUIRED } }
+  # Immutable, and written in any time zone.
+  field { name: "not_before" number: 13 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".google.protobuf.Timestamp" json_name: "notBefore" options { [google.api.field_behavior]: IMMUTABLE } }
+  # Sets, mutable and immutable, of elements with a field with presence.
+  field { name: "pools" number: 15 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.firewalls.v1.Window" json_name: "pools" options { [google.api.field_behavior]: OPTIONAL [google.api.field_behavior]: UNORDERED_LIST } }
+  field { name: "frozen" number: 19 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.firewalls.v1.Window" json_name: "frozen" options { [google.api.field_behavior]: IMMUTABLE [google.api.field_behavior]: UNORDERED_LIST } }
+  # A oneof whose members differ in IMMUTABLE.
+  field { name: "zone" number: 16 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "zone" oneof_index: 2 options { [google.api.field_behavior]: IMMUTABLE } }
+  field { name: "region" number: 17 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "region" oneof_index: 2 options { [google.api.field_behavior]: OPTIONAL } }
+  # A message field marked optional: an object the API may choose.
+  field { name: "primary" number: 18 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".test.firewalls.v1.Window" json_name: "primary" oneof_index: 5 proto3_optional: true options { [google.api.field_behavior]: OPTIONAL } }
+  oneof_decl { name: "source" }
+  oneof_decl { name: "usage" }
+  oneof_decl { name: "target" }
+  oneof_decl { name: "_algorithm" }
+  oneof_decl { name: "_bits" }
+  oneof_decl { name: "_primary" }
+  enum_type {
+    name: "State"
+    value { name: "STATE_UNSPECIFIED" number: 0 }
+    value { name: "ENABLED" number: 1 }
+    value { name: "DISABLED" number: 2 }
+    value { name: "TERMINATED" number: 3 }
+  }
+}
+message_type {
+  name: "Window"
+  field { name: "name" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "name" options { [google.api.field_behavior]: REQUIRED } }
+  field { name: "weight" number: 2 label: LABEL_OPTIONAL type: TYPE_INT32 json_name: "weight" oneof_index: 0 proto3_optional: true options { [google.api.field_behavior]: OPTIONAL } }
+  oneof_decl { name: "_weight" }
+}
+message_type {
+  name: "ListKeysRequest"
+  field { name: "parent" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "parent" }
+}
+message_type {
+  name: "ListKeysResponse"
+  field { name: "keys" number: 1 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.firewalls.v1.Key" json_name: "keys" }
+}
+message_type {
+  name: "Origin"
+  field { name: "fingerprint" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "fingerprint" options { [google.api.field_behavior]: REQUIRED } }
+  # A timestamp a level down.
+  field { name: "import_time" number: 2 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".google.protobuf.Timestamp" json_name: "importTime" options { [google.api.field_behavior]: OUTPUT_ONLY } }
+}
+message_type {
+  name: "KeyNameRequest"
+  field { name: "name" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "name" }
+}
+message_type {
+  name: "CreateKeyRequest"
+  field { name: "parent" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "parent" }
+  field { name: "key" number: 2 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".test.firewalls.v1.Key" json_name: "key" }
+}
+message_type {
+  name: "UpdateKeyRequest"
+  field { name: "key" number: 1 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".test.firewalls.v1.Key" json_name: "key" }
+  field { name: "update_mask" number: 2 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".google.protobuf.FieldMask" json_name: "updateMask" }
 }
 message_type {
   name: "GetFirewallRequest"

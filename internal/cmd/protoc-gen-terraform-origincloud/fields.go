@@ -45,7 +45,19 @@ type attribute struct {
 	prefix  string
 	// enum is a string's enum, or that of a collection's string elements.
 	enum *protogen.Enum
-	doc  string
+	// wellKnown is a string's google.protobuf type: Timestamp or Duration.
+	wellKnown string
+	// presence: the field has explicit presence (proto3 optional), so
+	// unset is null. chosenObject: a message field marked optional.
+	presence, chosenObject bool
+	// oneof is the oneof the field is a member of; oneofRequired says that
+	// one of its members must be set.
+	oneof         *protogen.Oneof
+	oneofRequired bool
+	// kept is an output-only value the API answers with only once, kept
+	// from then on (secrets.go); sensitive hides it.
+	kept, sensitive bool
+	doc             string
 
 	required, optional, computed bool
 	// keep plans the state's value while it is unknown; a nested
@@ -82,6 +94,8 @@ type scope struct {
 	// nested is a nested message's field, inElements one of a settable
 	// list's, set's or map's elements, and inSet one of a settable set's.
 	nested, inElements, inSet bool
+	// inList is one of a settable list's elements, matched by position.
+	inList bool
 	// replaced: the top-level attribute holding it already replaces the
 	// resource when it changes.
 	replaced bool
@@ -112,8 +126,14 @@ func attributes(t resourceType, forResource bool, prefix string) ([]attribute, e
 	s := scope{t: t, forResource: forResource, computed: !forResource, prefix: prefix, seen: []protoreflect.FullName{t.message.Desc.FullName()}}
 	for _, f := range t.message.Fields {
 		a, err := fieldAttribute(s, f)
+		if err == nil {
+			err = applySecret(t, &a, forResource)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("field %s: %w", f.Desc.Name(), err)
+		}
+		if a.sensitive && !forResource {
+			continue // a secret is the create's only: no read has it
 		}
 		if slices.ContainsFunc(attrs, func(b attribute) bool { return b.name == a.name }) {
 			return nil, fmt.Errorf("field %s: the attribute %s is already the name's", f.Desc.Name(), a.name)
@@ -143,11 +163,15 @@ func attributes(t resourceType, forResource bool, prefix string) ([]attribute, e
 
 func fieldAttribute(s scope, f *protogen.Field) (attribute, error) {
 	a := attribute{name: string(f.Desc.Name()), goName: f.GoName, field: f, doc: prose(f.Comments.Leading)}
-	if f.Desc.HasOptionalKeyword() {
-		return a, fmt.Errorf("fields with explicit presence (proto3 optional) aren't supported yet")
-	}
-	if f.Oneof != nil {
-		return a, fmt.Errorf("fields of a oneof aren't supported yet")
+	switch {
+	case f.Desc.HasOptionalKeyword() && f.Desc.Kind() == protoreflect.MessageKind:
+		// A message field has presence anyway: optional, it is an object
+		// the API chooses when it is left out.
+		a.chosenObject = true
+	case f.Desc.HasOptionalKeyword():
+		a.presence = true
+	case f.Oneof != nil:
+		a.oneof = f.Oneof
 	}
 	behaviors := fieldBehaviors(f)
 	has := func(b annotations.FieldBehavior) bool { return slices.Contains(behaviors, b) }
@@ -170,6 +194,9 @@ func fieldAttribute(s scope, f *protogen.Field) (attribute, error) {
 		case protoreflect.StringKind:
 			a.elem = "String"
 		case protoreflect.MessageKind:
+			if t := wellKnownTypes[value.Message.Desc.FullName()]; t != "" {
+				return a, fmt.Errorf("maps of strings to google.protobuf.%s aren't supported yet", t)
+			}
 			message = value.Message
 		default:
 			return a, fmt.Errorf("maps of strings to %s aren't supported yet, only to strings and messages", value.Desc.Kind())
@@ -180,6 +207,9 @@ func fieldAttribute(s scope, f *protogen.Field) (attribute, error) {
 			a.kind = "Set"
 		}
 		if f.Desc.Kind() == protoreflect.MessageKind {
+			if t := wellKnownTypes[f.Message.Desc.FullName()]; t != "" {
+				return a, fmt.Errorf("repeated google.protobuf.%s fields aren't supported yet", t)
+			}
 			message = f.Message
 			break
 		}
@@ -191,6 +221,9 @@ func fieldAttribute(s scope, f *protogen.Field) (attribute, error) {
 		if a.enum != nil {
 			a.doc = strings.TrimSpace(a.doc + " Each one of " + enumValues(a.enum) + ".")
 		}
+	case f.Desc.Kind() == protoreflect.MessageKind && wellKnownTypes[f.Message.Desc.FullName()] != "":
+		a.kind, a.wellKnown = "String", wellKnownTypes[f.Message.Desc.FullName()]
+		a.doc = strings.TrimSpace(a.doc + " " + wellKnownFormats[a.wellKnown])
 	case f.Desc.Kind() == protoreflect.MessageKind:
 		a.kind = "Object"
 		message = f.Message
@@ -207,6 +240,10 @@ func fieldAttribute(s scope, f *protogen.Field) (attribute, error) {
 
 	if err := applyBehaviors(s, &a, behaviors); err != nil {
 		return a, err
+	}
+	if a.oneof != nil && a.required {
+		// Any member may be the one set: the oneof is required instead.
+		a.required, a.optional, a.oneofRequired = false, true, true
 	}
 	if message != nil {
 		if err := nestedAttributes(s, &a, message); err != nil {
@@ -283,8 +320,17 @@ func applyBehaviors(s scope, a *attribute, behaviors []annotations.FieldBehavior
 		// The API chooses a value left out, such as the default storage
 		// class, which the state then keeps.
 		a.optional, a.computed, a.keep, a.replace = true, true, true, !s.replaced
+	case (a.presence || a.chosenObject) && s.inList && !s.replaced:
+		// Kept by position, a value could be planned for another element.
+		return fmt.Errorf("a field with explicit presence (proto3 optional) can't be in a list's elements: they are matched by position, so the value kept for one could be planned for another")
 	case has(annotations.FieldBehavior_OPTIONAL):
 		a.optional = true
+		// With explicit presence, the API chooses the value left out, and
+		// the state keeps it until one is set.
+		a.computed, a.keep = a.presence || a.chosenObject, a.presence || a.chosenObject
+		if a.presence || a.chosenObject {
+			a.doc = strings.TrimSpace(a.doc + " Left out, the API chooses it; removing it keeps the current value.")
+		}
 		if !s.nested {
 			a.replace = !updatable
 			a.updatable = updatable
@@ -306,6 +352,9 @@ func applyBehaviors(s scope, a *attribute, behaviors []annotations.FieldBehavior
 // nestedAttributes sets the attributes of a's object, or object elements,
 // whose message is m.
 func nestedAttributes(s scope, a *attribute, m *protogen.Message) error {
+	if m.Desc.ParentFile().Package() == "google.protobuf" {
+		return fmt.Errorf("%s fields aren't supported yet, of google.protobuf only Timestamp and Duration", m.Desc.FullName())
+	}
 	if m.GoIdent.GoImportPath != s.t.message.GoIdent.GoImportPath {
 		return fmt.Errorf("%s is another package's message, which isn't supported yet", m.Desc.FullName())
 	}
@@ -317,6 +366,7 @@ func nestedAttributes(s scope, a *attribute, m *protogen.Message) error {
 	child.computed = s.computed || a.computedOnly()
 	child.inSet = s.inSet || a.kind == "Set" && !child.computed
 	child.inElements = s.inElements || a.collection() && !child.computed
+	child.inList = s.inList || a.kind == "List" && !child.computed
 	child.replaced = s.replaced || a.replace
 	child.chosen = s.chosen || a.kind == "Object" && a.optional && a.computed
 	// A separator per level: spec.rules and spec_rules don't meet.
@@ -333,6 +383,19 @@ func nestedAttributes(s scope, a *attribute, m *protogen.Message) error {
 	}
 	return nil
 }
+
+// The google.protobuf messages that are strings in their JSON form, and the
+// form, for the attributes' descriptions.
+var (
+	wellKnownTypes = map[protoreflect.FullName]string{
+		"google.protobuf.Timestamp": "Timestamp",
+		"google.protobuf.Duration":  "Duration",
+	}
+	wellKnownFormats = map[string]string{
+		"Timestamp": "An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.",
+		"Duration":  "A duration in seconds, such as `90s` or `1.5s`.",
+	}
+)
 
 func enumNames(e *protogen.Enum) []string {
 	var names []string
@@ -371,24 +434,14 @@ func generateAttributes(g *protogen.GeneratedFile, schemaPackage protogen.GoImpo
 				g.P(flag.name, ": true,")
 			}
 		}
+		if a.sensitive {
+			g.P("Sensitive: true,")
+		}
 		if a.collection() && a.message == nil {
 			g.P("ElementType: ", c.types(a.elem+"Type"), ",")
 		}
-		settable := a.required || a.optional
-		switch {
-		case a.kind == "Int64" && a.int32 && settable:
-			g.P("Validators: []", g.QualifiedGoIdent(validatorPackage.Ident("Int64")), "{", c.framework("Int32"), "()},")
-		case a.kind == "String" && a.enum != nil && settable:
-			g.P("Validators: []", g.QualifiedGoIdent(validatorPackage.Ident("String")), "{", c.framework("OneOf"), "(", quoted(enumNames(a.enum)), ")},")
-		case settable && a.collection():
-			var options []string
-			if a.enum != nil {
-				options = append(options, "OneOf: []string{"+quoted(enumNames(a.enum))+"}")
-			}
-			if a.int32 {
-				options = append(options, "Int32: true")
-			}
-			g.P("Validators: []", g.QualifiedGoIdent(validatorPackage.Ident(a.kind)), "{", c.framework("ElementCheck"), "{", strings.Join(options, ", "), "}},")
+		if validators := attributeValidators(c, a, attrs); len(validators) > 0 {
+			g.P("Validators: []", g.QualifiedGoIdent(validatorPackage.Ident(a.kind)), "{", strings.Join(validators, ", "), "},")
 		}
 		var modifiers []string
 		modifierPackage := protogen.GoImportPath("github.com/hashicorp/terraform-plugin-framework/resource/schema/" + strings.ToLower(a.kind) + "planmodifier")
@@ -398,12 +451,26 @@ func generateAttributes(g *protogen.GeneratedFile, schemaPackage protogen.GoImpo
 		case a.keep:
 			modifiers = append(modifiers, g.QualifiedGoIdent(modifierPackage.Ident("UseStateForUnknown"))+"()")
 		}
+		// A oneof's member kept from the state, such as an immutable one the
+		// API chose, is planned null while the configuration sets another:
+		// it would otherwise be the one sent. Its replacement then follows
+		// the plan, not the configuration: an immutable member going from
+		// set to null, as the oneof switches away from it, is a change.
+		ifConfigured := a.computed
+		if a.oneof != nil && a.keep {
+			modifiers = append(modifiers, c.framework("OneofOthers")+"{"+quoted(oneofOthers(a, attrs))+"}")
+			ifConfigured = false
+		}
 		if a.replace && a.message != nil {
 			// What it sends, so that an output-only field changing doesn't
 			// replace the resource.
 			value := c.types(a.kind)
-			modifiers = append(modifiers, c.framework(a.kind+"ReplaceIfSent")+"(func(plan, state "+value+") bool { return "+sentSame(g, a, "plan", "state")+" }, "+fmt.Sprint(a.computed)+")")
-		} else if a.replace && a.computed {
+			modifiers = append(modifiers, c.framework(a.kind+"ReplaceIfSent")+"(func(plan, state "+value+") bool { return "+sentSame(g, a, "plan", "state")+" }, "+fmt.Sprint(ifConfigured)+")")
+		} else if a.replace && a.wellKnown != "" {
+			// The same instant or length, however written.
+			same := g.QualifiedGoIdent(protoPackage.Ident("Equal")) + "(" + c.toProto(a, "plan") + ", " + c.toProto(a, "state") + ")"
+			modifiers = append(modifiers, c.framework("StringReplaceIfSent")+"(func(plan, state "+c.types("String")+") bool { return "+same+" }, "+fmt.Sprint(ifConfigured)+")")
+		} else if a.replace && ifConfigured {
 			modifiers = append(modifiers, g.QualifiedGoIdent(modifierPackage.Ident("RequiresReplaceIfConfigured"))+"()")
 		} else if a.replace {
 			modifiers = append(modifiers, g.QualifiedGoIdent(modifierPackage.Ident("RequiresReplace"))+"()")
@@ -424,6 +491,65 @@ func generateAttributes(g *protogen.GeneratedFile, schemaPackage protogen.GoImpo
 	g.P("},")
 }
 
+// oneofOthers returns the names of the other settable members of a's
+// oneof, among attrs.
+func oneofOthers(a attribute, attrs []attribute) []string {
+	var others []string
+	for _, b := range attrs {
+		if b.oneof == a.oneof && b.name != a.name && (b.required || b.optional) {
+			others = append(others, b.name)
+		}
+	}
+	return others
+}
+
+// attributeValidators returns the validators of a, one of attrs.
+func attributeValidators(c conv, a attribute, attrs []attribute) []string {
+	settable := a.required || a.optional
+	var validators []string
+	switch {
+	case a.kind == "Int64" && a.int32 && settable:
+		validators = append(validators, c.framework("Int32")+"()")
+	case a.kind == "String" && a.enum != nil && settable:
+		validators = append(validators, c.framework("OneOf")+"("+quoted(enumNames(a.enum))+")")
+	case a.kind == "String" && a.wellKnown != "" && settable:
+		validators = append(validators, c.framework(a.wellKnown+"Format")+"()")
+	case settable && a.collection():
+		var options []string
+		if a.enum != nil {
+			options = append(options, "OneOf: []string{"+quoted(enumNames(a.enum))+"}")
+		}
+		if a.int32 {
+			options = append(options, "Int32: true")
+		}
+		validators = append(validators, c.framework("ElementCheck")+"{"+strings.Join(options, ", ")+"}")
+	}
+	if a.oneof != nil && settable {
+		// The first settable member also checks that one is set, when the
+		// oneof is required: any of its members being REQUIRED.
+		var others []string
+		first, required := "", false
+		for _, b := range attrs {
+			if b.oneof != a.oneof || !(b.required || b.optional) {
+				continue
+			}
+			if first == "" {
+				first = b.name
+			}
+			if b.name != a.name {
+				others = append(others, fmt.Sprintf("%q", b.name))
+			}
+			required = required || b.oneofRequired
+		}
+		check := c.framework("Oneof") + "{Others: []string{" + strings.Join(others, ", ") + "}"
+		if required && first == a.name {
+			check += ", Required: true"
+		}
+		validators = append(validators, check+"}")
+	}
+	return validators
+}
+
 func quoted(values []string) string {
 	q := make([]string, len(values))
 	for i, v := range values {
@@ -441,14 +567,13 @@ func generateConversions(g *protogen.GeneratedFile, t resourceType, name, model,
 	if forResource {
 		g.P()
 		g.P("func ", name, "ToProto(m *", model, ") ", message, " {")
-		g.P("return &", g.QualifiedGoIdent(t.message.GoIdent), "{")
+		var sent []attribute
 		for _, a := range attrs {
-			if a.field == nil || a.computedOnly() && a.name != "name" {
-				continue
+			if a.field != nil && (!a.computedOnly() || a.name == "name") {
+				sent = append(sent, a)
 			}
-			g.P(a.goName, ": ", c.toProto(a, "m."+a.goName), ",")
 		}
-		g.P("}")
+		generateToProtoBody(g, t.message, sent, func(a attribute) string { return "m." + a.goName })
 		g.P("}")
 	}
 
@@ -473,7 +598,7 @@ func generateConversions(g *protogen.GeneratedFile, t resourceType, name, model,
 			}
 			continue
 		}
-		g.P("m.", a.goName, " = ", c.fromProto(a, "p.Get"+a.field.GoName+"()", "m."+a.goName))
+		g.P("m.", a.goName, " = ", c.fromProto(a, "p", "m."+a.goName))
 	}
 	g.P("return nil")
 	g.P("}")
@@ -501,10 +626,16 @@ func generateNested(g *protogen.GeneratedFile, attrs []attribute) {
 
 		g.P()
 		g.P("func ", a.prefix, "FromProto(p ", message, ", prior ", object, ") ", object, " {")
+		if slices.ContainsFunc(a.nested, func(n attribute) bool { return n.presence }) {
+			// A field with presence is read without a getter.
+			g.P("if p == nil {")
+			g.P("p = &", g.QualifiedGoIdent(a.message.GoIdent), "{}")
+			g.P("}")
+		}
 		g.P("return ", c.types("ObjectValueMust"), "(", a.prefix, "AttrTypes(), map[string]", c.attr("Value"), "{")
 		for _, n := range a.nested {
 			prior := c.framework("Attr") + "(prior, " + fmt.Sprintf("%q", n.name) + ", " + c.null(n) + ")"
-			g.P(fmt.Sprintf("%q", n.name), ": ", c.fromProto(n, "p.Get"+n.field.GoName+"()", prior), ",")
+			g.P(fmt.Sprintf("%q", n.name), ": ", c.fromProto(n, "p", prior), ",")
 		}
 		g.P("})")
 		g.P("}")
@@ -514,19 +645,58 @@ func generateNested(g *protogen.GeneratedFile, attrs []attribute) {
 		g.P("if o.IsNull() || o.IsUnknown() {")
 		g.P("return nil")
 		g.P("}")
-		g.P("return &", g.QualifiedGoIdent(a.message.GoIdent), "{")
+		var sent []attribute
 		for _, n := range a.nested {
-			if n.computedOnly() {
-				continue
+			if !n.computedOnly() {
+				sent = append(sent, n)
 			}
-			v := c.framework("Attr") + "(o, " + fmt.Sprintf("%q", n.name) + ", " + c.null(n) + ")"
-			g.P(n.field.GoName, ": ", c.toProto(n, v), ",")
 		}
-		g.P("}")
+		generateToProtoBody(g, a.message, sent, func(n attribute) string {
+			return c.framework("Attr") + "(o, " + fmt.Sprintf("%q", n.name) + ", " + c.null(n) + ")"
+		})
 		g.P("}")
 
 		generateNested(g, a.nested)
 	}
+}
+
+// generateToProtoBody writes the statements returning m, a message of the
+// attributes sent, each value as valueOf returns it. A oneof's members are
+// set after, as the one set of them.
+func generateToProtoBody(g *protogen.GeneratedFile, m *protogen.Message, sent []attribute, valueOf func(attribute) string) {
+	c := conv{g}
+	literal := "&" + g.QualifiedGoIdent(m.GoIdent) + "{"
+	if !slices.ContainsFunc(sent, func(a attribute) bool { return a.oneof != nil }) {
+		g.P("return ", literal)
+		for _, a := range sent {
+			g.P(a.field.GoName, ": ", c.toProto(a, valueOf(a)), ",")
+		}
+		g.P("}")
+		return
+	}
+	g.P("out := ", literal)
+	for _, a := range sent {
+		if a.oneof == nil {
+			g.P(a.field.GoName, ": ", c.toProto(a, valueOf(a)), ",")
+		}
+	}
+	g.P("}")
+	var done []*protogen.Oneof
+	for _, a := range sent {
+		if a.oneof == nil || slices.Contains(done, a.oneof) {
+			continue
+		}
+		done = append(done, a.oneof)
+		g.P("switch {")
+		for _, b := range sent {
+			if b.oneof == a.oneof {
+				g.P("case ", c.framework("IsSet"), "(", valueOf(b), "):")
+				g.P("out.", a.oneof.GoName, " = &", g.QualifiedGoIdent(b.field.GoIdent), "{", b.field.GoName, ": ", c.toProto(b, valueOf(b)), "}")
+			}
+		}
+		g.P("}")
+	}
+	g.P("return out")
 }
 
 // updateChanged returns the condition under which an updatable attribute
@@ -534,6 +704,11 @@ func generateNested(g *protogen.GeneratedFile, attrs []attribute) {
 // the state. A nested message or repeated field is sent, and named, as a
 // whole.
 func updateChanged(g *protogen.GeneratedFile, a attribute) string {
+	c := conv{g}
+	if a.wellKnown != "" {
+		// The same instant or length, however written.
+		return "!" + g.QualifiedGoIdent(protoPackage.Ident("Equal")) + "(" + c.toProto(a, "plan."+a.goName) + ", " + c.toProto(a, "state."+a.goName) + ")"
+	}
 	if a.message == nil {
 		return "!plan." + a.goName + ".Equal(state." + a.goName + ")"
 	}
@@ -622,15 +797,22 @@ func (c conv) enumFromName(e *protogen.Enum, s string) string {
 	return c.g.QualifiedGoIdent(e.GoIdent) + "(" + values + "[" + s + "])"
 }
 
-// fromProto returns the expression of a's value from get, its field's,
-// with prior, its prior value's: an optional attribute left out stays
-// null while the API answers with its zero value.
-func (c conv) fromProto(a attribute, get, prior string) string {
-	if a.computedOnly() {
+// fromProto returns the expression of a's value from its field in p, with
+// prior, its prior value's: an optional attribute left out stays null
+// while the API answers with its zero value.
+func (c conv) fromProto(a attribute, p, prior string) string {
+	get := p + ".Get" + a.field.GoName + "()"
+	if a.computedOnly() && !a.kept {
 		prior = c.null(a)
 	}
 	var value, zero string
 	switch {
+	case a.kept:
+		value = c.framework("Kept") + "(" + prior + ", " + get + ")"
+	case a.wellKnown != "":
+		value = c.framework(a.wellKnown) + "(" + get + ", " + prior + ")"
+	case a.presence:
+		value = c.framework("Present"+c.presenceType(a)) + "(" + p + "." + a.field.GoName + ")"
 	case a.message != nil && a.kind == "Object":
 		value = c.framework("Object") + "(" + get + ", " + prior + ", " + a.prefix + "AttrTypes(), " + a.prefix + "FromProto)"
 	case a.message != nil && a.kind == "List":
@@ -657,10 +839,31 @@ func (c conv) fromProto(a attribute, get, prior string) string {
 	if a.collection() {
 		zero = "len(" + get + ") == 0"
 	}
-	if a.optional && !a.computed && zero != "" {
+	switch {
+	case a.oneof != nil:
+		// Null unless it is the member the oneof holds.
+		is := c.framework("Is") + "[*" + c.g.QualifiedGoIdent(a.field.GoIdent) + "](" + p + ".Get" + a.oneof.GoName + "())"
+		value = c.framework("When") + "(" + is + ", " + value + ", " + c.null(a) + ")"
+	case a.optional && !a.computed && zero != "":
 		value = c.framework("Optional") + "(" + prior + ", " + value + ", " + zero + ")"
 	}
 	return value
+}
+
+// presenceType names the framework's conversions of a field with explicit
+// presence: String, Int32, Int64, Bool or Enum.
+func (c conv) presenceType(a attribute) string {
+	switch {
+	case a.enum != nil:
+		return "Enum"
+	case a.int32:
+		return "Int32"
+	default:
+		if a.kind == "Int64" {
+			return "Int64"
+		}
+		return a.kind
+	}
 }
 
 // scalarFrom returns the function converting a repeated scalar field's
@@ -679,6 +882,13 @@ func (c conv) scalarFrom(a attribute) string {
 // toProto returns the expression of a's field from v, its value.
 func (c conv) toProto(a attribute, v string) string {
 	switch {
+	case a.wellKnown != "":
+		return c.framework(a.wellKnown+"ToProto") + "(" + v + ")"
+	case a.presence && a.enum != nil:
+		values := c.g.QualifiedGoIdent(protogen.GoIdent{GoName: a.enum.GoIdent.GoName + "_value", GoImportPath: a.enum.GoIdent.GoImportPath})
+		return c.framework("EnumPtr") + "[" + c.g.QualifiedGoIdent(a.enum.GoIdent) + "](" + v + ", " + values + ")"
+	case a.presence:
+		return c.framework(c.presenceType(a)+"Ptr") + "(" + v + ")"
 	case a.message != nil && a.kind == "Object":
 		return a.prefix + "ToProto(" + v + ")"
 	case a.message != nil:
