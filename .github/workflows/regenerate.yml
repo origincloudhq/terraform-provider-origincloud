@@ -9,8 +9,9 @@
 # for something new in the API, or a new service's tests, are kept: a later
 # run generates on top of them, with main merged in, and never closes a pull
 # request that has them. Merging main resolves conflicts in what
-# scripts/update.sh writes again anyway (API_REVISION, go.mod and go.sum, the
-# *.gen.go files and docs/); any other conflict fails the run until someone
+# scripts/update.sh writes again anyway (API_REVISION, the *.gen.go files and
+# docs/), and in go.mod and go.sum while the branch changed nothing in go.mod
+# but the SDK's version; any other conflict fails the run until someone
 # merges main into the branch by hand.
 #
 # The pull request is opened with the workflow token, which starts no
@@ -47,6 +48,11 @@ jobs:
           ref: main
           fetch-depth: 0
 
+      - name: Go
+        uses: 'actions/setup-go@v5'
+        with:
+          go-version-file: go.mod
+
       # The open pull request's branch, when someone has added commits to
       # it, with main merged in; main otherwise.
       - name: Base
@@ -72,21 +78,33 @@ jobs:
             if [[ -n "${open}" && "${added}" -gt 0 ]]; then
               git switch --quiet -C "${BRANCH}" FETCH_HEAD
               if ! git merge --quiet --no-edit origin/main; then
+                # go.mod and go.sum are resolved only when the branch changed
+                # nothing in go.mod but the SDK's version: they take main's,
+                # with the branch's SDK, which scripts/update.sh moves only
+                # forward. Any other change would be undone by main's, and
+                # go mod tidy doesn't restore an upgrade or a go version, so
+                # it is left to merge by hand.
+                without_sdk() { git show "$1:go.mod" 2>/dev/null | grep -v 'go\.origincloud\.eu/sdk v' || true; }
+                sdk_only=false
+                if [[ "$(without_sdk "$(git merge-base HEAD origin/main)")" == "$(without_sdk HEAD)" ]]; then
+                  sdk_only=true
+                fi
+                branch_sdk="$(git show HEAD:go.mod | grep -o 'go\.origincloud\.eu/sdk v[^[:space:]]*' | cut -d' ' -f2 || true)"
                 for path in $(git diff --name-only --diff-filter=U); do
-                  # go.mod and go.sum take main's: scripts/update.sh moves
-                  # the SDK again and go mod tidy adds what the branch's code
-                  # needs, while main's other versions are kept. The rest is
-                  # generated again whichever side it is taken from.
                   side=""
                   case "${path}" in
-                    go.mod | go.sum) side=--theirs ;;
-                    API_REVISION | internal/services/*.gen.go | internal/provider/services.gen.go | docs/*) side=--ours ;;
+                    go.mod | go.sum) if [[ "${sdk_only}" == true ]]; then side=--theirs; fi ;;
+                    API_REVISION | *.gen.go | docs/*) side=--ours ;;
                   esac
                   if [[ -n "${side}" ]]; then
                     if git checkout --quiet "${side}" -- "${path}" 2>/dev/null; then
                       git add -- "${path}"
                     else
                       git rm --quiet -- "${path}"
+                    fi
+                    if [[ "${path}" == go.mod && -n "${branch_sdk}" ]]; then
+                      go mod edit -require="go.origincloud.eu/sdk@${branch_sdk}"
+                      git add -- go.mod
                     fi
                   fi
                 done
@@ -108,11 +126,6 @@ jobs:
             echo "LEASE=${lease}"
             echo "FROM=$(cat API_REVISION)"
           } >> "$GITHUB_ENV"
-
-      - name: Go
-        uses: 'actions/setup-go@v5'
-        with:
-          go-version-file: go.mod
 
       - name: Update
         run: scripts/update.sh
@@ -160,7 +173,7 @@ jobs:
 
           A service new to the API gets its resources and data sources generated (internal/services/<service><version>/): add tests against a fake of it and its rows in README.md's table on this branch before merging.
 
-          If CI fails to build it, the API changed in a way the SDK hasn't been released with yet; the next run after that release refreshes this pull request. If generation fails, the API uses something the generator (internal/cmd/protoc-gen-terraform-origincloud) doesn't support yet; extend it on this branch."
+          A run refreshes this pull request only when generating succeeds; one that fails pushes nothing. Generating fails when the API uses something the generator (internal/cmd/protoc-gen-terraform-origincloud) doesn't support yet, so extend it on this branch, or a package the Go SDK hasn't released yet, which the next run after that release picks up."
           if [[ -n "${open}" ]]; then
             gh pr edit "${open}" --body "${body}"
           else
