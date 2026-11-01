@@ -3,12 +3,12 @@
 page_title: "origincloud_pvs_volumes Data Source - origincloud"
 subcategory: ""
 description: |-
-  Lists the volumes in a zone, oldest first. Deleted volumes aren't listed. For every zone's volumes, list the zones whose services name pvs with the location service (location.origincloudapis.eu), then each zone's volumes.
+  Lists the volumes in a zone, oldest first. Deleted volumes aren't listed. For every zone's volumes, list the zones whose services name pvs with the origincloud_location_zones data source, then each zone's volumes.
 ---
 
 # origincloud_pvs_volumes (Data Source)
 
-Lists the volumes in a zone, oldest first. Deleted volumes aren't listed. For every zone's volumes, list the zones whose `services` name `pvs` with the location service (`location.origincloudapis.eu`), then each zone's volumes.
+Lists the volumes in a zone, oldest first. Deleted volumes aren't listed. For every zone's volumes, list the zones whose `services` name `pvs` with the `origincloud_location_zones` data source, then each zone's volumes.
 
 ## Example Usage
 

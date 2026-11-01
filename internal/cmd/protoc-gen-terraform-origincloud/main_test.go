@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	_ "cloud.google.com/go/longrunning/autogen/longrunningpb"
-	_ "google.golang.org/genproto/googleapis/api/annotations"
+	"google.golang.org/genproto/googleapis/api/annotations"
 	"google.golang.org/protobuf/compiler/protogen"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
@@ -21,7 +21,7 @@ import (
 
 // widgets is an API of the shape the generator reads: a resource, Widget,
 // that can be created, updated, deleted and listed, and a data source,
-// Gadget. Both have repeated string fields.
+// Gadget. Both have output-only repeated string fields.
 const widgets = `
 name: "test/widgets/v1/widget.proto"
 package: "test.widgets.v1"
@@ -48,7 +48,6 @@ message_type {
   name: "Widget"
   options { [google.api.resource] { type: "widgets.origincloudapis.eu/Widget" pattern: "projects/{project}/widgets/{widget}" singular: "widget" plural: "widgets" } }
   field { name: "name" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: IDENTIFIER } }
-  field { name: "labels" number: 2 label: LABEL_REPEATED type: TYPE_STRING options { [google.api.field_behavior]: OPTIONAL } }
   field { name: "aliases" number: 3 label: LABEL_REPEATED type: TYPE_STRING options { [google.api.field_behavior]: OUTPUT_ONLY } }
 }
 message_type {
@@ -176,22 +175,15 @@ func TestRepeatedStringsAreListsOfStrings(t *testing.T) {
 	if failure != "" {
 		t.Fatal(failure)
 	}
+	// Output only, in a resource: computed, never sent, empty rather than
+	// null.
 	widget := files["internal/services/widgetsv1/widget.gen.go"]
-	// Settable: optional, sent in creates and updates, null while left out
-	// and the API answers with none.
 	contains(t, "widget.gen.go", widget,
-		"Labels types.List `tfsdk:\"labels\"`",
-		`"labels": schema.ListAttribute{ MarkdownDescription: "", Optional: true, ElementType: types.StringType, },`,
-		"Labels: framework.StringListToProto(m.Labels),",
-		"m.Labels = framework.Optional(m.Labels, framework.StringList(p.GetLabels()), len(p.GetLabels()) == 0)",
-		`if !plan.Labels.Equal(state.Labels) { mask = append(mask, "labels") }`,
-	)
-	// Output only: computed, never sent, empty rather than null.
-	contains(t, "widget.gen.go", widget,
+		"Aliases types.List `tfsdk:\"aliases\"`",
 		`"aliases": schema.ListAttribute{ MarkdownDescription: "", Computed: true, ElementType: types.StringType, },`,
 		"m.Aliases = framework.StringList(p.GetAliases())",
 	)
-	if strings.Contains(widget, "Aliases: framework.StringListToProto") {
+	if strings.Contains(widget, "Aliases: ") {
 		t.Error("an output-only list is sent")
 	}
 
@@ -210,7 +202,7 @@ func TestAListedResourceTypeGetsAListDataSource(t *testing.T) {
 	widget := files["internal/services/widgetsv1/widget.gen.go"]
 	contains(t, "widget.gen.go", widget,
 		// A resource's items have a model of their own, without its id.
-		"type widgetItemModel struct { Name types.String `tfsdk:\"name\"` Labels types.List `tfsdk:\"labels\"` Aliases types.List `tfsdk:\"aliases\"` }",
+		"type widgetItemModel struct { Name types.String `tfsdk:\"name\"` Aliases types.List `tfsdk:\"aliases\"` }",
 		"type widgetListModel struct { Project types.String `tfsdk:\"project\"` Widgets []widgetItemModel `tfsdk:\"widgets\"` }",
 		`TypeName: "_widgets_widgets",`,
 		// Paginated: every page.
@@ -226,6 +218,37 @@ func TestAListedResourceTypeGetsAListDataSource(t *testing.T) {
 	if strings.Contains(services, "gadgetListDataSource") {
 		t.Error("a resource type the service doesn't list has a list data source")
 	}
+}
+
+// A list request's optional fields, such as a filter, are left unset.
+func TestAListRequestsOptionalFieldsAreLeftUnset(t *testing.T) {
+	files, failure := run(t, func(file *descriptorpb.FileDescriptorProto) {
+		m := message(file, "ListWidgetsRequest")
+		m.Field = append(m.Field, &descriptorpb.FieldDescriptorProto{
+			Name: proto.String("filter"), Number: proto.Int32(4),
+			Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
+			Options: behaviors(annotations.FieldBehavior_OPTIONAL),
+		})
+	})
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	contains(t, "widget.gen.go", files["internal/services/widgetsv1/widget.gen.go"],
+		`AllWidgets(ctx, &v1.ListWidgetsRequest{Parent: "projects/" + m.Project.ValueString()})`)
+}
+
+func TestTheAPIsTermsBecomeTerraformsInDescriptions(t *testing.T) {
+	got := prose(protogen.Comments("For every zone's volumes, list the zones whose `services` name `pvs`\n with the location service\n (`location.origincloudapis.eu`), then each zone's volumes.\n"))
+	want := "For every zone's volumes, list the zones whose `services` name `pvs` with the `origincloud_location_zones` data source, then each zone's volumes."
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func behaviors(b ...annotations.FieldBehavior) *descriptorpb.FieldOptions {
+	options := new(descriptorpb.FieldOptions)
+	proto.SetExtension(options, annotations.E_FieldBehavior, b)
+	return options
 }
 
 func TestUnsupportedFieldsFailGeneration(t *testing.T) {
@@ -258,15 +281,28 @@ func TestUnsupportedFieldsFailGeneration(t *testing.T) {
 			want: "Gadget: field names: repeated message fields aren't supported yet, only repeated strings",
 		},
 		{
-			name: "a list request's filter",
+			name: "a settable repeated field",
+			change: func(file *descriptorpb.FileDescriptorProto) {
+				m := message(file, "Widget")
+				m.Field = append(m.Field, &descriptorpb.FieldDescriptorProto{
+					Name: proto.String("labels"), Number: proto.Int32(4),
+					Label: descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
+					Options: behaviors(annotations.FieldBehavior_OPTIONAL),
+				})
+			},
+			want: "Widget: field labels: repeated fields that are set aren't supported yet, only output-only ones",
+		},
+		{
+			name: "a list request's required field",
 			change: func(file *descriptorpb.FileDescriptorProto) {
 				m := message(file, "ListWidgetsRequest")
 				m.Field = append(m.Field, &descriptorpb.FieldDescriptorProto{
 					Name: proto.String("filter"), Number: proto.Int32(4),
 					Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
+					Options: behaviors(annotations.FieldBehavior_REQUIRED),
 				})
 			},
-			want: "Widget: ListWidgets's request field filter isn't supported yet",
+			want: "Widget: ListWidgets's request field filter is required, which isn't supported yet",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

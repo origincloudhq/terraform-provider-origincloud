@@ -226,7 +226,7 @@ type snapshotListModel struct {
 
 func snapshotListSchema() schema1.Schema {
 	return schema1.Schema{
-		MarkdownDescription: "Lists the snapshots in a zone, oldest first. Deleted snapshots aren't listed. For every zone's snapshots, list the zones whose `services` name `pvs` with the location service (`location.origincloudapis.eu`), then each zone's snapshots.",
+		MarkdownDescription: "Lists the snapshots in a zone, oldest first. Deleted snapshots aren't listed. For every zone's snapshots, list the zones whose `services` name `pvs` with the `origincloud_location_zones` data source, then each zone's snapshots.",
 		Attributes: map[string]schema1.Attribute{
 			"project": schema1.StringAttribute{
 				MarkdownDescription: "The project whose snapshots to list.",

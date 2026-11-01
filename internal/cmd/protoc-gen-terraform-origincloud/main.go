@@ -355,6 +355,10 @@ func fieldAttribute(t resourceType, f *protogen.Field, forResource bool) (attrib
 		a.computed = true
 	case f.Desc.Kind() == protoreflect.EnumKind:
 		return a, fmt.Errorf("enum fields that are set aren't supported yet")
+	case a.kind == "List":
+		// The API may answer with a set list sorted or without duplicates,
+		// which Terraform refuses as an inconsistent result.
+		return a, fmt.Errorf("repeated fields that are set aren't supported yet, only output-only ones")
 	case has(annotations.FieldBehavior_REQUIRED):
 		a.required = true
 		a.replace = has(annotations.FieldBehavior_IMMUTABLE) || !updatable
@@ -592,11 +596,15 @@ func generateListDataSource(g *protogen.GeneratedFile, t resourceType) error {
 		return fmt.Errorf("%s's response has no repeated %s field", method, t.message.Desc.Name())
 	}
 	paginated := fieldNamed(t.list.Input, "page_token") != nil && fieldNamed(t.list.Output, "next_page_token") != nil
+	// Other fields, such as a filter, are left unset, which lists
+	// everything; a required one fails generation.
 	for _, f := range t.list.Input.Fields {
 		switch f.Desc.Name() {
 		case "parent", "page_size", "page_token":
 		default:
-			return fmt.Errorf("%s's request field %s isn't supported yet", method, f.Desc.Name())
+			if slices.Contains(fieldBehaviors(f), annotations.FieldBehavior_REQUIRED) {
+				return fmt.Errorf("%s's request field %s is required, which isn't supported yet", method, f.Desc.Name())
+			}
 		}
 	}
 	if hasParent := fieldNamed(t.list.Input, "parent") != nil; hasParent != (len(t.variables) > 1) {
@@ -784,8 +792,6 @@ func generateConversions(g *protogen.GeneratedFile, t resourceType, name, model,
 			switch {
 			case a.kind == "Map":
 				g.P(a.goName, ": ", framework("StringMapToProto"), "(m.", a.goName, "),")
-			case a.kind == "List":
-				g.P(a.goName, ": ", framework("StringListToProto"), "(m.", a.goName, "),")
 			case a.int32:
 				g.P(a.goName, ": int32(m.", a.goName, ".ValueInt64()),")
 			default:
@@ -948,8 +954,15 @@ func fieldNamed(m *protogen.Message, name string) *protogen.Field {
 // A proto comment without the API linter's directives, `(-- ... --)`.
 var linterDirective = regexp.MustCompile(`(?s)\(--.*?--\)`)
 
+// terraformTerms rewrite what the API's comments tell a client to call
+// into what a configuration reads instead. A comment worded otherwise is
+// left as the API has it.
+var terraformTerms = []struct{ api, terraform string }{
+	{"with the location service (`location.origincloudapis.eu`)", "with the `origincloud_location_zones` data source"},
+}
+
 // prose returns a comment as Markdown: its lines joined, its paragraphs
-// kept.
+// kept, and the terms of terraformTerms rewritten.
 func prose(c protogen.Comments) string {
 	text := strings.TrimSpace(linterDirective.ReplaceAllString(string(c), ""))
 	var paragraphs []string
@@ -964,7 +977,11 @@ func prose(c protogen.Comments) string {
 			paragraphs = append(paragraphs, strings.Join(lines, " "))
 		}
 	}
-	return strings.Join(paragraphs, "\n\n")
+	text = strings.Join(paragraphs, "\n\n")
+	for _, r := range terraformTerms {
+		text = strings.ReplaceAll(text, r.api, r.terraform)
+	}
+	return text
 }
 
 // snake returns a lowerCamel name in snake case: storageClass is

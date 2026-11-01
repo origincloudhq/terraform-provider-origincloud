@@ -3,12 +3,12 @@
 page_title: "origincloud_pvs_snapshots Data Source - origincloud"
 subcategory: ""
 description: |-
-  Lists the snapshots in a zone, oldest first. Deleted snapshots aren't listed. For every zone's snapshots, list the zones whose services name pvs with the location service (location.origincloudapis.eu), then each zone's snapshots.
+  Lists the snapshots in a zone, oldest first. Deleted snapshots aren't listed. For every zone's snapshots, list the zones whose services name pvs with the origincloud_location_zones data source, then each zone's snapshots.
 ---
 
 # origincloud_pvs_snapshots (Data Source)
 
-Lists the snapshots in a zone, oldest first. Deleted snapshots aren't listed. For every zone's snapshots, list the zones whose `services` name `pvs` with the location service (`location.origincloudapis.eu`), then each zone's snapshots.
+Lists the snapshots in a zone, oldest first. Deleted snapshots aren't listed. For every zone's snapshots, list the zones whose `services` name `pvs` with the `origincloud_location_zones` data source, then each zone's snapshots.
 
 ## Example Usage
 
