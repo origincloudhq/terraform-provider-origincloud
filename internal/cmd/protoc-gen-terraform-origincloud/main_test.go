@@ -295,6 +295,22 @@ func TestAnImmutableFieldsElementsMayBeImmutable(t *testing.T) {
 	)
 }
 
+// A resource type with two patterns, as images have, a project's and the
+// public ones, is created in the first.
+func TestAResourceWithTwoPatternsIsCreatedInTheFirst(t *testing.T) {
+	files, failure := run(t, func(file *descriptorpb.FileDescriptorProto) {
+		r := proto.GetExtension(message(file, "Widget").GetOptions(), annotations.E_Resource).(*annotations.ResourceDescriptor)
+		r.Pattern = append(r.Pattern, "widgets/{widget}")
+	})
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	contains(t, "widget.gen.go", files["internal/services/widgetsv1/widget.gen.go"],
+		`Parent: "projects/" + plan.Project.ValueString(),`,
+		`framework.NameValues("projects/{project}/widgets/{widget}", p.GetName())`,
+	)
+}
+
 // A secret declared for a field the API hasn't, or that isn't an
 // output-only string, fails generation.
 func TestSecretsAreCheckedAgainstTheAPI(t *testing.T) {

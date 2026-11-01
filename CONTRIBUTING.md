@@ -36,7 +36,12 @@ to the plugin or `internal/framework`.
 - A resource message the service can `Get` becomes a **resource** when the
   service can also `Create` and `Delete` it, and a **data source** otherwise.
   Its name's variables before its own (`project`, `zone`) are required
-  attributes that replace it.
+  attributes that replace it. A resource type with several patterns, such
+  as a project's images and the public ones, is created in the first; the
+  data source reads any by name.
+- A field referring to another resource (`google.api.resource_reference`) is
+  a string the API checks, so a reference that may take several patterns
+  needs nothing of its own.
 - A resource type the service also lists (`List<plural>`, AIP-132) gets a
   second data source named after its plural, such as
   `origincloud_pvs_volumes`, that reads every page of the list. The name's

@@ -213,9 +213,12 @@ func resourceTypes(f *protogen.File, s *protogen.Service, shortcode string) []re
 		message := m.Output
 		descriptor, _ := proto.GetExtension(message.Desc.Options(), annotations.E_Resource).(*annotations.ResourceDescriptor)
 		name := string(message.Desc.Name())
-		if descriptor == nil || string(m.Desc.Name()) != "Get"+name || len(descriptor.GetPattern()) != 1 {
+		if descriptor == nil || string(m.Desc.Name()) != "Get"+name || len(descriptor.GetPattern()) == 0 {
 			continue
 		}
+		// The first pattern is the one a resource is created in, such as a
+		// project's images; another, such as the public images', is read
+		// by name only, through the data source.
 		pattern := descriptor.GetPattern()[0]
 		types = append(types, resourceType{
 			file: f, service: s, message: message,
