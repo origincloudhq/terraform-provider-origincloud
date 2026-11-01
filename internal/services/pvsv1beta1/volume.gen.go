@@ -5,6 +5,7 @@ package pvsv1beta1
 
 import (
 	context "context"
+	schema1 "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	schema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	planmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	stringplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -211,6 +212,163 @@ func volumeResource() framework.ResourceSpec[volumeModel, *v1beta1.Volume] {
 			}
 			_, err = op.Wait(ctx)
 			return err
+		},
+	}
+}
+
+// volumeItemModel is an item of origincloud_pvs_volumes.
+type volumeItemModel struct {
+	Name            types.String `tfsdk:"name"`
+	Urn             types.String `tfsdk:"urn"`
+	SizeGib         types.Int64  `tfsdk:"size_gib"`
+	StorageClass    types.String `tfsdk:"storage_class"`
+	SourceSnapshot  types.String `tfsdk:"source_snapshot"`
+	State           types.String `tfsdk:"state"`
+	StateReason     types.String `tfsdk:"state_reason"`
+	Attachment      types.String `tfsdk:"attachment"`
+	ResizeState     types.String `tfsdk:"resize_state"`
+	ResizeReason    types.String `tfsdk:"resize_reason"`
+	PendingSizeGib  types.Int64  `tfsdk:"pending_size_gib"`
+	RetentionNote   types.String `tfsdk:"retention_note"`
+	Iops            types.Int64  `tfsdk:"iops"`
+	ThroughputMibps types.Int64  `tfsdk:"throughput_mibps"`
+	Creator         types.String `tfsdk:"creator"`
+	Tags            types.Map    `tfsdk:"tags"`
+}
+
+func volumeItemFromProto(p *v1beta1.Volume, m *volumeItemModel) error {
+	m.Name = types.StringValue(p.GetName())
+	m.Urn = types.StringValue(p.GetUrn())
+	m.SizeGib = types.Int64Value(int64(p.GetSizeGib()))
+	m.StorageClass = types.StringValue(p.GetStorageClass())
+	m.SourceSnapshot = types.StringValue(p.GetSourceSnapshot())
+	m.State = types.StringValue(p.GetState().String())
+	m.StateReason = types.StringValue(p.GetStateReason())
+	m.Attachment = types.StringValue(p.GetAttachment())
+	m.ResizeState = types.StringValue(p.GetResizeState().String())
+	m.ResizeReason = types.StringValue(p.GetResizeReason())
+	m.PendingSizeGib = types.Int64Value(int64(p.GetPendingSizeGib()))
+	m.RetentionNote = types.StringValue(p.GetRetentionNote())
+	m.Iops = types.Int64Value(int64(p.GetIops()))
+	m.ThroughputMibps = types.Int64Value(int64(p.GetThroughputMibps()))
+	m.Creator = types.StringValue(p.GetCreator())
+	m.Tags = framework.StringMap(p.GetTags())
+	return nil
+}
+
+// volumeListModel is origincloud_pvs_volumes's state.
+type volumeListModel struct {
+	Project types.String      `tfsdk:"project"`
+	Zone    types.String      `tfsdk:"zone"`
+	Volumes []volumeItemModel `tfsdk:"volumes"`
+}
+
+func volumeListSchema() schema1.Schema {
+	return schema1.Schema{
+		MarkdownDescription: "Lists the volumes in a zone, oldest first. Deleted volumes aren't listed.",
+		Attributes: map[string]schema1.Attribute{
+			"project": schema1.StringAttribute{
+				MarkdownDescription: "The project whose volumes to list.",
+				Required:            true,
+			},
+			"zone": schema1.StringAttribute{
+				MarkdownDescription: "The zone whose volumes to list.",
+				Required:            true,
+			},
+			"volumes": schema1.ListNestedAttribute{
+				MarkdownDescription: "The volumes listed, from every page.",
+				Computed:            true,
+				NestedObject: schema1.NestedAttributeObject{
+					Attributes: map[string]schema1.Attribute{
+						"name": schema1.StringAttribute{
+							MarkdownDescription: "The volume's resource name.",
+							Computed:            true,
+						},
+						"urn": schema1.StringAttribute{
+							MarkdownDescription: "The volume's URN, the identifier access policies and the audit log use.",
+							Computed:            true,
+						},
+						"size_gib": schema1.Int64Attribute{
+							MarkdownDescription: "The size in GiB, at least 1. Growing it resizes the volume; it never shrinks.",
+							Computed:            true,
+						},
+						"storage_class": schema1.StringAttribute{
+							MarkdownDescription: "The storage class, `storageClasses/{storage_class}`. The default class when left empty.",
+							Computed:            true,
+						},
+						"source_snapshot": schema1.StringAttribute{
+							MarkdownDescription: "The snapshot the volume was created from, in the same project and zone; empty for an empty volume. The volume is at least the snapshot's size.",
+							Computed:            true,
+						},
+						"state": schema1.StringAttribute{
+							MarkdownDescription: "Where the volume is in its lifecycle. One of `CREATING`, `AVAILABLE`, `IN_USE`, `DELETING`, `DELETED`, `ERROR`.",
+							Computed:            true,
+						},
+						"state_reason": schema1.StringAttribute{
+							MarkdownDescription: "Why the volume is in `ERROR`; empty otherwise.",
+							Computed:            true,
+						},
+						"attachment": schema1.StringAttribute{
+							MarkdownDescription: "When `state` is `IN_USE`, the id of the volume attachment holding it.",
+							Computed:            true,
+						},
+						"resize_state": schema1.StringAttribute{
+							MarkdownDescription: "Where the last resize is. One of `RESIZE_COMPLETED`, `RESIZING`, `RESIZE_FAILED`.",
+							Computed:            true,
+						},
+						"resize_reason": schema1.StringAttribute{
+							MarkdownDescription: "Why the last resize failed, when `resize_state` is `RESIZE_FAILED`.",
+							Computed:            true,
+						},
+						"pending_size_gib": schema1.Int64Attribute{
+							MarkdownDescription: "The size a resize under way is heading for; 0 when none is. `size_gib` changes once the resize is confirmed.",
+							Computed:            true,
+						},
+						"retention_note": schema1.StringAttribute{
+							MarkdownDescription: "Why the volume is still here after the instance it was created with was terminated; empty in every other case. Most often a snapshot of it exists, and a snapshot depends on its volume's data.",
+							Computed:            true,
+						},
+						"iops": schema1.Int64Attribute{
+							MarkdownDescription: "The most I/O operations per second the volume serves, reads and writes combined: a ceiling, not a guaranteed rate. 0 when it isn't limited.",
+							Computed:            true,
+						},
+						"throughput_mibps": schema1.Int64Attribute{
+							MarkdownDescription: "The most MiB per second the volume transfers, reads and writes combined: a ceiling, not a guaranteed rate. 0 when it isn't limited.",
+							Computed:            true,
+						},
+						"creator": schema1.StringAttribute{
+							MarkdownDescription: "The principal that created the volume, such as `user:<id>` or `service_account:<id>`.",
+							Computed:            true,
+						},
+						"tags": schema1.MapAttribute{
+							MarkdownDescription: "Labels of your own, at most 50. The `origin:name` tag is the name the console shows.",
+							Computed:            true,
+							ElementType:         types.StringType,
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func volumeListDataSource() framework.ListDataSourceSpec[volumeListModel] {
+	return framework.ListDataSourceSpec[volumeListModel]{
+		TypeName: "_pvs_volumes",
+		Schema:   volumeListSchema(),
+		List: func(ctx context.Context, client *core.Client, m *volumeListModel) error {
+			m.Volumes = []volumeItemModel{}
+			for p, err := range v1beta1.NewVolumeClient(client).AllVolumes(ctx, &v1beta1.ListVolumesRequest{Parent: "projects/" + m.Project.ValueString() + "/zones/" + m.Zone.ValueString()}) {
+				if err != nil {
+					return err
+				}
+				var item volumeItemModel
+				if err := volumeItemFromProto(p, &item); err != nil {
+					return err
+				}
+				m.Volumes = append(m.Volumes, item)
+			}
+			return nil
 		},
 	}
 }

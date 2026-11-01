@@ -68,6 +68,28 @@ func StringMapToProto(m types.Map) map[string]string {
 	return out
 }
 
+// StringList returns a repeated string field as a list attribute: an
+// empty list, not null, when the field is empty.
+func StringList(l []string) types.List {
+	elements := make([]attr.Value, len(l))
+	for i, v := range l {
+		elements[i] = types.StringValue(v)
+	}
+	return types.ListValueMust(types.StringType, elements)
+}
+
+// StringListToProto returns a list attribute as a repeated string field.
+func StringListToProto(l types.List) []string {
+	if l.IsNull() || l.IsUnknown() {
+		return nil
+	}
+	out := make([]string, len(l.Elements()))
+	for i, v := range l.Elements() {
+		out[i] = v.(types.String).ValueString()
+	}
+	return out
+}
+
 // OperationTarget returns the resource an operation acts on, from its
 // metadata; empty when it has none.
 func OperationTarget(op *longrunningpb.Operation) string {

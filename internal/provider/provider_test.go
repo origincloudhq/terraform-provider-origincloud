@@ -10,8 +10,11 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
+	"github.com/hashicorp/terraform-plugin-testing/statecheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 	pvsv1beta1 "go.origincloud.eu/sdk/pvs/v1beta1"
 )
 
@@ -316,6 +319,83 @@ func TestARefusedUnprotectReachesTheUser(t *testing.T) {
 			},
 			// Once the API allows it, the snapshot is destroyed.
 			{Config: protectionConfig(fake, `protected = true`, false)},
+		},
+	})
+}
+
+func TestListDataSourcesReadEveryPage(t *testing.T) {
+	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
+	fake := newFakePVS(t)
+	resources := fmt.Sprintf(`
+provider "origincloud" {
+  endpoint = %q
+}
+
+resource "origincloud_pvs_volume" "first" {
+  project  = "p-1"
+  zone     = "eu-central1-az1"
+  size_gib = 1
+}
+
+# Created after the first, so listed after it.
+resource "origincloud_pvs_volume" "second" {
+  project    = "p-1"
+  zone       = "eu-central1-az1"
+  size_gib   = 2
+  tags       = { env = "test" }
+  depends_on = [origincloud_pvs_volume.first]
+}
+
+resource "origincloud_pvs_snapshot" "first" {
+  project       = "p-1"
+  zone          = "eu-central1-az1"
+  source_volume = origincloud_pvs_volume.first.name
+}
+`, fake.URL)
+	lists := resources + `
+data "origincloud_pvs_volumes" "az1" {
+  project = "p-1"
+  zone    = "eu-central1-az1"
+}
+
+data "origincloud_pvs_volumes" "az2" {
+  project = "p-1"
+  zone    = "eu-central1-az2"
+}
+
+data "origincloud_pvs_snapshots" "az1" {
+  project = "p-1"
+  zone    = "eu-central1-az1"
+}
+
+data "origincloud_pvs_storage_classes" "all" {}
+`
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			{Config: resources},
+			// The fake answers one volume per page: both are read.
+			{
+				Config: lists,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("data.origincloud_pvs_volumes.az1", "volumes.#", "2"),
+					resource.TestCheckResourceAttrPair("data.origincloud_pvs_volumes.az1", "volumes.0.name", "origincloud_pvs_volume.first", "name"),
+					resource.TestCheckResourceAttrPair("data.origincloud_pvs_volumes.az1", "volumes.1.name", "origincloud_pvs_volume.second", "name"),
+					resource.TestCheckResourceAttr("data.origincloud_pvs_volumes.az1", "volumes.1.size_gib", "2"),
+					resource.TestCheckResourceAttr("data.origincloud_pvs_volumes.az1", "volumes.1.tags.env", "test"),
+					resource.TestCheckResourceAttr("data.origincloud_pvs_volumes.az1", "volumes.0.state", "AVAILABLE"),
+					resource.TestCheckResourceAttr("data.origincloud_pvs_snapshots.az1", "snapshots.#", "1"),
+					resource.TestCheckResourceAttrPair("data.origincloud_pvs_snapshots.az1", "snapshots.0.source_volume", "origincloud_pvs_volume.first", "name"),
+					resource.TestCheckResourceAttr("data.origincloud_pvs_storage_classes.all", "storage_classes.#", "2"),
+					resource.TestCheckResourceAttr("data.origincloud_pvs_storage_classes.all", "storage_classes.0.name", "storageClasses/gp1"),
+					resource.TestCheckResourceAttr("data.origincloud_pvs_storage_classes.all", "storage_classes.1.media", "HDD"),
+				),
+				// A zone without volumes lists none: an empty list, not null.
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("data.origincloud_pvs_volumes.az2", tfjsonpath.New("volumes"), knownvalue.ListSizeExact(0)),
+				},
+			},
 		},
 	})
 }

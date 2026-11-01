@@ -81,3 +81,74 @@ func storageClassDataSource() framework.DataSourceSpec[storageClassModel, *v1bet
 		},
 	}
 }
+
+// storageClassListModel is origincloud_pvs_storage_classes's state.
+type storageClassListModel struct {
+	StorageClasses []storageClassModel `tfsdk:"storage_classes"`
+}
+
+func storageClassListSchema() schema.Schema {
+	return schema.Schema{
+		MarkdownDescription: "Lists every storage class, including those not yet on sale: check `available` before selecting one.",
+		Attributes: map[string]schema.Attribute{
+			"storage_classes": schema.ListNestedAttribute{
+				MarkdownDescription: "Every storage class, in catalog order.",
+				Computed:            true,
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"name": schema.StringAttribute{
+							MarkdownDescription: "The class's resource name, `storageClasses/gp1`.",
+							Computed:            true,
+						},
+						"display_name": schema.StringAttribute{
+							MarkdownDescription: "The name the console shows.",
+							Computed:            true,
+						},
+						"media": schema.StringAttribute{
+							MarkdownDescription: "The media the class is backed by. One of `SSD`, `HDD`.",
+							Computed:            true,
+						},
+						"default_class": schema.BoolAttribute{
+							MarkdownDescription: "Whether a volume created without a storage class is created in this one.",
+							Computed:            true,
+						},
+						"available": schema.BoolAttribute{
+							MarkdownDescription: "Whether the class can be selected right now. A class that is listed but not available is a published tier not yet on sale.",
+							Computed:            true,
+						},
+						"baseline_iops": schema.Int64Attribute{
+							MarkdownDescription: "The I/O operations per second a volume of the class is limited to; 0 for a class not on sale.",
+							Computed:            true,
+						},
+						"baseline_throughput_mibps": schema.Int64Attribute{
+							MarkdownDescription: "The MiB per second a volume of the class is limited to; 0 for a class not on sale.",
+							Computed:            true,
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func storageClassListDataSource() framework.ListDataSourceSpec[storageClassListModel] {
+	return framework.ListDataSourceSpec[storageClassListModel]{
+		TypeName: "_pvs_storage_classes",
+		Schema:   storageClassListSchema(),
+		List: func(ctx context.Context, client *core.Client, m *storageClassListModel) error {
+			m.StorageClasses = []storageClassModel{}
+			page, err := v1beta1.NewStorageClassClient(client).ListStorageClasses(ctx, &v1beta1.ListStorageClassesRequest{})
+			if err != nil {
+				return err
+			}
+			for _, p := range page.GetStorageClasses() {
+				var item storageClassModel
+				if err := storageClassFromProto(p, &item); err != nil {
+					return err
+				}
+				m.StorageClasses = append(m.StorageClasses, item)
+			}
+			return nil
+		},
+	}
+}

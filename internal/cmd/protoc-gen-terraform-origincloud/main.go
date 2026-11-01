@@ -9,6 +9,10 @@
 // resource's name before its own, such as project and zone, are required
 // and replace it too.
 //
+// A resource type the service also lists (AIP-132) gets a second data
+// source, named after its plural, that reads everything the list returns,
+// every page of it.
+//
 // It runs over every file at once (buf's strategy "all"), writing a
 // package per API package under internal/services and the list of them in
 // internal/provider.
@@ -51,26 +55,29 @@ const (
 )
 
 func main() {
-	protogen.Options{}.Run(func(gen *protogen.Plugin) error {
-		gen.SupportedFeatures = uint64(pluginpb.CodeGeneratorResponse_FEATURE_PROTO3_OPTIONAL)
-		var packages []*servicePackage
-		for _, f := range gen.Files {
-			if !f.Generate {
-				continue
-			}
-			if err := generateFile(gen, f, &packages); err != nil {
-				return fmt.Errorf("%s: %w", f.Desc.Path(), err)
-			}
+	protogen.Options{}.Run(generate)
+}
+
+// generate writes the provider's packages for every file to generate.
+func generate(gen *protogen.Plugin) error {
+	gen.SupportedFeatures = uint64(pluginpb.CodeGeneratorResponse_FEATURE_PROTO3_OPTIONAL)
+	var packages []*servicePackage
+	for _, f := range gen.Files {
+		if !f.Generate {
+			continue
 		}
-		if err := checkTogglesFound(); err != nil {
-			return err
+		if err := generateFile(gen, f, &packages); err != nil {
+			return fmt.Errorf("%s: %w", f.Desc.Path(), err)
 		}
-		for _, p := range packages {
-			generatePackageList(gen, p)
-		}
-		generateProviderList(gen, packages)
-		return nil
-	})
+	}
+	if err := checkTogglesFound(); err != nil {
+		return err
+	}
+	for _, p := range packages {
+		generatePackageList(gen, p)
+	}
+	generateProviderList(gen, packages)
+	return nil
 }
 
 // A resource type a service serves, and the methods it has for it.
@@ -86,14 +93,23 @@ type resourceType struct {
 	// The variables of pattern, such as project, zone and volume.
 	variables []string
 
-	get, create, update, del *protogen.Method
+	// plural is the resource's, such as "storageClasses".
+	plural string
+
+	get, create, update, del, list *protogen.Method
 }
 
-// A package of the provider, one per API package: its resources' and data
-// sources' spec functions.
+// A package of the provider, one per API package: its resources and data
+// sources.
 type servicePackage struct {
 	name                   string
-	resources, dataSources []string
+	resources, dataSources []constructor
+}
+
+// A constructor is a resource's or data source's: the framework function
+// that makes it, such as NewDataSource, and the spec function it takes.
+type constructor struct {
+	framework, spec string
 }
 
 func (p *servicePackage) importPath() protogen.GoImportPath {
@@ -125,10 +141,14 @@ func generateFile(gen *protogen.Plugin, f *protogen.File, packages *[]*servicePa
 			var err error
 			if t.create != nil {
 				err = generateResource(g, t)
-				p.resources = append(p.resources, lowerFirst(t.message.GoIdent.GoName)+"Resource")
+				p.resources = append(p.resources, constructor{"NewResource", lowerFirst(t.message.GoIdent.GoName) + "Resource"})
 			} else {
 				err = generateDataSource(g, t)
-				p.dataSources = append(p.dataSources, lowerFirst(t.message.GoIdent.GoName)+"DataSource")
+				p.dataSources = append(p.dataSources, constructor{"NewDataSource", lowerFirst(t.message.GoIdent.GoName) + "DataSource"})
+			}
+			if err == nil && t.list != nil {
+				err = generateListDataSource(g, t)
+				p.dataSources = append(p.dataSources, constructor{"NewListDataSource", lowerFirst(t.message.GoIdent.GoName) + "ListDataSource"})
 			}
 			if err != nil {
 				return fmt.Errorf("%s: %w", t.message.Desc.Name(), err)
@@ -149,20 +169,20 @@ func generatePackageList(gen *protogen.Plugin, p *servicePackage) {
 	g.P()
 	g.P("package ", p.name)
 	for _, list := range []struct {
-		name, kind, constructor string
-		pkg                     protogen.GoImportPath
-		specs                   []string
+		name, kind   string
+		pkg          protogen.GoImportPath
+		constructors []constructor
 	}{
-		{"Resources", "Resource", "NewResource", resourcePackage, p.resources},
-		{"DataSources", "DataSource", "NewDataSource", datasourcePackage, p.dataSources},
+		{"Resources", "Resource", resourcePackage, p.resources},
+		{"DataSources", "DataSource", datasourcePackage, p.dataSources},
 	} {
 		constructor := "func() " + g.QualifiedGoIdent(list.pkg.Ident(list.kind))
 		g.P()
 		g.P("// ", list.name, " returns the constructors of the package's ", strings.TrimSpace(words(list.name)), ".")
 		g.P("func ", list.name, "() []", constructor, " {")
 		g.P("return []", constructor, "{")
-		for _, spec := range list.specs {
-			g.P(g.QualifiedGoIdent(frameworkPackage.Ident(list.constructor)), "(", spec, "()),")
+		for _, c := range list.constructors {
+			g.P(g.QualifiedGoIdent(frameworkPackage.Ident(c.framework)), "(", c.spec, "()),")
 		}
 		g.P("}")
 		g.P("}")
@@ -188,12 +208,14 @@ func resourceTypes(f *protogen.File, s *protogen.Service, shortcode string) []re
 			file: f, service: s, message: message,
 			shortcode: shortcode,
 			singular:  descriptor.GetSingular(),
+			plural:    descriptor.GetPlural(),
 			pattern:   pattern,
 			variables: patternVariables(pattern),
 			get:       m,
 			create:    methods["Create"+name],
 			update:    methods["Update"+name],
 			del:       methods["Delete"+name],
+			list:      methods["List"+upperFirst(descriptor.GetPlural())],
 		})
 	}
 	return types
@@ -215,7 +237,7 @@ type attribute struct {
 	// goName is the model's field.
 	goName string
 	field  *protogen.Field // nil for id and the name's variables
-	kind   string          // String, Int64, Bool or Map
+	kind   string          // String, Int64, Bool, Map or List (of strings)
 	doc    string
 
 	required, optional, computed bool
@@ -287,7 +309,10 @@ func fieldAttribute(t resourceType, f *protogen.Field, forResource bool) (attrib
 		}
 		a.kind = "Map"
 	case f.Desc.IsList():
-		return a, fmt.Errorf("repeated fields aren't supported yet")
+		if f.Desc.Kind() != protoreflect.StringKind {
+			return a, fmt.Errorf("repeated %s fields aren't supported yet, only repeated strings", f.Desc.Kind())
+		}
+		a.kind = "List"
 	default:
 		switch f.Desc.Kind() {
 		case protoreflect.StringKind:
@@ -383,7 +408,7 @@ func generateResource(g *protogen.GeneratedFile, t resourceType) error {
 
 	generateModel(g, model, "origincloud"+typeName+"'s state", attrs)
 	generateSchema(g, t, resourceSchemaPackage, attrs)
-	generateConversions(g, t, model, message, attrs, true)
+	generateConversions(g, t, lowerFirst(t.message.GoIdent.GoName), model, message, attrs, true)
 
 	g.P()
 	g.P("func ", lowerFirst(t.message.GoIdent.GoName), "Resource() ", g.QualifiedGoIdent(frameworkPackage.Ident("ResourceSpec")), "[", model, ", ", message, "] {")
@@ -537,7 +562,7 @@ func generateDataSource(g *protogen.GeneratedFile, t resourceType) error {
 
 	generateModel(g, model, "origincloud"+typeName+"'s state", attrs)
 	generateSchema(g, t, datasourceSchemaPackage, attrs)
-	generateConversions(g, t, model, message, attrs, false)
+	generateConversions(g, t, lowerFirst(t.message.GoIdent.GoName), model, message, attrs, false)
 
 	g.P()
 	g.P("func ", lowerFirst(t.message.GoIdent.GoName), "DataSource() ", spec, "[", model, ", ", message, "] {")
@@ -548,6 +573,136 @@ func generateDataSource(g *protogen.GeneratedFile, t resourceType) error {
 	g.P("FromProto: ", lowerFirst(t.message.GoIdent.GoName), "FromProto,")
 	g.P("Get: func(ctx ", g.QualifiedGoIdent(contextPackage.Ident("Context")), ", client *", g.QualifiedGoIdent(corePackage.Ident("Client")), ", name string) (", message, ", error) {")
 	g.P("return ", client, ".", t.get.GoName, "(ctx, &", g.QualifiedGoIdent(t.get.Input.GoIdent), "{Name: name})")
+	g.P("},")
+	g.P("}")
+	g.P("}")
+	return nil
+}
+
+// generateListDataSource writes the data source that reads everything a
+// resource type's List method returns. Its items are the data source's
+// attributes, all computed: a data source type's items reuse its model and
+// conversion, a resource type's get their own, without the resource's id,
+// name variables and toggles.
+func generateListDataSource(g *protogen.GeneratedFile, t resourceType) error {
+	name := lowerFirst(t.message.GoIdent.GoName)
+	method := t.list.Desc.Name()
+	items := fieldOfType(t.list.Output, t.message)
+	if items == nil || !items.Desc.IsList() {
+		return fmt.Errorf("%s's response has no repeated %s field", method, t.message.Desc.Name())
+	}
+	paginated := fieldNamed(t.list.Input, "page_token") != nil && fieldNamed(t.list.Output, "next_page_token") != nil
+	for _, f := range t.list.Input.Fields {
+		switch f.Desc.Name() {
+		case "parent", "page_size", "page_token":
+		default:
+			return fmt.Errorf("%s's request field %s isn't supported yet", method, f.Desc.Name())
+		}
+	}
+	if hasParent := fieldNamed(t.list.Input, "parent") != nil; hasParent != (len(t.variables) > 1) {
+		return fmt.Errorf("%s's request has a parent only when the resource's name has one", method)
+	}
+
+	itemAttrs, err := attributes(t, false)
+	if err != nil {
+		return err
+	}
+	for i := range itemAttrs {
+		itemAttrs[i].required, itemAttrs[i].computed = false, true
+	}
+	itemModel, itemFromProto := name+"Model", name+"FromProto"
+	message := "*" + g.QualifiedGoIdent(t.message.GoIdent)
+	typeName := "_" + t.shortcode + "_" + snake(t.plural)
+	if t.create != nil {
+		// A resource: its state isn't an item's.
+		itemModel, itemFromProto = name+"ItemModel", name+"ItemFromProto"
+		generateModel(g, itemModel, "an item of origincloud"+typeName, itemAttrs)
+		generateConversions(g, t, name+"Item", itemModel, message, itemAttrs, false)
+	}
+
+	listAttr := snake(t.plural)
+	if t.plural == "" || listAttr == snake(t.singular) {
+		return fmt.Errorf("the resource's plural %q isn't distinct from its singular", t.plural)
+	}
+	var attrs []attribute
+	for _, v := range t.variables[:len(t.variables)-1] {
+		attrs = append(attrs, attribute{
+			name: v, goName: camel(v), kind: "String", required: true,
+			doc: fmt.Sprintf("The %s whose %s to list.", words(v), words(t.plural)),
+		})
+	}
+	listDoc := prose(items.Comments.Leading)
+	if paginated {
+		listDoc = fmt.Sprintf("The %s listed, from every page.", words(t.plural))
+	}
+	model := name + "ListModel"
+	spec := g.QualifiedGoIdent(frameworkPackage.Ident("ListDataSourceSpec"))
+	schemaPackage := datasourceSchemaPackage
+	client := g.QualifiedGoIdent(t.file.GoImportPath.Ident("New"+strings.TrimSuffix(t.service.GoName, "Service")+"Client")) + "(client)"
+
+	g.P()
+	g.P("// ", model, " is origincloud", typeName, "'s state.")
+	g.P("type ", model, " struct {")
+	for _, a := range attrs {
+		g.P(a.goName, " ", g.QualifiedGoIdent(typesPackage.Ident(a.kind)), " `tfsdk:\"", a.name, "\"`")
+	}
+	g.P(items.GoName, " []", itemModel, " `tfsdk:\"", listAttr, "\"`")
+	g.P("}")
+
+	g.P()
+	g.P("func ", name, "ListSchema() ", g.QualifiedGoIdent(schemaPackage.Ident("Schema")), " {")
+	g.P("return ", g.QualifiedGoIdent(schemaPackage.Ident("Schema")), "{")
+	g.P("MarkdownDescription: ", fmt.Sprintf("%q", prose(t.list.Comments.Leading)), ",")
+	g.P("Attributes: map[string]", g.QualifiedGoIdent(schemaPackage.Ident("Attribute")), "{")
+	for _, a := range attrs {
+		g.P(fmt.Sprintf("%q", a.name), ": ", g.QualifiedGoIdent(schemaPackage.Ident("StringAttribute")), "{")
+		g.P("MarkdownDescription: ", fmt.Sprintf("%q", a.doc), ",")
+		g.P("Required: true,")
+		g.P("},")
+	}
+	g.P(fmt.Sprintf("%q", listAttr), ": ", g.QualifiedGoIdent(schemaPackage.Ident("ListNestedAttribute")), "{")
+	g.P("MarkdownDescription: ", fmt.Sprintf("%q", listDoc), ",")
+	g.P("Computed: true,")
+	g.P("NestedObject: ", g.QualifiedGoIdent(schemaPackage.Ident("NestedAttributeObject")), "{")
+	generateAttributes(g, schemaPackage, itemAttrs)
+	g.P("},")
+	g.P("},")
+	g.P("},")
+	g.P("}")
+	g.P("}")
+
+	request := "&" + g.QualifiedGoIdent(t.list.Input.GoIdent) + "{"
+	if len(t.variables) > 1 {
+		request += "Parent: " + parentExpression(t.pattern, "m")
+	}
+	request += "}"
+	g.P()
+	g.P("func ", name, "ListDataSource() ", spec, "[", model, "] {")
+	g.P("return ", spec, "[", model, "]{")
+	g.P("TypeName: ", fmt.Sprintf("%q", typeName), ",")
+	g.P("Schema: ", name, "ListSchema(),")
+	g.P("List: func(ctx ", g.QualifiedGoIdent(contextPackage.Ident("Context")), ", client *", g.QualifiedGoIdent(corePackage.Ident("Client")), ", m *", model, ") error {")
+	// Empty rather than null when the list is.
+	g.P("m.", items.GoName, " = []", itemModel, "{}")
+	if paginated {
+		g.P("for p, err := range ", client, ".All", items.GoName, "(ctx, ", request, ") {")
+		g.P("if err != nil {")
+		g.P("return err")
+		g.P("}")
+	} else {
+		g.P("page, err := ", client, ".", t.list.GoName, "(ctx, ", request, ")")
+		g.P("if err != nil {")
+		g.P("return err")
+		g.P("}")
+		g.P("for _, p := range page.Get", items.GoName, "() {")
+	}
+	g.P("var item ", itemModel)
+	g.P("if err := ", itemFromProto, "(p, &item); err != nil {")
+	g.P("return err")
+	g.P("}")
+	g.P("m.", items.GoName, " = append(m.", items.GoName, ", item)")
+	g.P("}")
+	g.P("return nil")
 	g.P("},")
 	g.P("}")
 	g.P("}")
@@ -569,6 +724,13 @@ func generateSchema(g *protogen.GeneratedFile, t resourceType, schemaPackage pro
 	g.P("func ", lowerFirst(t.message.GoIdent.GoName), "Schema() ", g.QualifiedGoIdent(schemaPackage.Ident("Schema")), " {")
 	g.P("return ", g.QualifiedGoIdent(schemaPackage.Ident("Schema")), "{")
 	g.P("MarkdownDescription: ", fmt.Sprintf("%q", prose(t.message.Comments.Leading)), ",")
+	generateAttributes(g, schemaPackage, attrs)
+	g.P("}")
+	g.P("}")
+}
+
+// generateAttributes writes a schema's Attributes.
+func generateAttributes(g *protogen.GeneratedFile, schemaPackage protogen.GoImportPath, attrs []attribute) {
 	g.P("Attributes: map[string]", g.QualifiedGoIdent(schemaPackage.Ident("Attribute")), "{")
 	for _, a := range attrs {
 		g.P(fmt.Sprintf("%q", a.name), ": ", g.QualifiedGoIdent(schemaPackage.Ident(a.kind+"Attribute")), "{")
@@ -581,7 +743,7 @@ func generateSchema(g *protogen.GeneratedFile, t resourceType, schemaPackage pro
 				g.P(flag.name, ": true,")
 			}
 		}
-		if a.kind == "Map" {
+		if a.kind == "Map" || a.kind == "List" {
 			g.P("ElementType: ", g.QualifiedGoIdent(typesPackage.Ident("StringType")), ",")
 		}
 		if a.int32 && !a.computed {
@@ -603,12 +765,11 @@ func generateSchema(g *protogen.GeneratedFile, t resourceType, schemaPackage pro
 		g.P("},")
 	}
 	g.P("},")
-	g.P("}")
-	g.P("}")
 }
 
-func generateConversions(g *protogen.GeneratedFile, t resourceType, model, message string, attrs []attribute, forResource bool) {
-	name := lowerFirst(t.message.GoIdent.GoName)
+// generateConversions writes the functions name+"ToProto", for a
+// resource, and name+"FromProto".
+func generateConversions(g *protogen.GeneratedFile, t resourceType, name, model, message string, attrs []attribute, forResource bool) {
 	types := func(ident string) string { return g.QualifiedGoIdent(typesPackage.Ident(ident)) }
 	framework := func(ident string) string { return g.QualifiedGoIdent(frameworkPackage.Ident(ident)) }
 
@@ -623,6 +784,8 @@ func generateConversions(g *protogen.GeneratedFile, t resourceType, model, messa
 			switch {
 			case a.kind == "Map":
 				g.P(a.goName, ": ", framework("StringMapToProto"), "(m.", a.goName, "),")
+			case a.kind == "List":
+				g.P(a.goName, ": ", framework("StringListToProto"), "(m.", a.goName, "),")
 			case a.int32:
 				g.P(a.goName, ": int32(m.", a.goName, ".ValueInt64()),")
 			default:
@@ -659,6 +822,8 @@ func generateConversions(g *protogen.GeneratedFile, t resourceType, model, messa
 		switch {
 		case a.kind == "Map":
 			value, zero = framework("StringMap")+"("+get+")", "len("+get+") == 0"
+		case a.kind == "List":
+			value, zero = framework("StringList")+"("+get+")", "len("+get+") == 0"
 		case a.field.Desc.Kind() == protoreflect.EnumKind:
 			value = types("StringValue") + "(" + get + ".String())"
 		case a.kind == "Int64":
@@ -833,3 +998,10 @@ func camel(s string) string {
 }
 
 func lowerFirst(s string) string { return strings.ToLower(s[:1]) + s[1:] }
+
+func upperFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}

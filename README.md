@@ -10,6 +10,9 @@ data sources are generated from the API definitions in
 | Resource | `origincloud_pvs_volume` | A block storage volume |
 | Resource | `origincloud_pvs_snapshot` | A point-in-time copy of a volume |
 | Data source | `origincloud_pvs_storage_class` | A storage tier a volume is created in |
+| Data source | `origincloud_pvs_storage_classes` | Every storage class |
+| Data source | `origincloud_pvs_volumes` | The volumes in a zone |
+| Data source | `origincloud_pvs_snapshots` | The snapshots in a zone |
 
 ## Using it
 
