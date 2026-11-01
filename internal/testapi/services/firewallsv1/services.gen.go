@@ -12,6 +12,7 @@ import (
 func Resources() []func() resource.Resource {
 	return []func() resource.Resource{
 		framework.NewResource(firewallResource()),
+		framework.NewResource(keyResource()),
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
@@ -25,6 +26,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/origincloudhq/terraform-provider-origincloud/internal/testapi/firewallsv1"
 )
@@ -78,10 +80,13 @@ type fakeFirewalls struct {
 	masks []string
 	// updates are the firewalls the updates sent, in order.
 	updates []*firewallsv1.Firewall
+	// keys are served too, under projects/{project}/keys.
+	keys     map[string]*firewallsv1.Key
+	keyMasks []string
 }
 
 func newFakeFirewalls(t *testing.T) *fakeFirewalls {
-	f := &fakeFirewalls{firewalls: map[string]*firewallsv1.Firewall{}}
+	f := &fakeFirewalls{firewalls: map[string]*firewallsv1.Firewall{}, keys: map[string]*firewallsv1.Key{}}
 	f.Server = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.Close)
 	return f
@@ -92,6 +97,10 @@ func (f *fakeFirewalls) serve(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 	path := strings.TrimPrefix(r.URL.Path, "/v1/")
 	body, _ := io.ReadAll(r.Body)
+	if strings.Contains(path, "/keys") {
+		f.serveKey(w, r, path, body)
+		return
+	}
 	switch {
 	case strings.HasSuffix(path, "/firewalls") && r.Method == http.MethodPost:
 		firewall := new(firewallsv1.Firewall)
@@ -218,4 +227,108 @@ func writeError(w http.ResponseWriter, code int, status, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_, _ = fmt.Fprintf(w, `{"error":{"code":%d,"status":%q,"message":%q}}`, code, status, message)
+}
+
+// keyCreated is when the fake creates every key.
+var keyCreated = time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+
+// serveKey serves the keys. A key is created at once, with a secret only
+// the create answers with, and the algorithm and bits the API chooses
+// when they are left out. Deleting one leaves it TERMINATED, still
+// readable.
+func (f *fakeFirewalls) serveKey(w http.ResponseWriter, r *http.Request, path string, body []byte) {
+	name, method, _ := strings.Cut(path, ":")
+	switch {
+	case strings.HasSuffix(path, "/keys") && r.Method == http.MethodPost:
+		key := new(firewallsv1.Key)
+		if err := protojson.Unmarshal(body, key); err != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+			return
+		}
+		f.next++
+		key.Name = fmt.Sprintf("%s/k-%d", path, f.next)
+		key.CreateTime = timestamppb.New(keyCreated)
+		key.State = firewallsv1.Key_ENABLED
+		f.settleKey(key)
+		f.keys[key.Name] = key
+		answer := proto.Clone(key).(*firewallsv1.Key)
+		answer.Secret = fmt.Sprintf("secret-%d", f.next)
+		if imported := answer.GetImported(); imported != nil {
+			imported.ImportTime = timestamppb.New(keyCreated)
+		}
+		writeMessage(w, answer)
+		return
+	}
+	key, ok := f.keys[name]
+	if !ok {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", name+" doesn't exist")
+		return
+	}
+	switch {
+	case method == "enable" || method == "disable":
+		key.State = firewallsv1.Key_ENABLED
+		if method == "disable" {
+			key.State = firewallsv1.Key_DISABLED
+		}
+		result, _ := anypb.New(key)
+		writeMessage(w, &longrunningpb.Operation{Name: name + "/operations/op", Done: true, Result: &longrunningpb.Operation_Response{Response: result}})
+	case r.Method == http.MethodGet:
+		writeMessage(w, key)
+	case r.Method == http.MethodPatch:
+		update := new(firewallsv1.Key)
+		if err := protojson.Unmarshal(body, update); err != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+			return
+		}
+		mask := r.URL.Query().Get("updateMask")
+		f.keyMasks = append(f.keyMasks, mask)
+		fields := key.ProtoReflect().Descriptor().Fields()
+		for _, path := range strings.Split(mask, ",") {
+			field := fields.ByJSONName(path)
+			if field == nil || field.Name() == "name" || field.Name() == "state" || field.Name() == "secret" || field.Name() == "create_time" {
+				writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", path+" can't be updated")
+				return
+			}
+			if update.ProtoReflect().Has(field) {
+				key.ProtoReflect().Set(field, update.ProtoReflect().Get(field))
+			} else if key.ProtoReflect().Has(field) {
+				key.ProtoReflect().Clear(field)
+			}
+		}
+		f.settleKey(key)
+		if imported := key.GetImported(); imported != nil && imported.ImportTime == nil {
+			imported.ImportTime = timestamppb.New(keyCreated)
+		}
+		writeMessage(w, key)
+	case r.Method == http.MethodDelete:
+		key.State = firewallsv1.Key_TERMINATED
+		result, _ := anypb.New(&emptypb.Empty{})
+		writeMessage(w, &longrunningpb.Operation{Name: name + "/operations/op", Done: true, Result: &longrunningpb.Operation_Response{Response: result}})
+	}
+}
+
+// settleKey sets the values the API chooses for what was left out.
+func (f *fakeFirewalls) settleKey(key *firewallsv1.Key) {
+	if key.Algorithm == nil {
+		key.Algorithm = proto.String("ed25519")
+	}
+	if key.Bits == nil {
+		key.Bits = proto.Int32(256)
+	}
+}
+
+// terminate terminates a key, as an action outside Terraform.
+func (f *fakeFirewalls) terminate(name string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.keys[name].State = firewallsv1.Key_TERMINATED
+}
+
+func (f *fakeFirewalls) lastKeyMask() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.keyMasks) == 0 {
+		return ""
+	}
+	return f.keyMasks[len(f.keyMasks)-1]
 }

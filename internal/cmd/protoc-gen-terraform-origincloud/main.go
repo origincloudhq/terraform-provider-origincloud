@@ -8,7 +8,9 @@
 // IMMUTABLE replaces the resource when it changes. The variables of the
 // resource's name before its own, such as project and zone, are required
 // and replace it too. Nested messages, repeated fields and maps of
-// messages become nested attributes, lists, sets and maps (fields.go).
+// messages become nested attributes, lists, sets and maps; timestamps and
+// durations strings; a oneof's members attributes of which one may be set
+// (fields.go). A resource whose state is DELETED or TERMINATED is gone.
 //
 // A resource type the service also lists (AIP-132) gets a second data
 // source, named after its plural, that reads everything the list returns,
@@ -79,6 +81,9 @@ func generate(gen *protogen.Plugin) error {
 		}
 	}
 	if err := checkTogglesFound(); err != nil {
+		return err
+	}
+	if err := checkSecretsFound(); err != nil {
 		return err
 	}
 	for _, p := range packages {
@@ -294,8 +299,12 @@ func generateResource(g *protogen.GeneratedFile, t resourceType) error {
 	g.P("return mask")
 	g.P("},")
 
-	if gone := deletedState(t.message); gone != nil {
-		g.P("Gone: func(p ", message, ") bool { return p.GetState() == ", g.QualifiedGoIdent(gone.GoIdent), " },")
+	if gone := terminalStates(t.message); len(gone) > 0 {
+		var conditions []string
+		for _, v := range gone {
+			conditions = append(conditions, "p.GetState() == "+g.QualifiedGoIdent(v.GoIdent))
+		}
+		g.P("Gone: func(p ", message, ") bool { return ", strings.Join(conditions, " || "), " },")
 	}
 
 	// Create
@@ -304,10 +313,15 @@ func generateResource(g *protogen.GeneratedFile, t resourceType) error {
 	if resourceField == nil {
 		return fmt.Errorf("Create%s's request has no %[1]s field", t.message.Desc.Name())
 	}
-	if result := operationResult(t.create); result != t.message.Desc.FullName() {
-		return fmt.Errorf("Create%s doesn't answer with an operation whose result is the %[1]s", t.message.Desc.Name())
+	// An operation whose result is the resource, or the resource itself.
+	switch result := operationResult(t.create); {
+	case result == t.message.Desc.FullName():
+		g.P("Create: func(ctx ", ctx, ", client ", coreClient, ", plan *", model, ") (*", g.QualifiedGoIdent(corePackage.Ident("Operation")), "[", message, "], error) {")
+	case result == "" && t.create.Output == t.message:
+		g.P("CreateSync: func(ctx ", ctx, ", client ", coreClient, ", plan *", model, ") (", message, ", error) {")
+	default:
+		return fmt.Errorf("Create%s answers with neither the %[1]s nor an operation whose result is the %[1]s", t.message.Desc.Name())
 	}
-	g.P("Create: func(ctx ", ctx, ", client ", coreClient, ", plan *", model, ") (*", g.QualifiedGoIdent(corePackage.Ident("Operation")), "[", message, "], error) {")
 	g.P("return ", client, ".", t.create.GoName, "(ctx, &", g.QualifiedGoIdent(createInput.GoIdent), "{")
 	if len(t.variables) > 1 {
 		if fieldNamed(createInput, "parent") == nil {
@@ -630,19 +644,25 @@ func generateProviderList(gen *protogen.Plugin, packages []*servicePackage) {
 	}
 }
 
-// deletedState returns the DELETED value of a resource's state enum, for
-// resources the API still returns for a while after deleting them.
-func deletedState(m *protogen.Message) *protogen.EnumValue {
+// The values of a resource's state enum that mean it is gone, though the
+// API still returns it for a while: soft-deleted (AIP-164), or terminated,
+// as an instance is.
+var terminalStateNames = []protoreflect.Name{"DELETED", "TERMINATED"}
+
+// terminalStates returns the values of a resource's state enum that mean
+// it is gone.
+func terminalStates(m *protogen.Message) []*protogen.EnumValue {
 	state := fieldNamed(m, "state")
 	if state == nil || state.Enum == nil {
 		return nil
 	}
+	var gone []*protogen.EnumValue
 	for _, v := range state.Enum.Values {
-		if v.Desc.Name() == "DELETED" {
-			return v
+		if slices.Contains(terminalStateNames, v.Desc.Name()) {
+			gone = append(gone, v)
 		}
 	}
-	return nil
+	return gone
 }
 
 // operationResult returns the result type of a method answering with an

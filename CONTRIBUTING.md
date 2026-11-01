@@ -48,9 +48,13 @@ to the plugin or `internal/framework`.
   resource when it changes. An `OPTIONAL` `IMMUTABLE` field is also computed,
   keeping the value the API chose when it was left out (the default storage
   class); a mutable `OPTIONAL` field left out stays null.
-- Creates, updates and deletes wait on their operation. A resource whose
-  create failed after it existed (the operation's metadata names it) is kept
-  as tainted. A resource in `DELETED`, or not found, leaves the state.
+- Creates, updates and deletes wait on their operation; a create, update or
+  delete that answers with the resource, or with nothing, is done when it
+  answers. A resource whose create failed after it existed (the operation's
+  metadata names it) is kept as tainted.
+- A resource not found, or whose `state` is a terminal value, `DELETED` or
+  `TERMINATED`, is gone: it leaves the state at a refresh, and isn't deleted
+  again.
 - Fields of these kinds are supported, settable or computed:
   - strings, integers, booleans and enums; a settable enum takes its
     values' names only;
@@ -86,11 +90,13 @@ to the plugin or `internal/framework`.
   - maps keyed by anything but strings (`only maps keyed by strings are
     supported`), or of strings to other values (`maps of strings to int32
     aren't supported yet, only to strings and messages`);
-  - another package's message, such as `google.protobuf.Timestamp`
-    (`google.protobuf.Timestamp is another package's message, which isn't
-    supported yet`), and a message holding itself (`… holds itself, which
-    isn't supported`);
-  - oneof fields, and proto3 `optional` fields;
+  - another package's message (`google.longrunning.Operation is another
+    package's message, which isn't supported yet`), a google.protobuf
+    message other than `Timestamp` and `Duration` (`google.protobuf.Struct
+    fields aren't supported yet, of google.protobuf only Timestamp and
+    Duration`), repeated or mapped timestamps and durations (`repeated
+    google.protobuf.Timestamp fields aren't supported yet`), and a message
+    holding itself (`… holds itself, which isn't supported`);
   - in the elements of a settable `UNORDERED_LIST` field, an `OUTPUT_ONLY`
     field (`a field of an UNORDERED_LIST element can't be OUTPUT_ONLY`): the
     element the API answered with would differ from the one set, and a set
@@ -106,14 +112,34 @@ to the plugin or `internal/framework`.
     chose would differ from the one set;
   - `UNORDERED_LIST` on a field that isn't repeated, and an `IDENTIFIER` in a
     nested message.
+- A `google.protobuf.Timestamp` is a string in RFC 3339, such as
+  `2026-11-01T12:00:00Z`, and a `google.protobuf.Duration` a string in
+  seconds, such as `90s`: their JSON forms. Unset is null, a settable one is
+  validated, and a value written differently, in another time zone, is kept
+  while it is the same instant or length. An update names it when the
+  instant or length changes.
+- A field with explicit presence (proto3 `optional`) that is `OPTIONAL` is
+  optional and computed: left out, it keeps the value the API chose, and it
+  can still be changed. Unset is null.
+- A oneof's members are attributes of their own, of which at most one may be
+  set; exactly one when its members are `REQUIRED`. A member that isn't the
+  one the oneof holds is null.
 - A boolean that a pair of custom methods sets and clears, rather than an
   update, is a **toggle**, such as a snapshot's `protected`
   (`ProtectSnapshot`, `UnprotectSnapshot`). Nothing in the API marks such a
   pair, so each is declared in the plugin's `toggles.go`, which generation
-  checks against the API.
+  checks against the API. The methods answer with operations, which are
+  waited on.
+- An output-only string the API answers with only in the create's response,
+  such as a generated private key, is a **secret**: sensitive, and kept from
+  the create on, though the API never answers with it again. Nothing in the
+  API marks such a field either, so each is declared in `secrets.go`, which
+  generation checks against the API. An imported resource has none.
 
 The plugin's tests include a test API, `internal/testapi/firewalls.prototext`,
-whose fields are nested messages, lists, sets and maps of messages. The
+with a firewall, whose fields are nested messages, lists, sets and maps,
+and a key, created synchronously, with timestamps, durations, fields with
+explicit presence, oneofs, a toggle, a secret and a terminal state. The
 tests check that its generated code in `internal/testapi` is current, and run
 Terraform against a fake of it. After changing the plugin or the test API,
 generate that code again:

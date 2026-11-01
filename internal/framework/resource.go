@@ -39,12 +39,16 @@ type ResourceSpec[M any, P proto.Message] struct {
 	// UpdateMask returns the fields that differ between the plan and the
 	// state and that an update can change.
 	UpdateMask func(plan, state *M) []string
-	// Gone says that a resource the API still returns is deleted, such as
-	// a volume in DELETED. Nil when the API stops returning deleted ones.
+	// Gone says that a resource the API still returns is gone, in a
+	// terminal state such as a volume's DELETED or an instance's
+	// TERMINATED. Nil when the API stops returning deleted ones.
 	Gone func(P) bool
 
-	Create func(ctx context.Context, client *core.Client, plan *M) (*core.Operation[P], error)
-	Get    func(ctx context.Context, client *core.Client, name string) (P, error)
+	// Create answers with an operation to wait on; CreateSync, for an API
+	// whose create answers with the resource, instead of Create.
+	Create     func(ctx context.Context, client *core.Client, plan *M) (*core.Operation[P], error)
+	CreateSync func(ctx context.Context, client *core.Client, plan *M) (P, error)
+	Get        func(ctx context.Context, client *core.Client, name string) (P, error)
 	// Update is nil for a resource that has no update method: each of its
 	// attributes then replaces it.
 	Update func(ctx context.Context, client *core.Client, resource P, mask []string) (P, error)
@@ -113,12 +117,22 @@ func (r *Resource[M, P]) Create(ctx context.Context, req resource.CreateRequest,
 	if resp.Diagnostics.Append(req.Plan.Get(ctx, &m)...); resp.Diagnostics.HasError() {
 		return
 	}
+	var created P
+	if r.spec.CreateSync != nil {
+		var err error
+		if created, err = r.spec.CreateSync(ctx, r.client, &m); err != nil {
+			resp.Diagnostics.AddError(r.summary("create"), err.Error())
+			return
+		}
+		r.created(ctx, m, created, resp)
+		return
+	}
 	op, err := r.spec.Create(ctx, r.client, &m)
 	if err != nil {
 		resp.Diagnostics.AddError(r.summary("create"), err.Error())
 		return
 	}
-	created, err := op.Wait(ctx)
+	created, err = op.Wait(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError(r.summary("create"), err.Error())
 		// A create that fails after the resource exists, such as a volume
@@ -131,6 +145,12 @@ func (r *Resource[M, P]) Create(ctx context.Context, req resource.CreateRequest,
 		}
 		return
 	}
+	r.created(ctx, m, created, resp)
+}
+
+// created sets the state from the resource a create answered with, plan
+// being the planned state, after setting its toggles.
+func (r *Resource[M, P]) created(ctx context.Context, m M, created P, resp *resource.CreateResponse) {
 	plan := m
 	if err := r.spec.FromProto(created, &m); err != nil {
 		resp.Diagnostics.AddError(r.summary("read the created"), err.Error())
@@ -210,10 +230,14 @@ func (r *Resource[M, P]) Delete(ctx context.Context, req resource.DeleteRequest,
 		return
 	}
 	name := r.spec.Name(&m)
-	if err := r.clearBeforeDelete(ctx, name); err != nil {
+	gone, err := r.clearBeforeDelete(ctx, name)
+	if err != nil {
 		if !NotFound(err) {
 			resp.Diagnostics.AddError(r.summary("delete"), err.Error())
 		}
+		return
+	}
+	if gone {
 		return
 	}
 	if err := r.spec.Delete(ctx, r.client, name); err != nil && !NotFound(err) {
@@ -253,13 +277,19 @@ func (r *Resource[M, P]) toggle(ctx context.Context, plan *M, name string, got P
 
 // clearBeforeDelete clears the toggles that must be clear before the
 // resource is deleted.
-func (r *Resource[M, P]) clearBeforeDelete(ctx context.Context, name string) error {
-	if !slices.ContainsFunc(r.spec.Toggles, func(t Toggle[M, P]) bool { return t.ClearBeforeDelete }) {
-		return nil
+// It also says whether the resource is gone already, in a terminal state,
+// which leaves nothing to delete.
+func (r *Resource[M, P]) clearBeforeDelete(ctx context.Context, name string) (bool, error) {
+	clear := slices.ContainsFunc(r.spec.Toggles, func(t Toggle[M, P]) bool { return t.ClearBeforeDelete })
+	if !clear && r.spec.Gone == nil {
+		return false, nil
 	}
 	got, err := r.spec.Get(ctx, r.client, name)
 	if err != nil {
-		return err
+		return false, err
+	}
+	if r.spec.Gone != nil && r.spec.Gone(got) {
+		return true, nil
 	}
 	for _, t := range r.spec.Toggles {
 		if !t.ClearBeforeDelete || t.IsClear(got) {
@@ -267,13 +297,13 @@ func (r *Resource[M, P]) clearBeforeDelete(ctx context.Context, name string) err
 		}
 		op, err := t.Clear(ctx, r.client, name)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if got, err = op.Wait(ctx); err != nil {
-			return err
+			return false, err
 		}
 	}
-	return nil
+	return false, nil
 }
 
 // ImportState adopts a resource by its resource name, such as

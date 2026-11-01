@@ -6,6 +6,7 @@ import (
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"go.origincloud.eu/sdk/core"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -56,4 +57,62 @@ func (c *FirewallClient) DeleteFirewall(ctx context.Context, req *DeleteFirewall
 	out := new(emptypb.Empty)
 	err := c.service.Call(ctx, core.Request{Method: http.MethodDelete, Path: "/v1/" + req.GetName()}, out)
 	return out, err
+}
+
+// KeyClient calls the test API's KeyService. Its paths are /v1/{name},
+// /v1/{name}:enable and :disable, and /v1/{parent}/keys for creating.
+type KeyClient struct {
+	service *core.Service
+}
+
+// NewKeyClient returns a client of KeyService that sends its calls
+// through client.
+func NewKeyClient(client *core.Client) *KeyClient {
+	return &KeyClient{service: client.Service("keys", false)}
+}
+
+func (c *KeyClient) GetKey(ctx context.Context, req *KeyNameRequest) (*Key, error) {
+	out := new(Key)
+	err := c.service.Call(ctx, core.Request{Method: http.MethodGet, Path: "/v1/" + req.GetName(), Idempotent: true}, out)
+	return out, err
+}
+
+func (c *KeyClient) CreateKey(ctx context.Context, req *CreateKeyRequest) (*Key, error) {
+	out := new(Key)
+	err := c.service.Call(ctx, core.Request{Method: http.MethodPost, Path: "/v1/" + req.GetParent() + "/keys", Body: req.GetKey()}, out)
+	return out, err
+}
+
+func (c *KeyClient) UpdateKey(ctx context.Context, req *UpdateKeyRequest) (*Key, error) {
+	query, err := core.Query(req, "key")
+	if err != nil {
+		return nil, err
+	}
+	out := new(Key)
+	err = c.service.Call(ctx, core.Request{Method: http.MethodPatch, Path: "/v1/" + req.GetKey().GetName(), Query: query, Body: req.GetKey()}, out)
+	return out, err
+}
+
+func (c *KeyClient) DeleteKey(ctx context.Context, req *KeyNameRequest) (*core.Operation[*emptypb.Empty], error) {
+	return c.operation(ctx, http.MethodDelete, "/v1/"+req.GetName())
+}
+
+func (c *KeyClient) EnableKey(ctx context.Context, req *KeyNameRequest) (*core.Operation[*Key], error) {
+	return operation[*Key](ctx, c.service, http.MethodPost, "/v1/"+req.GetName()+":enable")
+}
+
+func (c *KeyClient) DisableKey(ctx context.Context, req *KeyNameRequest) (*core.Operation[*Key], error) {
+	return operation[*Key](ctx, c.service, http.MethodPost, "/v1/"+req.GetName()+":disable")
+}
+
+func (c *KeyClient) operation(ctx context.Context, method, path string) (*core.Operation[*emptypb.Empty], error) {
+	return operation[*emptypb.Empty](ctx, c.service, method, path)
+}
+
+func operation[T proto.Message](ctx context.Context, service *core.Service, method, path string) (*core.Operation[T], error) {
+	out := new(longrunningpb.Operation)
+	if err := service.Call(ctx, core.Request{Method: method, Path: path}, out); err != nil {
+		return nil, err
+	}
+	return core.NewOperation[T](service, out), nil
 }

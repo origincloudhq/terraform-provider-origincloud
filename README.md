@@ -97,8 +97,15 @@ Credentials come from the environment, the first of:
 - **Failed creates.** A resource whose creation failed after it came to exist,
   such as a volume whose storage couldn't be created, is kept in the state as
   tainted, and the next apply replaces it.
-- **Deleted resources.** A resource deleted outside Terraform leaves the state
-  at the next refresh, and the next apply creates it again.
+- **Deleted resources.** A resource deleted outside Terraform, or left in a
+  terminal state such as an instance's `TERMINATED`, leaves the state at the
+  next refresh, and the next apply creates it again.
+- **Times.** Timestamps are RFC 3339 strings, such as `2026-11-01T12:00:00Z`,
+  and durations strings in seconds, such as `90s`. A timestamp written in
+  another time zone stays as written while it is the same instant.
+- **Secrets.** A value the API returns only once, when the resource is
+  created, such as a generated private key, is sensitive and stays in the
+  state from then on. An imported resource has none.
 - **Protection.** A snapshot is the source of new volumes only while it is
   protected. `protected = true` protects it, and destroying it unprotects it
   first.

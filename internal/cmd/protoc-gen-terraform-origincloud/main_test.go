@@ -16,6 +16,7 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 	_ "google.golang.org/protobuf/types/known/emptypb"
 	_ "google.golang.org/protobuf/types/known/fieldmaskpb"
+	_ "google.golang.org/protobuf/types/known/timestamppb"
 	"google.golang.org/protobuf/types/pluginpb"
 )
 
@@ -294,6 +295,28 @@ func TestAnImmutableFieldsElementsMayBeImmutable(t *testing.T) {
 	)
 }
 
+// A secret declared for a field the API hasn't, or that isn't an
+// output-only string, fails generation.
+func TestSecretsAreCheckedAgainstTheAPI(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		secret secret
+		want   string
+	}{
+		{"no such field", secret{"test.widgets.v1.Widget", "token"}, "secret token: no field test.widgets.v1.Widget.token"},
+		{"a settable field", secret{"test.widgets.v1.Widget", "name"}, "secret name: the field isn't an output-only string"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			saved := secrets
+			secrets = []secret{tc.secret}
+			t.Cleanup(func() { secrets = saved })
+			if _, failure := run(t, nil); !strings.Contains(failure, tc.want) {
+				t.Errorf("generation failed with %q, want %q", failure, tc.want)
+			}
+		})
+	}
+}
+
 func TestUnsupportedFieldsFailGeneration(t *testing.T) {
 	const optional = `options { [google.api.field_behavior]: OPTIONAL }`
 	for _, tc := range []struct {
@@ -374,31 +397,28 @@ func TestUnsupportedFieldsFailGeneration(t *testing.T) {
 			want: "Widget: field spec: Spec: field name: a nested message's field can't be an IDENTIFIER",
 		},
 		{
-			name:   "another package's message",
+			name:   "a google.protobuf message other than Timestamp and Duration",
 			change: withField("Widget", `name: "mask" number: 9 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".google.protobuf.FieldMask" `+optional),
-			want:   "Widget: field mask: google.protobuf.FieldMask is another package's message, which isn't supported yet",
+			want:   "Widget: field mask: google.protobuf.FieldMask fields aren't supported yet, of google.protobuf only Timestamp and Duration",
+		},
+		{
+			name:   "another package's message",
+			change: withField("Widget", `name: "op" number: 9 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".google.longrunning.Operation" `+optional),
+			want:   "Widget: field op: google.longrunning.Operation is another package's message, which isn't supported yet",
+		},
+		{
+			name: "repeated timestamps",
+			change: func(file *descriptorpb.FileDescriptorProto) {
+				file.Dependency = append(file.Dependency, "google/protobuf/timestamp.proto")
+				withField("Widget", `name: "times" number: 9 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".google.protobuf.Timestamp" `+optional)(file)
+			},
+			want: "Widget: field times: repeated google.protobuf.Timestamp fields aren't supported yet",
 		},
 		{
 			name: "a message holding itself",
 			change: withField("Widget", `name: "tree" number: 9 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".test.widgets.v1.Tree" `+optional,
 				`name: "Tree" field { name: "children" number: 1 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.widgets.v1.Tree" options { [google.api.field_behavior]: OPTIONAL } }`),
 			want: "Widget: field tree: Tree: field children: test.widgets.v1.Tree holds itself, which isn't supported",
-		},
-		{
-			name: "a oneof's field",
-			change: func(file *descriptorpb.FileDescriptorProto) {
-				withField("Widget", `name: "owner" number: 9 label: LABEL_OPTIONAL type: TYPE_STRING oneof_index: 0 `+optional)(file)
-				message(file, "Widget").OneofDecl = []*descriptorpb.OneofDescriptorProto{{Name: proto.String("who")}}
-			},
-			want: "Widget: field owner: fields of a oneof aren't supported yet",
-		},
-		{
-			name: "an explicitly present field",
-			change: func(file *descriptorpb.FileDescriptorProto) {
-				withField("Widget", `name: "owner" number: 9 label: LABEL_OPTIONAL type: TYPE_STRING oneof_index: 0 proto3_optional: true `+optional)(file)
-				message(file, "Widget").OneofDecl = []*descriptorpb.OneofDescriptorProto{{Name: proto.String("_owner")}}
-			},
-			want: "Widget: field owner: fields with explicit presence (proto3 optional) aren't supported yet",
 		},
 		{
 			name: "a list request's required field",

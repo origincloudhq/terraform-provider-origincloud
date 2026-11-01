@@ -13,10 +13,24 @@ import (
 	"google.golang.org/protobuf/compiler/protogen"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/types/descriptorpb"
+	_ "google.golang.org/protobuf/types/known/durationpb"
+	_ "google.golang.org/protobuf/types/known/timestamppb"
 	"google.golang.org/protobuf/types/pluginpb"
 )
 
 var update = flag.Bool("update", false, "write the test API's generated code")
+
+// The test API's toggle and secret, declared as toggles.go and secrets.go
+// declare the API's.
+var (
+	testAPIToggles = []toggle{{
+		resource: "test.firewalls.v1.Key", attribute: "enabled",
+		set: "EnableKey", clear: "DisableKey",
+		state: "state", on: "ENABLED", off: "DISABLED",
+		doc: "Whether the key is enabled. Left out, it is left as it is.",
+	}}
+	testAPISecrets = []secret{{resource: "test.firewalls.v1.Key", field: "secret"}}
+)
 
 // The repository's root, from this package's directory.
 const root = "../../.."
@@ -53,9 +67,11 @@ func testAPIFiles(t *testing.T) map[string][]byte {
 	internal_gengo.GenerateFile(messages, messages.FilesByPath[file.GetName()])
 	add(messages.Response(), module+"/")
 
-	savedServices, savedProvider, savedToggles := servicesDir, providerDir, toggles
-	servicesDir, providerDir, toggles = "internal/testapi/services", "internal/testapi", nil
-	t.Cleanup(func() { servicesDir, providerDir, toggles = savedServices, savedProvider, savedToggles })
+	savedServices, savedProvider, savedToggles, savedSecrets := servicesDir, providerDir, toggles, secrets
+	servicesDir, providerDir, toggles, secrets = "internal/testapi/services", "internal/testapi", testAPIToggles, testAPISecrets
+	t.Cleanup(func() {
+		servicesDir, providerDir, toggles, secrets = savedServices, savedProvider, savedToggles, savedSecrets
+	})
 	plugin, err := protogen.Options{}.New(request(t, file))
 	if err != nil {
 		t.Fatal(err)
