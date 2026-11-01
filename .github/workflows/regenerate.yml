@@ -9,8 +9,8 @@
 # for something new in the API, or a new service's tests, are kept: a later
 # run generates on top of them, with main merged in, and never closes a pull
 # request that has them. Merging main resolves conflicts in what
-# scripts/update.sh writes again anyway (API_REVISION, the *.gen.go files and
-# docs/), and in go.mod and go.sum while the branch changed nothing in go.mod
+# scripts/update.sh writes again anyway (API_REVISION, the *.gen.go files,
+# the test API's *.pb.go and docs/), and in go.mod and go.sum while the branch changed nothing in go.mod
 # but the SDK's version; any other conflict fails the run until someone
 # merges main into the branch by hand.
 #
@@ -94,8 +94,7 @@ jobs:
                   side=""
                   case "${path}" in
                     go.mod | go.sum) if [[ "${sdk_only}" == true ]]; then side=--theirs; fi ;;
-                    internal/testapi/*) ;;
-                    API_REVISION | *.gen.go | docs/*) side=--ours ;;
+                    API_REVISION | *.gen.go | internal/testapi/*.pb.go | docs/*) side=--ours ;;
                   esac
                   if [[ -n "${side}" ]]; then
                     if git checkout --quiet "${side}" -- "${path}" 2>/dev/null; then

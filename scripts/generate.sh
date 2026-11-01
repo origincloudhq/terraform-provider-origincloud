@@ -52,7 +52,8 @@ template="$(printf '{"version":"v2","plugins":[{"local":"%s","out":"%s","strateg
 (cd "${ROOT}" && go run "${BUF}" generate "${tmp}/api" --template "${template}")
 
 # The generated files, relative to the repository; not the test API's
-# (internal/testapi), which the plugin's tests generate and check.
+# (internal/testapi), which the plugin's tests generate and check, and
+# scripts/update.sh writes.
 generated() { (cd "$1" && find . -name '*.gen.go' -not -path './dist/*' -not -path './internal/testapi/*' | LC_ALL=C sort); }
 
 # Writes the provider in $1's docs/, and checks their layout. The copy
