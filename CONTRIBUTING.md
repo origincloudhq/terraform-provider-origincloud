@@ -174,8 +174,9 @@ The regeneration workflow (`.github/workflows/regenerate.yml`) moves the
 provider to the newest API and Go SDK release when the SDK releases, and
 daily, and opens a pull request when that changes anything, with the next
 version. Once its CI passes, it is merged and released without anyone's
-hands, unless someone added commits to it, which then wait for review
-([RELEASING.md](RELEASING.md)).
+hands, unless someone added commits to it, or it adds a service, which needs tests
+against a fake of it and its rows in README.md's table first: these wait for
+review ([RELEASING.md](RELEASING.md)).
 
 ## Checks
 
