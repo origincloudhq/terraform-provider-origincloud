@@ -37,6 +37,42 @@ data sources are generated from the API definitions in
 | Data source | `origincloud_resourcemanager_organization_quota` | The most of each resource an organization's projects may hold |
 | Data source | `origincloud_resourcemanager_organizations` | The organizations you hold a role in |
 | Data source | `origincloud_resourcemanager_projects` | An organization's projects |
+| Resource | `origincloud_network_vpc` | A private network in one region |
+| Resource | `origincloud_network_subnet` | The part of a VPC in one zone |
+| Resource | `origincloud_network_internet_gateway` | A VPC's way to and from the internet |
+| Resource | `origincloud_network_nat_gateway` | Shared IPv4 egress through one floating IP |
+| Resource | `origincloud_network_route_table` | Routes out of a VPC for the subnets associated with it |
+| Resource | `origincloud_network_route` | A default route through an internet or NAT gateway |
+| Resource | `origincloud_network_route_table_association` | The route table a subnet uses |
+| Resource | `origincloud_network_security_group` | Rules allowing traffic to and from network interfaces |
+| Resource | `origincloud_network_security_group_rule` | The traffic a security group allows in one direction, to or from one peer |
+| Resource | `origincloud_network_security_group_association` | A security group filtering a network interface's traffic |
+| Resource | `origincloud_network_acl` | Stateless rules for the traffic in and out of subnets |
+| Resource | `origincloud_network_acl_rule` | An ACL rule accepting or dropping traffic in one direction |
+| Resource | `origincloud_network_acl_association` | The ACL filtering a subnet's traffic at its edge |
+| Resource | `origincloud_network_network_interface` | Private addresses in one subnet, filtered by security groups |
+| Resource | `origincloud_network_floating_ip` | A public IPv4 address of your own |
+| Resource | `origincloud_network_floating_ip_association` | The network interface a floating IP reaches |
+| Resource | `origincloud_network_dns_policy` | How a VPC's resolver answers names outside the platform's own |
+| Resource | `origincloud_network_dns_policy_association` | The DNS policy a VPC's resolver relays through |
+| Data source | `origincloud_network_vpcs` | The VPCs in a region |
+| Data source | `origincloud_network_subnets` | The subnets in a zone |
+| Data source | `origincloud_network_internet_gateways` | The internet gateways in a region |
+| Data source | `origincloud_network_nat_gateways` | The NAT gateways in a zone |
+| Data source | `origincloud_network_route_tables` | The route tables in a region |
+| Data source | `origincloud_network_routes` | A route table's routes |
+| Data source | `origincloud_network_route_table_associations` | A subnet's route table association |
+| Data source | `origincloud_network_security_groups` | The security groups in a region |
+| Data source | `origincloud_network_security_group_rules` | A security group's rules |
+| Data source | `origincloud_network_security_group_associations` | A network interface's security group associations |
+| Data source | `origincloud_network_acls` | The ACLs in a region |
+| Data source | `origincloud_network_acl_rules` | An ACL's rules |
+| Data source | `origincloud_network_acl_associations` | A subnet's ACL association |
+| Data source | `origincloud_network_network_interfaces` | The network interfaces in a zone |
+| Data source | `origincloud_network_floating_ips` | The floating IPs in a zone |
+| Data source | `origincloud_network_floating_ip_associations` | A floating IP's association |
+| Data source | `origincloud_network_dns_policies` | The DNS policies in a region |
+| Data source | `origincloud_network_dns_policy_associations` | A VPC's DNS policy association |
 
 ## Using it
 
