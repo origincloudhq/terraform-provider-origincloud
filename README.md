@@ -31,6 +31,12 @@ data sources are generated from the API definitions in
 | Data source | `origincloud_compute_instances` | The instances in a zone |
 | Data source | `origincloud_compute_key_pairs` | A project's key pairs |
 | Data source | `origincloud_compute_volume_attachments` | The volumes an instance holds |
+| Resource | `origincloud_resourcemanager_organization` | The account projects, members and billing belong to |
+| Resource | `origincloud_resourcemanager_project` | The namespace an organization's resources are created in |
+| Resource | `origincloud_resourcemanager_project_quota` | A project's budgets, and how much of each it uses |
+| Data source | `origincloud_resourcemanager_organization_quota` | The most of each resource an organization's projects may hold |
+| Data source | `origincloud_resourcemanager_organizations` | The organizations you hold a role in |
+| Data source | `origincloud_resourcemanager_projects` | An organization's projects |
 
 ## Using it
 
