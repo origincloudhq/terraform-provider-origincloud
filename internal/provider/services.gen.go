@@ -5,22 +5,31 @@ package provider
 import (
 	datasource "github.com/hashicorp/terraform-plugin-framework/datasource"
 	resource "github.com/hashicorp/terraform-plugin-framework/resource"
+	computev1beta1 "github.com/origincloudhq/terraform-provider-origincloud/internal/services/computev1beta1"
 	locationv1beta1 "github.com/origincloudhq/terraform-provider-origincloud/internal/services/locationv1beta1"
+	networkv1beta1 "github.com/origincloudhq/terraform-provider-origincloud/internal/services/networkv1beta1"
 	pvsv1beta1 "github.com/origincloudhq/terraform-provider-origincloud/internal/services/pvsv1beta1"
+	resourcemanagerv1beta1 "github.com/origincloudhq/terraform-provider-origincloud/internal/services/resourcemanagerv1beta1"
 )
 
 // serviceResources returns the constructors of every package's resources.
 func serviceResources() []func() resource.Resource {
 	var all []func() resource.Resource
+	all = append(all, computev1beta1.Resources()...)
 	all = append(all, locationv1beta1.Resources()...)
+	all = append(all, networkv1beta1.Resources()...)
 	all = append(all, pvsv1beta1.Resources()...)
+	all = append(all, resourcemanagerv1beta1.Resources()...)
 	return all
 }
 
 // serviceDataSources returns the constructors of every package's data sources.
 func serviceDataSources() []func() datasource.DataSource {
 	var all []func() datasource.DataSource
+	all = append(all, computev1beta1.DataSources()...)
 	all = append(all, locationv1beta1.DataSources()...)
+	all = append(all, networkv1beta1.DataSources()...)
 	all = append(all, pvsv1beta1.DataSources()...)
+	all = append(all, resourcemanagerv1beta1.DataSources()...)
 	return all
 }

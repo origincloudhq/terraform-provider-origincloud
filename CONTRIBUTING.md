@@ -219,7 +219,7 @@ the tests download Terraform (`TF_ACC_TERRAFORM_VERSION`, or the one on the
 ```sh
 scripts/generate.sh --write   # generate the code and docs again; without --write, check them
 scripts/update.sh             # move to the newest API and SDK, and generate
-go test ./...                 # runs Terraform against fakes of PVS, location and the test API
+go test ./...                 # runs Terraform against fakes of each service and the test API
 ORIGINCLOUD_LIVE_ZONE=projects/<project>/zones/<zone> \
   go test -count=1 -v -run TestLivePVS ./internal/provider   # against the live API
 ```
