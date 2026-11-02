@@ -128,17 +128,18 @@ func attributes(t resourceType, forResource bool, prefix string) ([]attribute, e
 		}
 		if id := t.idField(); id != nil {
 			// The id the client chooses (AIP-133): its name's last segment.
+			comment := prose(id.Comments.Leading)
 			a := attribute{
 				name: string(id.Desc.Name()), goName: camel(string(id.Desc.Name())), kind: "String", replace: true,
 				nameValue: len(t.variables) - 1,
-				doc:       fmt.Sprintf("The %s's id, the last segment of its name. Changing it replaces the %s.", singular, singular),
+				doc:       strings.TrimSpace(comment + " " + fmt.Sprintf("The %s's id, the last segment of its name. Changing it replaces the %s.", singular, singular)),
 			}
 			switch behaviors := fieldBehaviors(id); {
 			case slices.Contains(behaviors, annotations.FieldBehavior_REQUIRED):
 				a.required = true
 			case slices.Contains(behaviors, annotations.FieldBehavior_OPTIONAL):
 				a.optional, a.computed, a.keep = true, true, true
-				a.doc = fmt.Sprintf("The %s's id, the last segment of its name; left out, the API chooses it. Changing it replaces the %s.", singular, singular)
+				a.doc = strings.TrimSpace(comment + " " + fmt.Sprintf("The %s's id, the last segment of its name; left out, the API chooses it. Changing it replaces the %s.", singular, singular))
 			default:
 				return nil, fmt.Errorf("Create%s's %s is neither REQUIRED nor OPTIONAL", t.message.Desc.Name(), id.Desc.Name())
 			}
@@ -345,13 +346,21 @@ func applyBehaviors(s scope, a *attribute, behaviors []annotations.FieldBehavior
 	case (a.presence || a.chosenObject) && s.inList && !s.replaced:
 		// Kept by position, a value could be planned for another element.
 		return fmt.Errorf("a field with explicit presence (proto3 optional) can't be in a list's elements: they are matched by position, so the value kept for one could be planned for another")
+	case has(annotations.FieldBehavior_OPTIONAL) && s.t.managedSingleton() && !s.nested && !a.presence && !a.chosenObject:
+		// Created by an update, a singleton's field left out would plan
+		// null while the API has a value.
+		return fmt.Errorf("a singleton's OPTIONAL field needs explicit presence (proto3 optional), so that leaving it out keeps its value")
 	case has(annotations.FieldBehavior_OPTIONAL):
 		a.optional = true
 		// With explicit presence, the API chooses the value left out, and
 		// the state keeps it until one is set.
 		a.computed, a.keep = a.presence || a.chosenObject, a.presence || a.chosenObject
 		if a.presence || a.chosenObject {
-			a.doc = strings.TrimSpace(a.doc + " Left out, the API chooses it; removing it keeps the current value.")
+			if s.t.managedSingleton() && !s.nested {
+				a.doc = strings.TrimSpace(a.doc + " Left out, Terraform doesn't manage it, and it keeps its current value; removed from the configuration once set, it is unset. See the field's description for what unset means.")
+			} else {
+				a.doc = strings.TrimSpace(a.doc + " Left out, it keeps its current value; see the field's description.")
+			}
 		}
 		if !s.nested {
 			a.replace = !updatable
@@ -742,6 +751,17 @@ func updateChanged(g *protogen.GeneratedFile, a attribute) string {
 		return "!plan." + a.goName + ".Equal(state." + a.goName + ")"
 	}
 	return "!" + sentSame(g, a, "plan."+a.goName, "state."+a.goName)
+}
+
+// replaceSame returns the condition under which a's planned and prior
+// values, in plan and state, send the same, for a timestamp or duration
+// by instant or length.
+func replaceSame(g *protogen.GeneratedFile, a attribute) string {
+	if a.wellKnown != "" {
+		c := conv{g}
+		return g.QualifiedGoIdent(protoPackage.Ident("Equal")) + "(" + c.toProto(a, "plan."+a.goName) + ", " + c.toProto(a, "state."+a.goName) + ")"
+	}
+	return sentSame(g, a, "plan."+a.goName, "state."+a.goName)
 }
 
 // sentSame returns the condition under which plan and state, values of an

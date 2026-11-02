@@ -142,6 +142,7 @@ func snapshotFromProto(p *v1beta1.Snapshot, m *snapshotModel) error {
 func snapshotResource() framework.ResourceSpec[snapshotModel, *v1beta1.Snapshot] {
 	return framework.ResourceSpec[snapshotModel, *v1beta1.Snapshot]{
 		TypeName:  "_pvs_snapshot",
+		Pattern:   "projects/{project}/zones/{zone}/snapshots/{snapshot}",
 		Schema:    snapshotSchema(),
 		Name:      func(m *snapshotModel) string { return m.Name.ValueString() },
 		ToProto:   snapshotToProto,

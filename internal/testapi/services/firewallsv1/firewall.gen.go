@@ -581,6 +581,7 @@ func firewallFromProto(p *firewallsv1.Firewall, m *firewallModel) error {
 func firewallResource() framework.ResourceSpec[firewallModel, *firewallsv1.Firewall] {
 	return framework.ResourceSpec[firewallModel, *firewallsv1.Firewall]{
 		TypeName:  "_firewalls_firewall",
+		Pattern:   "projects/{project}/firewalls/{firewall}",
 		Schema:    firewallSchema(),
 		Name:      func(m *firewallModel) string { return m.Name.ValueString() },
 		ToProto:   firewallToProto,

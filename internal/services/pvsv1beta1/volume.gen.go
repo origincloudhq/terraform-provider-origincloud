@@ -175,6 +175,7 @@ func volumeFromProto(p *v1beta1.Volume, m *volumeModel) error {
 func volumeResource() framework.ResourceSpec[volumeModel, *v1beta1.Volume] {
 	return framework.ResourceSpec[volumeModel, *v1beta1.Volume]{
 		TypeName:  "_pvs_volume",
+		Pattern:   "projects/{project}/zones/{zone}/volumes/{volume}",
 		Schema:    volumeSchema(),
 		Name:      func(m *volumeModel) string { return m.Name.ValueString() },
 		ToProto:   volumeToProto,

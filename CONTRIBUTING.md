@@ -46,13 +46,22 @@ to the plugin or `internal/framework`.
   `CreateProject`'s `project_id`, makes it an attribute that replaces the
   resource: required when the field is `REQUIRED`, optional and computed
   when it is `OPTIONAL`. It is the last segment of the resource's name, which
-  is how it is read back and how an import derives it.
+  is how it is read back and how an import derives it. A deleted resource's
+  id can't be used again, so a plan that would replace the resource with the
+  id it has, because an immutable attribute changed, fails with a message
+  asking for a new id. A replacement forced from the command line
+  (`-replace`) isn't planned by the provider and isn't refused.
 - A **singleton**, a resource its parent has one of, such as a project's
   quota (`projects/{project}/quota`), that the service gets and updates but
   doesn't create or delete, is a resource too. Creating it updates it, with
-  the fields the configuration sets; destroying it leaves it as it is.
-  Imported by its name. A singleton the service doesn't update is a data
-  source.
+  the fields the configuration sets, and Terraform owns those, recorded in
+  the resource's private state. A field it owns that the configuration no
+  longer sets is unset; destroying the resource unsets the fields it owns
+  and leaves the others. Its `OPTIONAL` fields need explicit presence; a
+  singleton with a create fails generation. Imported by its name, it owns
+  nothing until it sets a field. A singleton the service doesn't update is
+  a data source.
+- An imported name must have the resource's pattern.
 - A field referring to another resource (`google.api.resource_reference`) is
   a string the API checks, so a reference that may take several patterns
   needs nothing of its own.

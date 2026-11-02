@@ -148,7 +148,13 @@ func (t resourceType) parentVariables() []string {
 // service creates and deletes it, or it is a singleton the service updates,
 // which exists with its parent.
 func (t resourceType) managed() bool {
-	return t.create != nil || t.singleton() && t.update != nil && t.del == nil
+	return t.create != nil || t.managedSingleton()
+}
+
+// managedSingleton says that the type is a singleton managed as a
+// resource: one the service updates but neither creates nor deletes.
+func (t resourceType) managedSingleton() bool {
+	return t.singleton() && t.create == nil && t.update != nil && t.del == nil
 }
 
 // idField returns the create's field of the id the client chooses
@@ -293,6 +299,9 @@ func choosePattern(t *resourceType) error {
 	if t.create == nil {
 		return nil
 	}
+	if t.singleton() {
+		return fmt.Errorf("Create%s creates a singleton, the only one of its parent (%s), which isn't supported", t.message.Desc.Name(), t.pattern)
+	}
 	rule, _ := proto.GetExtension(t.create.Desc.Options(), annotations.E_Http).(*annotations.HttpRule)
 	binding := parentBinding.FindStringSubmatch(rule.GetPost())
 	if binding == nil {
@@ -361,6 +370,33 @@ func generateResource(g *protogen.GeneratedFile, t resourceType) error {
 	g.P("func ", lowerFirst(t.message.GoIdent.GoName), "Resource() ", g.QualifiedGoIdent(frameworkPackage.Ident("ResourceSpec")), "[", model, ", ", message, "] {")
 	g.P("return ", g.QualifiedGoIdent(frameworkPackage.Ident("ResourceSpec")), "[", model, ", ", message, "]{")
 	g.P("TypeName: ", fmt.Sprintf("%q", typeName), ",")
+	g.P("Pattern: ", fmt.Sprintf("%q", t.pattern), ",")
+	if id := t.idField(); id != nil {
+		g.P("ClientID: func(m *", model, ") ", g.QualifiedGoIdent(typesPackage.Ident("String")), " { return m.", camel(string(id.Desc.Name())), " },")
+		g.P("IDAttribute: ", fmt.Sprintf("%q", string(id.Desc.Name())), ",")
+		g.P("Singular: ", fmt.Sprintf("%q", words(t.singular)), ",")
+		// The top-level attributes that replace it, as their plan
+		// modifiers decide.
+		g.P("Replaced: func(plan, state, config *", model, ") []string {")
+		g.P("var replaced []string")
+		for _, a := range attrs {
+			if !a.replace || a.name == string(id.Desc.Name()) {
+				continue
+			}
+			changed := "!plan." + a.goName + ".Equal(state." + a.goName + ")"
+			if a.message != nil || a.wellKnown != "" {
+				changed = "!" + replaceSame(g, a)
+			}
+			if a.computed {
+				changed = "!config." + a.goName + ".IsNull() && " + changed
+			}
+			g.P("if ", changed, " {")
+			g.P("replaced = append(replaced, ", fmt.Sprintf("%q", a.name), ")")
+			g.P("}")
+		}
+		g.P("return replaced")
+		g.P("},")
+	}
 	g.P("Schema: ", lowerFirst(t.message.GoIdent.GoName), "Schema(),")
 	g.P("Name: func(m *", model, ") string { return m.Name.ValueString() },")
 	g.P("ToProto: ", lowerFirst(t.message.GoIdent.GoName), "ToProto,")
@@ -516,21 +552,76 @@ func generateSingletonCreate(g *protogen.GeneratedFile, t resourceType, model, m
 			g.P("}")
 		}
 	}
+	// Nothing configured: nothing to send, as the API refuses an empty
+	// mask.
+	g.P("if len(mask) == 0 {")
+	g.P("return ", client, ".", t.get.GoName, "(ctx, &", g.QualifiedGoIdent(t.get.Input.GoIdent), "{Name: resource.Name})")
+	g.P("}")
+	if err := generateSingletonUpdate(g, t, client, "resource", "mask", "nil, "); err != nil {
+		return err
+	}
+	g.P("},")
+
+	// Terraform owns the fields it set; destroyed, it unsets them.
+	g.P("Configured: func(config *", model, ") []string {")
+	g.P("var fields []string")
+	for _, a := range attrs {
+		if a.updatable {
+			g.P("if !config.", a.goName, ".IsNull() {")
+			g.P("fields = append(fields, ", fmt.Sprintf("%q", a.field.Desc.Name()), ")")
+			g.P("}")
+		}
+	}
+	g.P("return fields")
+	g.P("},")
+	g.P("Release: func(plan, config *", model, ", owned []string) {")
+	for _, a := range attrs {
+		if a.updatable && a.computed {
+			g.P("if config.", a.goName, ".IsNull() && ", g.QualifiedGoIdent(protogen.GoImportPath("slices").Ident("Contains")), "(owned, ", fmt.Sprintf("%q", a.field.Desc.Name()), ") {")
+			g.P("plan.", a.goName, " = ", conv{g}.null(a))
+			g.P("}")
+		}
+	}
+	g.P("},")
+	g.P("Clear: func(ctx ", ctx, ", client ", coreClient, ", name string, fields []string) error {")
+	g.P("resource := &", g.QualifiedGoIdent(t.message.GoIdent), "{Name: name}")
+	if err := generateSingletonUpdate(g, t, client, "resource", "fields", ""); err != nil {
+		return err
+	}
+	g.P("},")
+	return nil
+}
+
+// generateSingletonUpdate writes the statements updating a singleton,
+// resource, with the fields of mask, and returning; prefix comes before
+// the error in what is returned, "nil, " when the resource is returned
+// too, and only the error is returned when prefix is empty.
+func generateSingletonUpdate(g *protogen.GeneratedFile, t resourceType, client, resource, mask, prefix string) error {
+	field := fieldOfType(t.update.Input, t.message)
 	call := client + "." + t.update.GoName + "(ctx, &" + g.QualifiedGoIdent(t.update.Input.GoIdent) + "{" +
-		field.GoName + ": resource, UpdateMask: &" + g.QualifiedGoIdent(fieldmaskPackage.Ident("FieldMask")) + "{Paths: mask}})"
+		field.GoName + ": " + resource + ", UpdateMask: &" + g.QualifiedGoIdent(fieldmaskPackage.Ident("FieldMask")) + "{Paths: " + mask + "}})"
 	switch operationResult(t.update) {
 	case t.message.Desc.FullName():
 		g.P("op, err := ", call)
 		g.P("if err != nil {")
-		g.P("return nil, err")
+		g.P("return ", prefix, "err")
 		g.P("}")
-		g.P("return op.Wait(ctx)")
+		if prefix == "" {
+			g.P("_, err = op.Wait(ctx)")
+			g.P("return err")
+		} else {
+			g.P("return op.Wait(ctx)")
+		}
 	case "":
-		g.P("return ", call)
+		if prefix == "" {
+			g.P("_, err := ", call)
+			g.P("return err")
+		} else {
+			g.P("return ", call)
+		}
 	default:
 		return fmt.Errorf("Update%s's operation doesn't result in the %[1]s", t.message.Desc.Name())
 	}
-	g.P("},")
 	return nil
 }
 
@@ -786,10 +877,18 @@ func generateModel(g *protogen.GeneratedFile, model, doc string, attrs []attribu
 }
 
 func generateSchema(g *protogen.GeneratedFile, t resourceType, name string, schemaPackage protogen.GoImportPath, attrs []attribute) {
+	doc := prose(t.message.Comments.Leading)
+	if t.managedSingleton() && schemaPackage == resourceSchemaPackage {
+		singular, parent := words(t.singular), "parent"
+		if vars := t.parentVariables(); len(vars) > 0 {
+			parent = words(vars[len(vars)-1])
+		}
+		doc = strings.TrimSpace(doc + "\n\n" + fmt.Sprintf("Every %s has its %s, which exists with it: creating this resource updates the existing %[2]s with the settings configured, and the rest keep their values. Destroying it unsets the settings Terraform set, leaving the others as they are; to stop managing it without unsetting them, remove it from the state instead (a `removed` block with `lifecycle { destroy = false }`, or `terraform state rm`). Manage each %[2]s with one resource only: two would undo each other's settings.", parent, singular))
+	}
 	g.P()
 	g.P("func ", name, "Schema() ", g.QualifiedGoIdent(schemaPackage.Ident("Schema")), " {")
 	g.P("return ", g.QualifiedGoIdent(schemaPackage.Ident("Schema")), "{")
-	g.P("MarkdownDescription: ", fmt.Sprintf("%q", prose(t.message.Comments.Leading)), ",")
+	g.P("MarkdownDescription: ", fmt.Sprintf("%q", doc), ",")
 	generateAttributes(g, schemaPackage, attrs)
 	g.P("}")
 	g.P("}")

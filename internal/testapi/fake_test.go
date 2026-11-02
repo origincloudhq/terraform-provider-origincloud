@@ -83,14 +83,16 @@ type fakeFirewalls struct {
 	// keys are served too, under projects/{project}/keys.
 	keys     map[string]*firewallsv1.Key
 	keyMasks []string
-	// vaults, and their quotas, too.
+	// vaults, and their quotas, too. A deleted vault's id is never used
+	// again: tombstones are its names.
 	vaults     map[string]*firewallsv1.Vault
+	tombstones map[string]bool
 	quotas     map[string]*firewallsv1.VaultQuota
 	quotaMasks []string
 }
 
 func newFakeFirewalls(t *testing.T) *fakeFirewalls {
-	f := &fakeFirewalls{firewalls: map[string]*firewallsv1.Firewall{}, vaults: map[string]*firewallsv1.Vault{}, quotas: map[string]*firewallsv1.VaultQuota{}, keys: map[string]*firewallsv1.Key{
+	f := &fakeFirewalls{firewalls: map[string]*firewallsv1.Firewall{}, vaults: map[string]*firewallsv1.Vault{}, tombstones: map[string]bool{}, quotas: map[string]*firewallsv1.VaultQuota{}, keys: map[string]*firewallsv1.Key{
 		// A public key, in the other pattern.
 		"keys/pub-1": {Name: "keys/pub-1", State: firewallsv1.Key_ENABLED, Algorithm: proto.String("ed25519"), Usage: &firewallsv1.Key_Sign{Sign: true}},
 	}}
@@ -375,9 +377,10 @@ func (f *fakeFirewalls) lastKeyMask() string {
 	return f.keyMasks[len(f.keyMasks)-1]
 }
 
-// serveVault serves the vaults, created with the id the client chose, and
-// their quotas, which exist with them: 100 secrets and 10 versions until
-// updated.
+// serveVault serves the vaults, created with the id the client chose,
+// which a deleted vault keeps, and their quotas, which exist with them,
+// without budgets until some are set. An update of a quota unsets a field
+// its mask names and its body leaves out, and refuses an empty mask.
 func (f *fakeFirewalls) serveVault(w http.ResponseWriter, r *http.Request, path string, body []byte) {
 	switch {
 	case path == "vaults" && r.Method == http.MethodPost:
@@ -392,13 +395,14 @@ func (f *fakeFirewalls) serveVault(w http.ResponseWriter, r *http.Request, path 
 			return
 		}
 		vault.Name = "vaults/" + id
-		if _, ok := f.vaults[vault.Name]; ok {
+		if _, ok := f.vaults[vault.Name]; ok || f.tombstones[vault.Name] {
 			writeError(w, http.StatusConflict, "ALREADY_EXISTS", vault.Name+" exists")
 			return
 		}
 		vault.CreateTime = timestamppb.New(keyCreated)
 		f.vaults[vault.Name] = vault
-		f.quotas[vault.Name+"/quota"] = &firewallsv1.VaultQuota{Name: vault.Name + "/quota", MaxSecrets: proto.Int64(100), MaxVersions: proto.Int64(10)}
+		// No budgets until some are set.
+		f.quotas[vault.Name+"/quota"] = &firewallsv1.VaultQuota{Name: vault.Name + "/quota"}
 		writeMessage(w, vault)
 	case path == "vaults" && r.Method == http.MethodGet:
 		owner := r.URL.Query().Get("owner")
@@ -426,6 +430,10 @@ func (f *fakeFirewalls) serveVault(w http.ResponseWriter, r *http.Request, path 
 				return
 			}
 			mask := r.URL.Query().Get("updateMask")
+			if mask == "" {
+				writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "update_mask is required")
+				return
+			}
 			f.quotaMasks = append(f.quotaMasks, mask)
 			for _, field := range strings.Split(mask, ",") {
 				switch field {
@@ -433,7 +441,6 @@ func (f *fakeFirewalls) serveVault(w http.ResponseWriter, r *http.Request, path 
 					quota.MaxSecrets = update.MaxSecrets
 				case "maxVersions":
 					quota.MaxVersions = update.MaxVersions
-				case "":
 				default:
 					writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", field+" can't be updated")
 					return
@@ -461,6 +468,7 @@ func (f *fakeFirewalls) serveVault(w http.ResponseWriter, r *http.Request, path 
 		case http.MethodDelete:
 			delete(f.vaults, path)
 			delete(f.quotas, path+"/quota")
+			f.tombstones[path] = true
 			writeMessage(w, &emptypb.Empty{})
 		}
 	}

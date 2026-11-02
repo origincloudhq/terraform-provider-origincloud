@@ -373,6 +373,136 @@ func TestAClientChosenIdIsAnAttribute(t *testing.T) {
 	)
 }
 
+// withSingleton adds a singleton, projects/{project}/settings, with the
+// field given in prototext, and the methods given in prototext.
+func withSingleton(field string, methods ...string) func(*descriptorpb.FileDescriptorProto) {
+	return func(file *descriptorpb.FileDescriptorProto) {
+		withField("NameRequest", `name: "dummy" number: 2 label: LABEL_OPTIONAL type: TYPE_STRING`,
+			`name: "Settings"
+			 options { [google.api.resource] { type: "widgets.origincloudapis.eu/Settings" pattern: "projects/{project}/settings" singular: "settings" plural: "allSettings" } }
+			 field { name: "name" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: IDENTIFIER } }
+			 `+field,
+			`name: "UpdateSettingsRequest"
+			 field { name: "settings" number: 1 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".test.widgets.v1.Settings" }
+			 field { name: "update_mask" number: 2 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".google.protobuf.FieldMask" }`)(file)
+		for _, text := range methods {
+			m := new(descriptorpb.MethodDescriptorProto)
+			if err := prototext.Unmarshal([]byte(text), m); err != nil {
+				panic(err)
+			}
+			file.Service[0].Method = append(file.Service[0].Method, m)
+		}
+	}
+}
+
+const (
+	getSettings    = `name: "GetSettings" input_type: ".test.widgets.v1.NameRequest" output_type: ".test.widgets.v1.Settings"`
+	updateSettings = `name: "UpdateSettings" input_type: ".test.widgets.v1.UpdateSettingsRequest" output_type: ".google.longrunning.Operation"
+		options { [google.longrunning.operation_info] { response_type: "Settings" metadata_type: "Settings" } }`
+	budget = `field { name: "budget" number: 2 label: LABEL_OPTIONAL type: TYPE_INT64 oneof_index: 0 proto3_optional: true options { [google.api.field_behavior]: OPTIONAL } }
+		oneof_decl { name: "_budget" }`
+)
+
+// A singleton the service updates is a resource, whose create and destroy
+// update it; an update answering with an operation is waited on.
+func TestASingletonIsAResource(t *testing.T) {
+	files, failure := run(t, withSingleton(budget, getSettings, updateSettings))
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	settings := files["internal/services/widgetsv1/settings.gen.go"]
+	contains(t, "settings.gen.go", settings,
+		`resource.Name = "projects/" + plan.Project.ValueString() + "/settings"`,
+		`if len(mask) == 0 { return v1.NewWidgetClient(client).GetSettings(ctx, &v1.NameRequest{Name: resource.Name}) }`,
+		"return op.Wait(ctx)",
+		`Clear: func(ctx context.Context, client *core.Client, name string, fields []string) error { resource := &v1.Settings{Name: name}`,
+		"_, err = op.Wait(ctx) return err",
+		`if config.Budget.IsNull() && slices.Contains(owned, "budget") { plan.Budget = types.Int64Null() }`,
+		"Destroying it unsets the settings Terraform set",
+	)
+	contains(t, "services.gen.go", files["internal/services/widgetsv1/services.gen.go"], "framework.NewResource(settingsResource()),")
+}
+
+// A singleton the service only reads is a data source.
+func TestAReadOnlySingletonIsADataSource(t *testing.T) {
+	files, failure := run(t, withSingleton(`field { name: "limit" number: 2 label: LABEL_OPTIONAL type: TYPE_INT64 options { [google.api.field_behavior]: OUTPUT_ONLY } }`, getSettings))
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	contains(t, "services.gen.go", files["internal/services/widgetsv1/services.gen.go"], "framework.NewDataSource(settingsDataSource()),")
+	if strings.Contains(files["internal/services/widgetsv1/services.gen.go"], "settingsResource") {
+		t.Error("a read-only singleton is a resource")
+	}
+}
+
+func TestSingletonsThatFailGeneration(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*descriptorpb.FileDescriptorProto)
+		want   string
+	}{
+		{
+			name:   "an optional field without presence",
+			change: withSingleton(`field { name: "budget" number: 2 label: LABEL_OPTIONAL type: TYPE_INT64 options { [google.api.field_behavior]: OPTIONAL } }`, getSettings, updateSettings),
+			want:   "Settings: field budget: a singleton's OPTIONAL field needs explicit presence (proto3 optional)",
+		},
+		{
+			name: "a create",
+			change: withSingleton(budget, getSettings, updateSettings,
+				`name: "CreateSettings" input_type: ".test.widgets.v1.UpdateSettingsRequest" output_type: ".test.widgets.v1.Settings"`,
+				`name: "DeleteSettings" input_type: ".test.widgets.v1.NameRequest" output_type: ".google.protobuf.Empty"`),
+			want: "Settings: CreateSettings creates a singleton, the only one of its parent (projects/{project}/settings), which isn't supported",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, failure := run(t, tc.change); !strings.Contains(failure, tc.want) {
+				t.Errorf("generation failed with %q, want %q", failure, tc.want)
+			}
+		})
+	}
+}
+
+// An OPTIONAL id is optional and computed, the API's choice when left out;
+// one neither REQUIRED nor OPTIONAL fails generation.
+func TestClientChosenIds(t *testing.T) {
+	files, failure := run(t, withField("CreateWidgetRequest", `name: "widget_id" number: 9 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: OPTIONAL }`))
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	contains(t, "widget.gen.go", files["internal/services/widgetsv1/widget.gen.go"],
+		`"widget_id": schema.StringAttribute{ MarkdownDescription: "The widget's id, the last segment of its name; left out, the API chooses it. Changing it replaces the widget.", Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()}, },`,
+		`ClientID: func(m *widgetModel) types.String { return m.WidgetId },`,
+		`IDAttribute: "widget_id",`,
+		`Pattern: "projects/{project}/widgets/{widget}",`,
+	)
+	_, failure = run(t, withField("CreateWidgetRequest", `name: "widget_id" number: 9 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: IMMUTABLE }`))
+	if want := "CreateWidget's widget_id is neither REQUIRED nor OPTIONAL"; !strings.Contains(failure, want) {
+		t.Errorf("generation failed with %q, want %q", failure, want)
+	}
+}
+
+// A list's required number and enum filters are attributes too.
+func TestAListsRequiredNumberAndEnumFilters(t *testing.T) {
+	files, failure := run(t, func(file *descriptorpb.FileDescriptorProto) {
+		file.EnumType = append(file.EnumType, &descriptorpb.EnumDescriptorProto{Name: proto.String("Kind"), Value: []*descriptorpb.EnumValueDescriptorProto{
+			{Name: proto.String("KIND_UNSPECIFIED"), Number: proto.Int32(0)}, {Name: proto.String("ROUND"), Number: proto.Int32(1)},
+		}})
+		m := message(file, "ListWidgetsRequest")
+		m.Field = append(m.Field,
+			&descriptorpb.FieldDescriptorProto{Name: proto.String("size"), Number: proto.Int32(4), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_INT32.Enum(), Options: behaviors(annotations.FieldBehavior_REQUIRED)},
+			&descriptorpb.FieldDescriptorProto{Name: proto.String("kind"), Number: proto.Int32(5), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_ENUM.Enum(), TypeName: proto.String(".test.widgets.v1.Kind"), Options: behaviors(annotations.FieldBehavior_REQUIRED)},
+		)
+	})
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	contains(t, "widget.gen.go", files["internal/services/widgetsv1/widget.gen.go"],
+		`"size": schema1.Int64Attribute{ MarkdownDescription: "", Required: true, Validators: []validator.Int64{framework.Int32()}, },`,
+		`"kind": schema1.StringAttribute{ MarkdownDescription: "One of `+"`ROUND`"+`.", Required: true, Validators: []validator.String{framework.OneOf("ROUND")}, },`,
+		`Size: int32(m.Size.ValueInt64()), Kind: v1.Kind(v1.Kind_value[m.Kind.ValueString()])}`,
+	)
+}
+
 // A secret declared for a field the API hasn't, or that isn't an
 // output-only string, fails generation.
 func TestSecretsAreCheckedAgainstTheAPI(t *testing.T) {

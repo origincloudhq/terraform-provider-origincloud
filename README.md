@@ -112,7 +112,15 @@ Credentials come from the environment, the first of:
   configuration keeps the current value rather than resetting it.
 - **Singletons.** A resource its parent has exactly one of, such as a
   project's quota, exists with its parent: creating it in Terraform updates
-  it with the values configured, and destroying it leaves it as it is.
+  it with the values configured. Removing a value from the configuration
+  unsets it, and destroying the resource unsets the values Terraform set,
+  leaving the others. To stop managing one without unsetting anything,
+  remove it from the state: a `removed` block with
+  `lifecycle { destroy = false }`, or `terraform state rm`. Manage each with
+  one resource only.
+- **Ids you choose.** A resource whose id you choose, such as a project's
+  `project_id`, can't be replaced with the same id: a deleted resource's id
+  isn't used again. Change the id along with what replaces it.
 - **Protection.** A snapshot is the source of new volumes only while it is
   protected. `protected = true` protects it, and destroying it unprotects it
   first.

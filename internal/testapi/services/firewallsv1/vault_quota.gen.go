@@ -14,6 +14,7 @@ import (
 	firewallsv1 "github.com/origincloudhq/terraform-provider-origincloud/internal/testapi/firewallsv1"
 	core "go.origincloud.eu/sdk/core"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
+	slices "slices"
 )
 
 // vaultQuotaModel is origincloud_vaults_vault_quota's state.
@@ -28,7 +29,7 @@ type vaultQuotaModel struct {
 
 func vaultQuotaSchema() schema.Schema {
 	return schema.Schema{
-		MarkdownDescription: "",
+		MarkdownDescription: "Every vault has its vault quota, which exists with it: creating this resource updates the existing vault quota with the settings configured, and the rest keep their values. Destroying it unsets the settings Terraform set, leaving the others as they are; to stop managing it without unsetting them, remove it from the state instead (a `removed` block with `lifecycle { destroy = false }`, or `terraform state rm`). Manage each vault quota with one resource only: two would undo each other's settings.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				MarkdownDescription: "The vault quota's resource name, the same as `name`.",
@@ -46,13 +47,13 @@ func vaultQuotaSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"max_secrets": schema.Int64Attribute{
-				MarkdownDescription: "Left out, the API chooses it; removing it keeps the current value.",
+				MarkdownDescription: "Left out, Terraform doesn't manage it, and it keeps its current value; removed from the configuration once set, it is unset. See the field's description for what unset means.",
 				Optional:            true,
 				Computed:            true,
 				PlanModifiers:       []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
 			},
 			"max_versions": schema.Int64Attribute{
-				MarkdownDescription: "Left out, the API chooses it; removing it keeps the current value.",
+				MarkdownDescription: "Left out, Terraform doesn't manage it, and it keeps its current value; removed from the configuration once set, it is unset. See the field's description for what unset means.",
 				Optional:            true,
 				Computed:            true,
 				PlanModifiers:       []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
@@ -90,6 +91,7 @@ func vaultQuotaFromProto(p *firewallsv1.VaultQuota, m *vaultQuotaModel) error {
 func vaultQuotaResource() framework.ResourceSpec[vaultQuotaModel, *firewallsv1.VaultQuota] {
 	return framework.ResourceSpec[vaultQuotaModel, *firewallsv1.VaultQuota]{
 		TypeName:  "_vaults_vault_quota",
+		Pattern:   "vaults/{vault}/quota",
 		Schema:    vaultQuotaSchema(),
 		Name:      func(m *vaultQuotaModel) string { return m.Name.ValueString() },
 		ToProto:   vaultQuotaToProto,
@@ -114,7 +116,33 @@ func vaultQuotaResource() framework.ResourceSpec[vaultQuotaModel, *firewallsv1.V
 			if framework.IsSet(plan.MaxVersions) {
 				mask = append(mask, "max_versions")
 			}
+			if len(mask) == 0 {
+				return firewallsv1.NewVaultClient(client).GetVaultQuota(ctx, &firewallsv1.VaultNameRequest{Name: resource.Name})
+			}
 			return firewallsv1.NewVaultClient(client).UpdateVaultQuota(ctx, &firewallsv1.UpdateVaultQuotaRequest{VaultQuota: resource, UpdateMask: &fieldmaskpb.FieldMask{Paths: mask}})
+		},
+		Configured: func(config *vaultQuotaModel) []string {
+			var fields []string
+			if !config.MaxSecrets.IsNull() {
+				fields = append(fields, "max_secrets")
+			}
+			if !config.MaxVersions.IsNull() {
+				fields = append(fields, "max_versions")
+			}
+			return fields
+		},
+		Release: func(plan, config *vaultQuotaModel, owned []string) {
+			if config.MaxSecrets.IsNull() && slices.Contains(owned, "max_secrets") {
+				plan.MaxSecrets = types.Int64Null()
+			}
+			if config.MaxVersions.IsNull() && slices.Contains(owned, "max_versions") {
+				plan.MaxVersions = types.Int64Null()
+			}
+		},
+		Clear: func(ctx context.Context, client *core.Client, name string, fields []string) error {
+			resource := &firewallsv1.VaultQuota{Name: name}
+			_, err := firewallsv1.NewVaultClient(client).UpdateVaultQuota(ctx, &firewallsv1.UpdateVaultQuotaRequest{VaultQuota: resource, UpdateMask: &fieldmaskpb.FieldMask{Paths: fields}})
+			return err
 		},
 		Get: func(ctx context.Context, client *core.Client, name string) (*firewallsv1.VaultQuota, error) {
 			return firewallsv1.NewVaultClient(client).GetVaultQuota(ctx, &firewallsv1.VaultNameRequest{Name: name})

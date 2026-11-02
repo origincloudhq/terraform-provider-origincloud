@@ -2,7 +2,9 @@ package testapi
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -83,69 +85,125 @@ data "origincloud_vaults_vaults" "o1" {
 }
 
 // A vault's quota is a singleton: the resource updates it when created,
-// sending only the budgets configured, keeps the API's for the others,
-// is imported by name, and leaves the quota as it is when destroyed.
+// sending only the budgets configured, and owns those. A budget removed
+// from the configuration is unset; destroying the resource unsets the
+// budgets it owns and leaves the others; with nothing configured, nothing
+// is sent.
 func TestAVaultsQuotaIsASingleton(t *testing.T) {
 	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
 	fake := newFakeFirewalls(t)
 	const quota = "origincloud_vaults_vault_quota.q"
-	config := func(budgets string) string {
-		return `
+	theVault := `
 resource "origincloud_vaults_vault" "v" {
   vault_id     = "v1"
   owner        = "o1"
   display_name = "A"
 }
-
+`
+	config := func(budgets string) string {
+		return theVault + `
 resource "origincloud_vaults_vault_quota" "q" {
   vault = origincloud_vaults_vault.v.vault_id
   ` + budgets + `
 }
 `
 	}
-	lastMask := func(want string) resource.TestCheckFunc {
+	masks := func(want ...string) resource.TestCheckFunc {
 		return func(*terraform.State) error {
-			if _, masks := fake.quota("vaults/v1/quota"); len(masks) == 0 || masks[len(masks)-1] != want {
-				return fmt.Errorf("the quota's update masks were %v, the last not %q", masks, want)
+			if _, got := fake.quota("vaults/v1/quota"); !slices.Equal(got, want) {
+				return fmt.Errorf("the quota's update masks were %v, not %v", got, want)
 			}
 			return nil
 		}
 	}
+	budgets := func(secrets, versions *int64) resource.TestCheckFunc {
+		return func(*terraform.State) error {
+			q, _ := fake.quota("vaults/v1/quota")
+			if fmt.Sprint(q.MaxSecrets) != fmt.Sprint(secrets) && (q.MaxSecrets == nil || secrets == nil || *q.MaxSecrets != *secrets) ||
+				fmt.Sprint(q.MaxVersions) != fmt.Sprint(versions) && (q.MaxVersions == nil || versions == nil || *q.MaxVersions != *versions) {
+				return fmt.Errorf("the quota is %v", q)
+			}
+			return nil
+		}
+	}
+	n := func(v int64) *int64 { return &v }
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: factories(),
 		Steps: []resource.TestStep{
-			vaultStep(fake, config(`max_secrets = 50`), quota, plancheck.ResourceActionCreate,
-				lastMask("maxSecrets"),
+			// Nothing configured: read, not updated, as the API refuses
+			// an empty mask.
+			vaultStep(fake, config(``), quota, plancheck.ResourceActionCreate,
+				masks(),
 				resource.TestCheckResourceAttr(quota, "name", "vaults/v1/quota"),
+				resource.TestCheckNoResourceAttr(quota, "max_secrets"),
+			),
+			vaultStep(fake, config(`max_secrets = 50`), quota, plancheck.ResourceActionUpdate,
+				masks("maxSecrets"),
 				resource.TestCheckResourceAttr(quota, "max_secrets", "50"),
-				resource.TestCheckResourceAttr(quota, "max_versions", "10"),
+				resource.TestCheckNoResourceAttr(quota, "max_versions"),
 			),
 			vaultStep(fake, config(`max_secrets = 50
   max_versions = 20`), quota, plancheck.ResourceActionUpdate,
-				lastMask("maxVersions"),
-				resource.TestCheckResourceAttr(quota, "max_versions", "20"),
+				masks("maxSecrets", "maxVersions"),
+				budgets(n(50), n(20)),
 			),
-			// Removed from the configuration, a budget keeps its value.
-			vaultStep(fake, config(`max_versions = 20`), quota, plancheck.ResourceActionNoop,
-				resource.TestCheckResourceAttr(quota, "max_secrets", "50"),
+			// A budget removed from the configuration is unset.
+			vaultStep(fake, config(`max_versions = 20`), quota, plancheck.ResourceActionUpdate,
+				masks("maxSecrets", "maxVersions", "maxSecrets"),
+				resource.TestCheckNoResourceAttr(quota, "max_secrets"),
+				budgets(nil, n(20)),
 			),
-			{ResourceName: quota, ImportState: true, ImportStateVerify: true, ImportStateId: "vaults/v1/quota"},
-			// Destroyed alone, the quota stays as it is.
+			vaultStep(fake, config(`max_versions = 20`), quota, plancheck.ResourceActionNoop),
+			// Imported, the resource owns nothing until it sets a budget.
+			{ResourceName: quota, ImportState: true, ImportStateVerify: true, ImportStateId: "vaults/v1/quota", ImportStateVerifyIgnore: []string{}},
 			{
-				Config: vaultConfig(fake, `
+				ResourceName:  quota,
+				ImportState:   true,
+				ImportStateId: "vaults/v1",
+				ExpectError:   regexp.MustCompile(`"vaults/v1" isn't a name of the form vaults/\{vault\}/quota`),
+			},
+			// Destroyed alone, it unsets the budget it owns.
+			{
+				Config: vaultConfig(fake, theVault),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					masks("maxSecrets", "maxVersions", "maxSecrets", "maxVersions"),
+					budgets(nil, nil),
+				),
+			},
+		},
+	})
+}
+
+// Replacing a vault with the id it has fails at the plan: a deleted
+// vault's id can't be used again, so the create would fail with the vault
+// already deleted.
+func TestAVaultIsntReplacedWithItsOwnId(t *testing.T) {
+	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
+	fake := newFakeFirewalls(t)
+	config := func(id, owner string) string {
+		return fmt.Sprintf(`
 resource "origincloud_vaults_vault" "v" {
-  vault_id     = "v1"
-  owner        = "o1"
+  vault_id     = %q
+  owner        = %q
   display_name = "A"
 }
-`),
-				Check: func(*terraform.State) error {
-					q, masks := fake.quota("vaults/v1/quota")
-					if q.GetMaxSecrets() != 50 || q.GetMaxVersions() != 20 || !slices.Equal(masks, []string{"maxSecrets", "maxVersions"}) {
-						return fmt.Errorf("the quota is %v after %v", q, masks)
-					}
-					return nil
-				},
+`, id, owner)
+	}
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			{Config: vaultConfig(fake, config("v1", "o1"))},
+			{
+				Config:      vaultConfig(fake, config("v1", "o2")),
+				ExpectError: regexp.MustCompile(`(?s)Can't replace with the same id.*Changing owner replaces the vault, and a\s+deleted\s+vault's\s+id\s+can't\s+be\s+used\s+again`),
+			},
+			// With a new id, it is replaced; the old id is a tombstone.
+			vaultStep(fake, config("v2", "o2"), vault, plancheck.ResourceActionReplace,
+				resource.TestCheckResourceAttr(vault, "name", "vaults/v2"),
+			),
+			{
+				Config:      vaultConfig(fake, config("v2", "o2")+strings.ReplaceAll(config("v1", "o1"), `"v"`, `"again"`)),
+				ExpectError: regexp.MustCompile(`vaults/v1 exists`),
 			},
 		},
 	})

@@ -86,7 +86,18 @@ func vaultFromProto(p *firewallsv1.Vault, m *vaultModel) error {
 
 func vaultResource() framework.ResourceSpec[vaultModel, *firewallsv1.Vault] {
 	return framework.ResourceSpec[vaultModel, *firewallsv1.Vault]{
-		TypeName:  "_vaults_vault",
+		TypeName:    "_vaults_vault",
+		Pattern:     "vaults/{vault}",
+		ClientID:    func(m *vaultModel) types.String { return m.VaultId },
+		IDAttribute: "vault_id",
+		Singular:    "vault",
+		Replaced: func(plan, state, config *vaultModel) []string {
+			var replaced []string
+			if !plan.Owner.Equal(state.Owner) {
+				replaced = append(replaced, "owner")
+			}
+			return replaced
+		},
 		Schema:    vaultSchema(),
 		Name:      func(m *vaultModel) string { return m.Name.ValueString() },
 		ToProto:   vaultToProto,
