@@ -64,3 +64,4 @@ jobs:
         run: |
           shellcheck scripts/*.sh
           scripts/credentials.test.sh
+          scripts/version.test.sh

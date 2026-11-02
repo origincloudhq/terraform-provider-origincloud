@@ -1,0 +1,63 @@
+# Tags the version VERSION names, once CI passed on the push to main that
+# set it and it has no tag yet (scripts/version.sh unreleased). The tag
+# starts release.yml, which builds, signs and publishes the release. The
+# regeneration pull request sets the version, so a merged regeneration is
+# released; a version set by hand in a pull request is released the same way
+# (RELEASING.md).
+#
+# The tag is pushed with the regeneration App's token (REGENERATE_APP_ID and
+# REGENERATE_APP_PRIVATE_KEY): a tag pushed with the workflow token would
+# start no release. Without the App, it tags nothing, and the tag is pushed by
+# hand.
+name: Tag
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tag
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    if: >-
+      vars.REGENERATE_APP_ID != '' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: App token
+        id: app
+        uses: 'actions/create-github-app-token@v2'
+        with:
+          app-id: ${{ vars.REGENERATE_APP_ID }}
+          private-key: ${{ secrets.REGENERATE_APP_PRIVATE_KEY }}
+
+      - name: Checkout
+        uses: 'actions/checkout@v4'
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+
+      - name: Tag
+        env:
+          HEAD: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          version="$(scripts/version.sh current)"
+          if ! scripts/version.sh unreleased; then
+            echo "v${version} is released already, or older than the newest tag: nothing to release"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a "v${version}" -m "v${version}" "${HEAD}"
+          git push --quiet origin "v${version}"
