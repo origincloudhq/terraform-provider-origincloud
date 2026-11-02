@@ -120,8 +120,8 @@ jobs:
                   case "${path}" in
                     go.mod | go.sum) if [[ "${sdk_only}" == true ]]; then side=--theirs; fi ;;
                     API_REVISION | *.gen.go | internal/testapi/*.pb.go | docs/*) side=--ours ;;
-                    # The Update step bumps the version again from the newest
-                    # tag.
+                    # The Update step bumps the version again from main's,
+                    # or from the newest tag when that is newer.
                     VERSION) side=--theirs ;;
                   esac
                   if [[ -n "${side}" ]]; then
