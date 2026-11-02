@@ -136,26 +136,35 @@ resource "origincloud_vaults_vault_quota" "q" {
 				masks(),
 				resource.TestCheckResourceAttr(quota, "name", "vaults/v1/quota"),
 				resource.TestCheckNoResourceAttr(quota, "max_secrets"),
+				resource.TestCheckResourceAttr(quota, "max_versions", "10"),
 			),
 			vaultStep(fake, config(`max_secrets = 50`), quota, plancheck.ResourceActionUpdate,
 				masks("maxSecrets"),
 				resource.TestCheckResourceAttr(quota, "max_secrets", "50"),
-				resource.TestCheckNoResourceAttr(quota, "max_versions"),
+				resource.TestCheckResourceAttr(quota, "max_versions", "10"),
 			),
 			vaultStep(fake, config(`max_secrets = 50
   max_versions = 20`), quota, plancheck.ResourceActionUpdate,
 				masks("maxSecrets", "maxVersions"),
 				budgets(n(50), n(20)),
 			),
-			// A budget removed from the configuration is unset.
+			// A budget removed from the configuration is unset: no budget.
 			vaultStep(fake, config(`max_versions = 20`), quota, plancheck.ResourceActionUpdate,
 				masks("maxSecrets", "maxVersions", "maxSecrets"),
 				resource.TestCheckNoResourceAttr(quota, "max_secrets"),
 				budgets(nil, n(20)),
 			),
-			vaultStep(fake, config(`max_versions = 20`), quota, plancheck.ResourceActionNoop),
-			// Imported, the resource owns nothing until it sets a budget.
-			{ResourceName: quota, ImportState: true, ImportStateVerify: true, ImportStateId: "vaults/v1/quota", ImportStateVerifyIgnore: []string{}},
+			// One that falls back to a default when unset takes it.
+			vaultStep(fake, config(``), quota, plancheck.ResourceActionUpdate,
+				masks("maxSecrets", "maxVersions", "maxSecrets", "maxVersions"),
+				resource.TestCheckResourceAttr(quota, "max_versions", "10"),
+				budgets(nil, n(10)),
+			),
+			vaultStep(fake, config(``), quota, plancheck.ResourceActionNoop),
+			vaultStep(fake, config(`max_secrets = 30`), quota, plancheck.ResourceActionUpdate,
+				masks("maxSecrets", "maxVersions", "maxSecrets", "maxVersions", "maxSecrets"),
+			),
+			{ResourceName: quota, ImportState: true, ImportStateVerify: true, ImportStateId: "vaults/v1/quota"},
 			{
 				ResourceName:  quota,
 				ImportState:   true,
@@ -166,9 +175,86 @@ resource "origincloud_vaults_vault_quota" "q" {
 			{
 				Config: vaultConfig(fake, theVault),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					masks("maxSecrets", "maxVersions", "maxSecrets", "maxVersions"),
-					budgets(nil, nil),
+					masks("maxSecrets", "maxVersions", "maxSecrets", "maxVersions", "maxSecrets", "maxSecrets"),
+					budgets(nil, n(10)),
 				),
+			},
+		},
+	})
+}
+
+// A failed update leaves what Terraform owns as it was: the budget removed
+// from the configuration is unset by the next apply that succeeds.
+func TestAFailedQuotaUpdateKeepsWhatTerraformOwns(t *testing.T) {
+	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
+	fake := newFakeFirewalls(t)
+	config := func(budgets string) string {
+		return vaultConfig(fake, `
+resource "origincloud_vaults_vault" "v" {
+  vault_id     = "v1"
+  owner        = "o1"
+  display_name = "A"
+}
+
+resource "origincloud_vaults_vault_quota" "q" {
+  vault = origincloud_vaults_vault.v.vault_id
+  `+budgets+`
+}
+`)
+	}
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			{Config: config(`max_secrets = 50`)},
+			{
+				PreConfig:   func() { fake.setFailQuota(true) },
+				Config:      config(``),
+				ExpectError: regexp.MustCompile(`the quota can't be updated now`),
+			},
+			{
+				PreConfig: func() { fake.setFailQuota(false) },
+				Config:    config(``),
+				Check: func(*terraform.State) error {
+					if q, _ := fake.quota("vaults/v1/quota"); q.MaxSecrets != nil {
+						return fmt.Errorf("the budget is still %d", q.GetMaxSecrets())
+					}
+					return nil
+				},
+			},
+		},
+	})
+}
+
+// Terraform owns a field once it has sent it: imported, with a budget set
+// to the value the API has, nothing is sent, the budget isn't owned, and
+// destroying the resource leaves it.
+func TestAFieldIsOwnedOnceSent(t *testing.T) {
+	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
+	fake := newFakeFirewalls(t)
+	theVault := `
+resource "origincloud_vaults_vault" "v" {
+  vault_id     = "v1"
+  owner        = "o1"
+  display_name = "A"
+}
+`
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			{Config: vaultConfig(fake, theVault)},
+			{
+				PreConfig:        func() { fake.setMaxSecrets("vaults/v1/quota", 50) },
+				Config:           vaultConfig(fake, theVault+"\nimport {\n  to = origincloud_vaults_vault_quota.q\n  id = \"vaults/v1/quota\"\n}\n\nresource \"origincloud_vaults_vault_quota\" \"q\" {\n  vault       = \"v1\"\n  max_secrets = 50\n}\n"),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{plancheck.ExpectResourceAction("origincloud_vaults_vault_quota.q", plancheck.ResourceActionNoop)}},
+			},
+			{
+				Config: vaultConfig(fake, theVault),
+				Check: func(*terraform.State) error {
+					if q, masks := fake.quota("vaults/v1/quota"); q.GetMaxSecrets() != 50 || len(masks) != 0 {
+						return fmt.Errorf("the quota is %v after %v", q, masks)
+					}
+					return nil
+				},
 			},
 		},
 	})

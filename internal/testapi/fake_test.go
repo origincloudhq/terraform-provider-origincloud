@@ -89,6 +89,8 @@ type fakeFirewalls struct {
 	tombstones map[string]bool
 	quotas     map[string]*firewallsv1.VaultQuota
 	quotaMasks []string
+	// failQuota fails the quotas' updates.
+	failQuota bool
 }
 
 func newFakeFirewalls(t *testing.T) *fakeFirewalls {
@@ -379,8 +381,9 @@ func (f *fakeFirewalls) lastKeyMask() string {
 
 // serveVault serves the vaults, created with the id the client chose,
 // which a deleted vault keeps, and their quotas, which exist with them,
-// without budgets until some are set. An update of a quota unsets a field
-// its mask names and its body leaves out, and refuses an empty mask.
+// without a budget of secrets until one is set, and with max_versions
+// falling back to 10 whenever it is unset. An update of a quota unsets a
+// field its mask names and its body leaves out, and refuses an empty mask.
 func (f *fakeFirewalls) serveVault(w http.ResponseWriter, r *http.Request, path string, body []byte) {
 	switch {
 	case path == "vaults" && r.Method == http.MethodPost:
@@ -401,8 +404,9 @@ func (f *fakeFirewalls) serveVault(w http.ResponseWriter, r *http.Request, path 
 		}
 		vault.CreateTime = timestamppb.New(keyCreated)
 		f.vaults[vault.Name] = vault
-		// No budgets until some are set.
-		f.quotas[vault.Name+"/quota"] = &firewallsv1.VaultQuota{Name: vault.Name + "/quota"}
+		// No budget of secrets until one is set; max_versions falls back
+		// to its default, 10, whenever it is unset.
+		f.quotas[vault.Name+"/quota"] = &firewallsv1.VaultQuota{Name: vault.Name + "/quota", MaxVersions: proto.Int64(10)}
 		writeMessage(w, vault)
 	case path == "vaults" && r.Method == http.MethodGet:
 		owner := r.URL.Query().Get("owner")
@@ -434,6 +438,10 @@ func (f *fakeFirewalls) serveVault(w http.ResponseWriter, r *http.Request, path 
 				writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "update_mask is required")
 				return
 			}
+			if f.failQuota {
+				writeError(w, http.StatusServiceUnavailable, "UNAVAILABLE", "the quota can't be updated now")
+				return
+			}
 			f.quotaMasks = append(f.quotaMasks, mask)
 			for _, field := range strings.Split(mask, ",") {
 				switch field {
@@ -445,6 +453,9 @@ func (f *fakeFirewalls) serveVault(w http.ResponseWriter, r *http.Request, path 
 					writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", field+" can't be updated")
 					return
 				}
+			}
+			if quota.MaxVersions == nil {
+				quota.MaxVersions = proto.Int64(10)
 			}
 		}
 		writeMessage(w, quota)
@@ -472,6 +483,18 @@ func (f *fakeFirewalls) serveVault(w http.ResponseWriter, r *http.Request, path 
 			writeMessage(w, &emptypb.Empty{})
 		}
 	}
+}
+
+func (f *fakeFirewalls) setFailQuota(fail bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failQuota = fail
+}
+
+func (f *fakeFirewalls) setMaxSecrets(name string, v int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.quotas[name].MaxSecrets = proto.Int64(v)
 }
 
 func (f *fakeFirewalls) quota(name string) (*firewallsv1.VaultQuota, []string) {

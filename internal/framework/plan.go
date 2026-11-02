@@ -39,6 +39,16 @@ func owned(ctx context.Context, private privateState) ([]string, diag.Diagnostic
 	return fields, diags
 }
 
+// ownIfDone records the fields of a singleton the configuration sets once
+// the API call succeeded: a failed update leaves what Terraform owns as it
+// was, with the state.
+func (r *Resource[M, P]) ownIfDone(ctx context.Context, config tfsdk.Config, private privateWriter, diags *diag.Diagnostics) {
+	if diags.HasError() {
+		return
+	}
+	diags.Append(r.own(ctx, config, private)...)
+}
+
 // own records the fields of a singleton the configuration sets, which
 // Terraform owns from now on.
 func (r *Resource[M, P]) own(ctx context.Context, config tfsdk.Config, private privateWriter) diag.Diagnostics {

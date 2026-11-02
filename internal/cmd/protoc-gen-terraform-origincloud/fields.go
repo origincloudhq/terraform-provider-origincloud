@@ -830,6 +830,18 @@ func (c conv) null(a attribute) string {
 	}
 }
 
+// unknown returns the attribute's unknown value.
+func (c conv) unknown(a attribute) string {
+	switch {
+	case a.kind == "Object":
+		return c.types("ObjectUnknown") + "(" + a.prefix + "AttrTypes())"
+	case a.collection():
+		return c.types(a.kind+"Unknown") + "(" + c.elemType(a) + ")"
+	default:
+		return c.types(a.kind+"Unknown") + "()"
+	}
+}
+
 // goElem returns the Go type of a repeated scalar field's elements.
 func (c conv) goElem(a attribute) string {
 	switch {

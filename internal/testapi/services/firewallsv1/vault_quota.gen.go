@@ -133,10 +133,10 @@ func vaultQuotaResource() framework.ResourceSpec[vaultQuotaModel, *firewallsv1.V
 		},
 		Release: func(plan, config *vaultQuotaModel, owned []string) {
 			if config.MaxSecrets.IsNull() && slices.Contains(owned, "max_secrets") {
-				plan.MaxSecrets = types.Int64Null()
+				plan.MaxSecrets = types.Int64Unknown()
 			}
 			if config.MaxVersions.IsNull() && slices.Contains(owned, "max_versions") {
-				plan.MaxVersions = types.Int64Null()
+				plan.MaxVersions = types.Int64Unknown()
 			}
 		},
 		Clear: func(ctx context.Context, client *core.Client, name string, fields []string) error {

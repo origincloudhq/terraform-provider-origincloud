@@ -48,19 +48,26 @@ to the plugin or `internal/framework`.
   when it is `OPTIONAL`. It is the last segment of the resource's name, which
   is how it is read back and how an import derives it. A deleted resource's
   id can't be used again, so a plan that would replace the resource with the
-  id it has, because an immutable attribute changed, fails with a message
-  asking for a new id. A replacement forced from the command line
-  (`-replace`) isn't planned by the provider and isn't refused.
+  id it has, because an immutable top-level attribute changed, or a oneof
+  switched away from an immutable member, fails with a message asking for a
+  new id. Moving it to another parent doesn't count: its new name is
+  another. The guard doesn't see an immutable field nested under a mutable
+  one, a replacement forced from the command line (`-replace`), or one of a
+  tainted resource: Terraform decides those, not the provider.
 - A **singleton**, a resource its parent has one of, such as a project's
   quota (`projects/{project}/quota`), that the service gets and updates but
   doesn't create or delete, is a resource too. Creating it updates it, with
-  the fields the configuration sets, and Terraform owns those, recorded in
-  the resource's private state. A field it owns that the configuration no
-  longer sets is unset; destroying the resource unsets the fields it owns
-  and leaves the others. Its `OPTIONAL` fields need explicit presence; a
-  singleton with a create fails generation. Imported by its name, it owns
-  nothing until it sets a field. A singleton the service doesn't update is
-  a data source.
+  the fields the configuration sets. Terraform owns a field once it has sent
+  it, recorded in the resource's private state after the API accepted it,
+  so a failed update changes nothing it owns. A field it owns that the
+  configuration no longer sets is unset, planned unknown, as the API may
+  answer with no value or fall back to a default, which the state then
+  keeps; destroying the resource unsets the fields it owns and leaves the
+  others. A field set to the value the API already has, as after an import,
+  isn't sent, so it isn't owned until a change sends it. `REQUIRED` fields
+  are sent but never owned or unset. Its `OPTIONAL` fields need explicit
+  presence; a singleton with a create fails generation. A singleton the
+  service doesn't update is a data source.
 - An imported name must have the resource's pattern.
 - A field referring to another resource (`google.api.resource_reference`) is
   a string the API checks, so a reference that may take several patterns

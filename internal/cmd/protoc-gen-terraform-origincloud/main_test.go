@@ -417,7 +417,7 @@ func TestASingletonIsAResource(t *testing.T) {
 		"return op.Wait(ctx)",
 		`Clear: func(ctx context.Context, client *core.Client, name string, fields []string) error { resource := &v1.Settings{Name: name}`,
 		"_, err = op.Wait(ctx) return err",
-		`if config.Budget.IsNull() && slices.Contains(owned, "budget") { plan.Budget = types.Int64Null() }`,
+		`if config.Budget.IsNull() && slices.Contains(owned, "budget") { plan.Budget = types.Int64Unknown() }`,
 		"Destroying it unsets the settings Terraform set",
 	)
 	contains(t, "services.gen.go", files["internal/services/widgetsv1/services.gen.go"], "framework.NewResource(settingsResource()),")
@@ -479,6 +479,59 @@ func TestClientChosenIds(t *testing.T) {
 	if want := "CreateWidget's widget_id is neither REQUIRED nor OPTIONAL"; !strings.Contains(failure, want) {
 		t.Errorf("generation failed with %q, want %q", failure, want)
 	}
+}
+
+// withComment gives the field name of the message to a leading comment.
+func withComment(to, name, comment string) func(*descriptorpb.FileDescriptorProto) {
+	return func(file *descriptorpb.FileDescriptorProto) {
+		for i, m := range file.GetMessageType() {
+			for j, f := range m.GetField() {
+				if m.GetName() == to && f.GetName() == name {
+					if file.SourceCodeInfo == nil {
+						file.SourceCodeInfo = &descriptorpb.SourceCodeInfo{}
+					}
+					file.SourceCodeInfo.Location = append(file.SourceCodeInfo.Location, &descriptorpb.SourceCodeInfo_Location{
+						Path: []int32{4, int32(i), 2, int32(j)}, Span: []int32{0, 0, 0}, LeadingComments: proto.String(" " + comment + "\n"),
+					})
+				}
+			}
+		}
+	}
+}
+
+// The client-chosen id's description starts with its field's comment; a
+// parent's variable doesn't count among the attributes the guard against
+// replacing with the same id checks, as another parent is another name;
+// a oneof's immutable member kept from the state does, by the plan.
+func TestAClientChosenIdsDescriptionAndGuard(t *testing.T) {
+	files, failure := run(t, func(file *descriptorpb.FileDescriptorProto) {
+		withField("CreateWidgetRequest", `name: "widget_id" number: 9 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: REQUIRED }`)(file)
+		withComment("CreateWidgetRequest", "widget_id", "Unique in the project, and never used again.")(file)
+		withField("Widget", `name: "zone" number: 10 label: LABEL_OPTIONAL type: TYPE_STRING oneof_index: 0 options { [google.api.field_behavior]: IMMUTABLE }`)(file)
+		withField("Widget", `name: "region" number: 11 label: LABEL_OPTIONAL type: TYPE_STRING oneof_index: 0 options { [google.api.field_behavior]: OPTIONAL }`)(file)
+		withField("Widget", `name: "size" number: 12 label: LABEL_OPTIONAL type: TYPE_INT64 options { [google.api.field_behavior]: OPTIONAL [google.api.field_behavior]: IMMUTABLE }`)(file)
+		message(file, "Widget").OneofDecl = []*descriptorpb.OneofDescriptorProto{{Name: proto.String("place")}}
+	})
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	widget := files["internal/services/widgetsv1/widget.gen.go"]
+	contains(t, "widget.gen.go", widget,
+		`MarkdownDescription: "Unique in the project, and never used again. The widget's id, the last segment of its name. Changing it replaces the widget."`,
+		`Replaced: func(plan, state, config *widgetModel) []string { var replaced []string if !plan.Zone.Equal(state.Zone) { replaced = append(replaced, "zone") } if !config.Size.IsNull() && !plan.Size.Equal(state.Size) { replaced = append(replaced, "size") } return replaced },`,
+	)
+}
+
+// A singleton's required field is sent, but neither owned nor unset.
+func TestASingletonsRequiredFieldIsntOwned(t *testing.T) {
+	files, failure := run(t, withSingleton(budget+` field { name: "contact" number: 3 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: REQUIRED } }`, getSettings, updateSettings))
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	contains(t, "settings.gen.go", files["internal/services/widgetsv1/settings.gen.go"],
+		`if framework.IsSet(plan.Contact) { mask = append(mask, "contact") }`,
+		`Configured: func(config *settingsModel) []string { var fields []string if !config.Budget.IsNull() { fields = append(fields, "budget") } return fields },`,
+	)
 }
 
 // A list's required number and enum filters are attributes too.

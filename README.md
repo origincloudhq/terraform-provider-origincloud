@@ -113,8 +113,10 @@ Credentials come from the environment, the first of:
 - **Singletons.** A resource its parent has exactly one of, such as a
   project's quota, exists with its parent: creating it in Terraform updates
   it with the values configured. Removing a value from the configuration
-  unsets it, and destroying the resource unsets the values Terraform set,
-  leaving the others. To stop managing one without unsetting anything,
+  unsets it, or returns it to its default, and destroying the resource
+  unsets the values Terraform set, leaving the others. A value is
+  Terraform's once Terraform has sent it: one configured with the value
+  the API already has, as after an import, is left as it is on destroy. To stop managing one without unsetting anything,
   remove it from the state: a `removed` block with
   `lifecycle { destroy = false }`, or `terraform state rm`. Manage each with
   one resource only.

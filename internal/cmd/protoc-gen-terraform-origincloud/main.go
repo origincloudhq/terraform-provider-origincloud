@@ -380,14 +380,19 @@ func generateResource(g *protogen.GeneratedFile, t resourceType) error {
 		g.P("Replaced: func(plan, state, config *", model, ") []string {")
 		g.P("var replaced []string")
 		for _, a := range attrs {
-			if !a.replace || a.name == string(id.Desc.Name()) {
+			// Not a parent's variable: moved to another parent, the
+			// resource has another name, which no deleted one had.
+			if !a.replace || a.field == nil {
 				continue
 			}
 			changed := "!plan." + a.goName + ".Equal(state." + a.goName + ")"
 			if a.message != nil || a.wellKnown != "" {
 				changed = "!" + replaceSame(g, a)
 			}
-			if a.computed {
+			// A oneof's member kept from the state replaces it by the plan,
+			// as it switches away from it; any other computed one only
+			// when configured.
+			if a.computed && !(a.oneof != nil && a.keep) {
 				changed = "!config." + a.goName + ".IsNull() && " + changed
 			}
 			g.P("if ", changed, " {")
@@ -563,10 +568,12 @@ func generateSingletonCreate(g *protogen.GeneratedFile, t resourceType, model, m
 	g.P("},")
 
 	// Terraform owns the fields it set; destroyed, it unsets them.
+	// Required fields aren't owned: the configuration always sets them, and
+	// destroying the singleton can't unset them.
 	g.P("Configured: func(config *", model, ") []string {")
 	g.P("var fields []string")
 	for _, a := range attrs {
-		if a.updatable {
+		if a.updatable && !a.required {
 			g.P("if !config.", a.goName, ".IsNull() {")
 			g.P("fields = append(fields, ", fmt.Sprintf("%q", a.field.Desc.Name()), ")")
 			g.P("}")
@@ -574,11 +581,13 @@ func generateSingletonCreate(g *protogen.GeneratedFile, t resourceType, model, m
 	}
 	g.P("return fields")
 	g.P("},")
+	// Unknown, as the API answers with no value or, for a field that falls
+	// back to a default when unset, the default.
 	g.P("Release: func(plan, config *", model, ", owned []string) {")
 	for _, a := range attrs {
 		if a.updatable && a.computed {
 			g.P("if config.", a.goName, ".IsNull() && ", g.QualifiedGoIdent(protogen.GoImportPath("slices").Ident("Contains")), "(owned, ", fmt.Sprintf("%q", a.field.Desc.Name()), ") {")
-			g.P("plan.", a.goName, " = ", conv{g}.null(a))
+			g.P("plan.", a.goName, " = ", conv{g}.unknown(a))
 			g.P("}")
 		}
 	}

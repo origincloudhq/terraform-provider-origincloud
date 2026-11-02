@@ -144,7 +144,6 @@ func (r *Resource[M, P]) Create(ctx context.Context, req resource.CreateRequest,
 	if resp.Diagnostics.Append(req.Plan.Get(ctx, &m)...); resp.Diagnostics.HasError() {
 		return
 	}
-	resp.Diagnostics.Append(r.own(ctx, req.Config, resp.Private)...)
 	var created P
 	if r.spec.CreateSync != nil {
 		var err error
@@ -153,6 +152,7 @@ func (r *Resource[M, P]) Create(ctx context.Context, req resource.CreateRequest,
 			return
 		}
 		r.created(ctx, m, created, resp)
+		r.ownIfDone(ctx, req.Config, resp.Private, &resp.Diagnostics)
 		return
 	}
 	op, err := r.spec.Create(ctx, r.client, &m)
@@ -174,6 +174,7 @@ func (r *Resource[M, P]) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 	r.created(ctx, m, created, resp)
+	r.ownIfDone(ctx, req.Config, resp.Private, &resp.Diagnostics)
 }
 
 // created sets the state from the resource a create answered with, plan
@@ -226,7 +227,6 @@ func (r *Resource[M, P]) Update(ctx context.Context, req resource.UpdateRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	resp.Diagnostics.Append(r.own(ctx, req.Config, resp.Private)...)
 	var (
 		got P
 		err error
@@ -251,6 +251,7 @@ func (r *Resource[M, P]) Update(ctx context.Context, req resource.UpdateRequest,
 		resp.Diagnostics.AddError(r.summary("update"), toggleErr.Error())
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+	r.ownIfDone(ctx, req.Config, resp.Private, &resp.Diagnostics)
 }
 
 func (r *Resource[M, P]) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
