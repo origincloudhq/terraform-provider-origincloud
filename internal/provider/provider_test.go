@@ -118,7 +118,7 @@ func TestVolumesAndSnapshotsAreCreatedUpdatedReplacedAndImported(t *testing.T) {
 				ResourceName:  "origincloud_pvs_volume.data",
 				ImportState:   true,
 				ImportStateId: "vol-1",
-				ExpectError:   regexp.MustCompile(`name must have the form projects/\*/zones/\*/volumes/\*`),
+				ExpectError:   regexp.MustCompile(`"vol-1" isn't a name of the form\s+projects/\{project\}/zones/\{zone\}/volumes/\{volume\}`),
 			},
 		},
 		CheckDestroy: func(*terraform.State) error {

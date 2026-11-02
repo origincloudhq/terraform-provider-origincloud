@@ -127,6 +127,45 @@ type constructor struct {
 	framework, spec string
 }
 
+// singleton says that the resource is its parent's only one of its type,
+// such as a project's quota (projects/{project}/quota): its pattern ends in
+// a literal, not a variable of its own.
+func (t resourceType) singleton() bool {
+	segments := strings.Split(t.pattern, "/")
+	return !patternVariable.MatchString(segments[len(segments)-1])
+}
+
+// parentVariables returns the variables of the resource's name before its
+// own: all of them for a singleton.
+func (t resourceType) parentVariables() []string {
+	if t.singleton() {
+		return t.variables
+	}
+	return t.variables[:len(t.variables)-1]
+}
+
+// managed says that the type is a resource rather than a data source: the
+// service creates and deletes it, or it is a singleton the service updates,
+// which exists with its parent.
+func (t resourceType) managed() bool {
+	return t.create != nil || t.managedSingleton()
+}
+
+// managedSingleton says that the type is a singleton managed as a
+// resource: one the service updates but neither creates nor deletes.
+func (t resourceType) managedSingleton() bool {
+	return t.singleton() && t.create == nil && t.update != nil && t.del == nil
+}
+
+// idField returns the create's field of the id the client chooses
+// (AIP-133), such as a CreateProjectRequest's project_id; nil without one.
+func (t resourceType) idField() *protogen.Field {
+	if t.create == nil || t.singleton() {
+		return nil
+	}
+	return fieldNamed(t.create.Input, snake(t.singular)+"_id")
+}
+
 func (p *servicePackage) importPath() protogen.GoImportPath {
 	return protogen.GoImportPath(module + "/" + servicesDir + "/" + p.name)
 }
@@ -159,7 +198,7 @@ func generateFile(gen *protogen.Plugin, f *protogen.File, packages *[]*servicePa
 			var err error
 			name := lowerFirst(t.message.GoIdent.GoName)
 			switch {
-			case t.create == nil:
+			case !t.managed():
 				err = generateDataSource(g, t, name)
 				p.dataSources = append(p.dataSources, constructor{"NewDataSource", name + "DataSource"})
 			default:
@@ -260,6 +299,9 @@ func choosePattern(t *resourceType) error {
 	if t.create == nil {
 		return nil
 	}
+	if t.singleton() {
+		return fmt.Errorf("Create%s creates a singleton, the only one of its parent (%s), which isn't supported", t.message.Desc.Name(), t.pattern)
+	}
 	rule, _ := proto.GetExtension(t.create.Desc.Options(), annotations.E_Http).(*annotations.HttpRule)
 	binding := parentBinding.FindStringSubmatch(rule.GetPost())
 	if binding == nil {
@@ -306,7 +348,7 @@ func enumValues(e *protogen.Enum) string {
 }
 
 func generateResource(g *protogen.GeneratedFile, t resourceType) error {
-	if t.del == nil {
+	if t.create != nil && t.del == nil {
 		return fmt.Errorf("Create%s without Delete%[1]s", t.message.Desc.Name())
 	}
 	attrs, err := attributes(t, true, lowerFirst(t.message.GoIdent.GoName))
@@ -328,6 +370,38 @@ func generateResource(g *protogen.GeneratedFile, t resourceType) error {
 	g.P("func ", lowerFirst(t.message.GoIdent.GoName), "Resource() ", g.QualifiedGoIdent(frameworkPackage.Ident("ResourceSpec")), "[", model, ", ", message, "] {")
 	g.P("return ", g.QualifiedGoIdent(frameworkPackage.Ident("ResourceSpec")), "[", model, ", ", message, "]{")
 	g.P("TypeName: ", fmt.Sprintf("%q", typeName), ",")
+	g.P("Pattern: ", fmt.Sprintf("%q", t.pattern), ",")
+	if id := t.idField(); id != nil {
+		g.P("ClientID: func(m *", model, ") ", g.QualifiedGoIdent(typesPackage.Ident("String")), " { return m.", camel(string(id.Desc.Name())), " },")
+		g.P("IDAttribute: ", fmt.Sprintf("%q", string(id.Desc.Name())), ",")
+		g.P("Singular: ", fmt.Sprintf("%q", words(t.singular)), ",")
+		// The top-level attributes that replace it, as their plan
+		// modifiers decide.
+		g.P("Replaced: func(plan, state, config *", model, ") []string {")
+		g.P("var replaced []string")
+		for _, a := range attrs {
+			// Not a parent's variable: moved to another parent, the
+			// resource has another name, which no deleted one had.
+			if !a.replace || a.field == nil {
+				continue
+			}
+			changed := "!plan." + a.goName + ".Equal(state." + a.goName + ")"
+			if a.message != nil || a.wellKnown != "" {
+				changed = "!" + replaceSame(g, a)
+			}
+			// A oneof's member kept from the state replaces it by the plan,
+			// as it switches away from it; any other computed one only
+			// when configured.
+			if a.computed && !(a.oneof != nil && a.keep) {
+				changed = "!config." + a.goName + ".IsNull() && " + changed
+			}
+			g.P("if ", changed, " {")
+			g.P("replaced = append(replaced, ", fmt.Sprintf("%q", a.name), ")")
+			g.P("}")
+		}
+		g.P("return replaced")
+		g.P("},")
+	}
 	g.P("Schema: ", lowerFirst(t.message.GoIdent.GoName), "Schema(),")
 	g.P("Name: func(m *", model, ") string { return m.Name.ValueString() },")
 	g.P("ToProto: ", lowerFirst(t.message.GoIdent.GoName), "ToProto,")
@@ -354,30 +428,13 @@ func generateResource(g *protogen.GeneratedFile, t resourceType) error {
 	}
 
 	// Create
-	createInput := t.create.Input
-	resourceField := fieldOfType(createInput, t.message)
-	if resourceField == nil {
-		return fmt.Errorf("Create%s's request has no %[1]s field", t.message.Desc.Name())
-	}
-	// An operation whose result is the resource, or the resource itself.
-	switch result := operationResult(t.create); {
-	case result == t.message.Desc.FullName():
-		g.P("Create: func(ctx ", ctx, ", client ", coreClient, ", plan *", model, ") (*", g.QualifiedGoIdent(corePackage.Ident("Operation")), "[", message, "], error) {")
-	case result == "" && t.create.Output == t.message:
-		g.P("CreateSync: func(ctx ", ctx, ", client ", coreClient, ", plan *", model, ") (", message, ", error) {")
-	default:
-		return fmt.Errorf("Create%s answers with neither the %[1]s nor an operation whose result is the %[1]s", t.message.Desc.Name())
-	}
-	g.P("return ", client, ".", t.create.GoName, "(ctx, &", g.QualifiedGoIdent(createInput.GoIdent), "{")
-	if len(t.variables) > 1 {
-		if fieldNamed(createInput, "parent") == nil {
-			return fmt.Errorf("Create%s's request has no parent", t.message.Desc.Name())
+	if t.create == nil {
+		if err := generateSingletonCreate(g, t, model, message, client, attrs); err != nil {
+			return err
 		}
-		g.P("Parent: ", parentExpression(t.pattern, "plan"), ",")
+	} else if err := generateCreate(g, t, model, message, client); err != nil {
+		return err
 	}
-	g.P(resourceField.GoName, ": ", lowerFirst(t.message.GoIdent.GoName), "ToProto(plan),")
-	g.P("})")
-	g.P("},")
 
 	// Get
 	g.P("Get: func(ctx ", ctx, ", client ", coreClient, ", name string) (", message, ", error) {")
@@ -413,6 +470,16 @@ func generateResource(g *protogen.GeneratedFile, t resourceType) error {
 
 	// Delete
 	g.P("Delete: func(ctx ", ctx, ", client ", coreClient, ", name string) error {")
+	if t.del == nil {
+		// A singleton exists as long as its parent does: destroying it
+		// leaves it as it is.
+		g.P("return nil")
+		g.P("},")
+		generateToggles(g, t, model, message, client, attrs)
+		g.P("}")
+		g.P("}")
+		return nil
+	}
 	call := client + "." + t.del.GoName + "(ctx, &" + g.QualifiedGoIdent(t.del.Input.GoIdent) + "{Name: name})"
 	if operationResult(t.del) != "" {
 		g.P("op, err := ", call)
@@ -431,6 +498,139 @@ func generateResource(g *protogen.GeneratedFile, t resourceType) error {
 
 	g.P("}")
 	g.P("}")
+	return nil
+}
+
+// generateCreate writes the spec's create.
+func generateCreate(g *protogen.GeneratedFile, t resourceType, model, message, client string) error {
+	ctx := g.QualifiedGoIdent(contextPackage.Ident("Context"))
+	coreClient := "*" + g.QualifiedGoIdent(corePackage.Ident("Client"))
+	createInput := t.create.Input
+	resourceField := fieldOfType(createInput, t.message)
+	if resourceField == nil {
+		return fmt.Errorf("Create%s's request has no %[1]s field", t.message.Desc.Name())
+	}
+	// An operation whose result is the resource, or the resource itself.
+	switch result := operationResult(t.create); {
+	case result == t.message.Desc.FullName():
+		g.P("Create: func(ctx ", ctx, ", client ", coreClient, ", plan *", model, ") (*", g.QualifiedGoIdent(corePackage.Ident("Operation")), "[", message, "], error) {")
+	case result == "" && t.create.Output == t.message:
+		g.P("CreateSync: func(ctx ", ctx, ", client ", coreClient, ", plan *", model, ") (", message, ", error) {")
+	default:
+		return fmt.Errorf("Create%s answers with neither the %[1]s nor an operation whose result is the %[1]s", t.message.Desc.Name())
+	}
+	g.P("return ", client, ".", t.create.GoName, "(ctx, &", g.QualifiedGoIdent(createInput.GoIdent), "{")
+	if id := t.idField(); id != nil {
+		g.P(id.GoName, ": plan.", camel(string(id.Desc.Name())), ".ValueString(),")
+	}
+	if len(t.variables) > 1 {
+		if fieldNamed(createInput, "parent") == nil {
+			return fmt.Errorf("Create%s's request has no parent", t.message.Desc.Name())
+		}
+		g.P("Parent: ", parentExpression(t.pattern, "plan"), ",")
+	}
+	g.P(resourceField.GoName, ": ", lowerFirst(t.message.GoIdent.GoName), "ToProto(plan),")
+	g.P("})")
+	g.P("},")
+
+	return nil
+}
+
+// generateSingletonCreate writes a singleton's create, which updates it,
+// as it exists with its parent: the fields the configuration sets are
+// sent, and those it leaves out keep the API's values.
+func generateSingletonCreate(g *protogen.GeneratedFile, t resourceType, model, message, client string, attrs []attribute) error {
+	ctx := g.QualifiedGoIdent(contextPackage.Ident("Context"))
+	coreClient := "*" + g.QualifiedGoIdent(corePackage.Ident("Client"))
+	field := fieldOfType(t.update.Input, t.message)
+	if field == nil || fieldNamed(t.update.Input, "update_mask") == nil {
+		return fmt.Errorf("Update%s's request has no %[1]s or no update_mask", t.message.Desc.Name())
+	}
+	g.P("CreateSync: func(ctx ", ctx, ", client ", coreClient, ", plan *", model, ") (", message, ", error) {")
+	g.P("resource := ", lowerFirst(t.message.GoIdent.GoName), "ToProto(plan)")
+	g.P("resource.Name = ", nameExpression(t.pattern, "plan"))
+	g.P("var mask []string")
+	for _, a := range attrs {
+		if a.updatable {
+			g.P("if ", g.QualifiedGoIdent(frameworkPackage.Ident("IsSet")), "(plan.", a.goName, ") {")
+			g.P("mask = append(mask, ", fmt.Sprintf("%q", a.field.Desc.Name()), ")")
+			g.P("}")
+		}
+	}
+	// Nothing configured: nothing to send, as the API refuses an empty
+	// mask.
+	g.P("if len(mask) == 0 {")
+	g.P("return ", client, ".", t.get.GoName, "(ctx, &", g.QualifiedGoIdent(t.get.Input.GoIdent), "{Name: resource.Name})")
+	g.P("}")
+	if err := generateSingletonUpdate(g, t, client, "resource", "mask", "nil, "); err != nil {
+		return err
+	}
+	g.P("},")
+
+	// Terraform owns the fields it set; destroyed, it unsets them.
+	// Required fields aren't owned: the configuration always sets them, and
+	// destroying the singleton can't unset them.
+	g.P("Configured: func(config *", model, ") []string {")
+	g.P("var fields []string")
+	for _, a := range attrs {
+		if a.updatable && !a.required {
+			g.P("if !config.", a.goName, ".IsNull() {")
+			g.P("fields = append(fields, ", fmt.Sprintf("%q", a.field.Desc.Name()), ")")
+			g.P("}")
+		}
+	}
+	g.P("return fields")
+	g.P("},")
+	// Unknown, as the API answers with no value or, for a field that falls
+	// back to a default when unset, the default.
+	g.P("Release: func(plan, config *", model, ", owned []string) {")
+	for _, a := range attrs {
+		if a.updatable && a.computed {
+			g.P("if config.", a.goName, ".IsNull() && ", g.QualifiedGoIdent(protogen.GoImportPath("slices").Ident("Contains")), "(owned, ", fmt.Sprintf("%q", a.field.Desc.Name()), ") {")
+			g.P("plan.", a.goName, " = ", conv{g}.unknown(a))
+			g.P("}")
+		}
+	}
+	g.P("},")
+	g.P("Clear: func(ctx ", ctx, ", client ", coreClient, ", name string, fields []string) error {")
+	g.P("resource := &", g.QualifiedGoIdent(t.message.GoIdent), "{Name: name}")
+	if err := generateSingletonUpdate(g, t, client, "resource", "fields", ""); err != nil {
+		return err
+	}
+	g.P("},")
+	return nil
+}
+
+// generateSingletonUpdate writes the statements updating a singleton,
+// resource, with the fields of mask, and returning; prefix comes before
+// the error in what is returned, "nil, " when the resource is returned
+// too, and only the error is returned when prefix is empty.
+func generateSingletonUpdate(g *protogen.GeneratedFile, t resourceType, client, resource, mask, prefix string) error {
+	field := fieldOfType(t.update.Input, t.message)
+	call := client + "." + t.update.GoName + "(ctx, &" + g.QualifiedGoIdent(t.update.Input.GoIdent) + "{" +
+		field.GoName + ": " + resource + ", UpdateMask: &" + g.QualifiedGoIdent(fieldmaskPackage.Ident("FieldMask")) + "{Paths: " + mask + "}})"
+	switch operationResult(t.update) {
+	case t.message.Desc.FullName():
+		g.P("op, err := ", call)
+		g.P("if err != nil {")
+		g.P("return ", prefix, "err")
+		g.P("}")
+		if prefix == "" {
+			g.P("_, err = op.Wait(ctx)")
+			g.P("return err")
+		} else {
+			g.P("return op.Wait(ctx)")
+		}
+	case "":
+		if prefix == "" {
+			g.P("_, err := ", call)
+			g.P("return err")
+		} else {
+			g.P("return ", call)
+		}
+	default:
+		return fmt.Errorf("Update%s's operation doesn't result in the %[1]s", t.message.Desc.Name())
+	}
 	return nil
 }
 
@@ -516,14 +716,26 @@ func generateListDataSource(g *protogen.GeneratedFile, t resourceType) error {
 	}
 	paginated := fieldNamed(t.list.Input, "page_token") != nil && fieldNamed(t.list.Output, "next_page_token") != nil
 	// Other fields, such as a filter, are left unset, which lists
-	// everything; a required one fails generation.
+	// everything; a required one, such as the organization projects are
+	// listed in, is a required attribute.
+	var filters []attribute
 	for _, f := range t.list.Input.Fields {
 		switch f.Desc.Name() {
 		case "parent", "page_size", "page_token":
 		default:
-			if slices.Contains(fieldBehaviors(f), annotations.FieldBehavior_REQUIRED) {
-				return fmt.Errorf("%s's request field %s is required, which isn't supported yet", method, f.Desc.Name())
+			if !slices.Contains(fieldBehaviors(f), annotations.FieldBehavior_REQUIRED) {
+				continue
 			}
+			a := attribute{name: string(f.Desc.Name()), goName: f.GoName, field: f, required: true, doc: prose(f.Comments.Leading)}
+			kind, err := scalar(&a, f)
+			if err != nil || f.Desc.IsList() || f.Desc.HasPresence() {
+				return fmt.Errorf("%s's request field %s is required, and only a required string, number, boolean or enum is supported", method, f.Desc.Name())
+			}
+			a.kind = kind
+			if a.enum != nil {
+				a.doc = strings.TrimSpace(a.doc + " One of " + enumValues(a.enum) + ".")
+			}
+			filters = append(filters, a)
 		}
 	}
 	if hasParent := fieldNamed(t.list.Input, "parent") != nil; hasParent != (len(t.variables) > 1) {
@@ -557,12 +769,18 @@ func generateListDataSource(g *protogen.GeneratedFile, t resourceType) error {
 		return fmt.Errorf("the resource's plural %q isn't distinct from its singular", t.plural)
 	}
 	var attrs []attribute
-	for _, v := range t.variables[:len(t.variables)-1] {
+	for _, v := range t.parentVariables() {
 		attrs = append(attrs, attribute{
 			name: v, goName: camel(v), kind: "String", required: true,
 			doc: fmt.Sprintf("The %s whose %s to list.", words(v), words(t.plural)),
 		})
 	}
+	for _, f := range filters {
+		if slices.ContainsFunc(attrs, func(b attribute) bool { return b.name == f.name }) || f.name == snake(t.plural) {
+			return fmt.Errorf("%s's request field %s is already an attribute", method, f.name)
+		}
+	}
+	attrs = append(attrs, filters...)
 	listDoc := prose(items.Comments.Leading)
 	if paginated {
 		listDoc = fmt.Sprintf("The %s listed, from every page.", words(t.plural))
@@ -587,9 +805,12 @@ func generateListDataSource(g *protogen.GeneratedFile, t resourceType) error {
 	g.P("MarkdownDescription: ", fmt.Sprintf("%q", prose(t.list.Comments.Leading)), ",")
 	g.P("Attributes: map[string]", g.QualifiedGoIdent(schemaPackage.Ident("Attribute")), "{")
 	for _, a := range attrs {
-		g.P(fmt.Sprintf("%q", a.name), ": ", g.QualifiedGoIdent(schemaPackage.Ident("StringAttribute")), "{")
+		g.P(fmt.Sprintf("%q", a.name), ": ", g.QualifiedGoIdent(schemaPackage.Ident(a.kind+"Attribute")), "{")
 		g.P("MarkdownDescription: ", fmt.Sprintf("%q", a.doc), ",")
 		g.P("Required: true,")
+		if validators := attributeValidators(conv{g}, a, attrs); len(validators) > 0 {
+			g.P("Validators: []", g.QualifiedGoIdent(validatorPackage.Ident(a.kind)), "{", strings.Join(validators, ", "), "},")
+		}
 		g.P("},")
 	}
 	g.P(fmt.Sprintf("%q", listAttr), ": ", g.QualifiedGoIdent(schemaPackage.Ident("ListNestedAttribute")), "{")
@@ -603,11 +824,14 @@ func generateListDataSource(g *protogen.GeneratedFile, t resourceType) error {
 	g.P("}")
 	g.P("}")
 
-	request := "&" + g.QualifiedGoIdent(t.list.Input.GoIdent) + "{"
+	var fields []string
 	if len(t.variables) > 1 {
-		request += "Parent: " + parentExpression(t.pattern, "m")
+		fields = append(fields, "Parent: "+parentExpression(t.pattern, "m"))
 	}
-	request += "}"
+	for _, f := range filters {
+		fields = append(fields, f.goName+": "+conv{g}.toProto(f, "m."+f.goName))
+	}
+	request := "&" + g.QualifiedGoIdent(t.list.Input.GoIdent) + "{" + strings.Join(fields, ", ") + "}"
 	g.P()
 	g.P("func ", name, "ListDataSource() ", spec, "[", model, "] {")
 	g.P("return ", spec, "[", model, "]{")
@@ -662,10 +886,18 @@ func generateModel(g *protogen.GeneratedFile, model, doc string, attrs []attribu
 }
 
 func generateSchema(g *protogen.GeneratedFile, t resourceType, name string, schemaPackage protogen.GoImportPath, attrs []attribute) {
+	doc := prose(t.message.Comments.Leading)
+	if t.managedSingleton() && schemaPackage == resourceSchemaPackage {
+		singular, parent := words(t.singular), "parent"
+		if vars := t.parentVariables(); len(vars) > 0 {
+			parent = words(vars[len(vars)-1])
+		}
+		doc = strings.TrimSpace(doc + "\n\n" + fmt.Sprintf("Every %s has its %s, which exists with it: creating this resource updates the existing %[2]s with the settings configured, and the rest keep their values. Destroying it unsets the settings Terraform set, leaving the others as they are; to stop managing it without unsetting them, remove it from the state instead (a `removed` block with `lifecycle { destroy = false }`, or `terraform state rm`). Manage each %[2]s with one resource only: two would undo each other's settings.", parent, singular))
+	}
 	g.P()
 	g.P("func ", name, "Schema() ", g.QualifiedGoIdent(schemaPackage.Ident("Schema")), " {")
 	g.P("return ", g.QualifiedGoIdent(schemaPackage.Ident("Schema")), "{")
-	g.P("MarkdownDescription: ", fmt.Sprintf("%q", prose(t.message.Comments.Leading)), ",")
+	g.P("MarkdownDescription: ", fmt.Sprintf("%q", doc), ",")
 	generateAttributes(g, schemaPackage, attrs)
 	g.P("}")
 	g.P("}")
@@ -735,13 +967,24 @@ func operationResult(m *protogen.Method) protoreflect.FullName {
 	return name
 }
 
+// nameExpression returns the Go expression building a singleton's name
+// from a model's variables: "projects/" + plan.Project.ValueString() +
+// "/quota".
+func nameExpression(pattern, model string) string {
+	return segmentsExpression(strings.Split(pattern, "/"), model)
+}
+
 // parentExpression returns the Go expression building a resource's parent
 // from a model's variables: "projects/" + plan.Project.ValueString() + ...
 func parentExpression(pattern, model string) string {
 	segments := strings.Split(pattern, "/")
+	return segmentsExpression(segments[:len(segments)-2], model)
+}
+
+func segmentsExpression(segments []string, model string) string {
 	var parts []string
 	literal := ""
-	for i, s := range segments[:len(segments)-2] {
+	for i, s := range segments {
 		if i > 0 {
 			literal += "/"
 		}

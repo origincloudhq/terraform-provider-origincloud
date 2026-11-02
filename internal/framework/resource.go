@@ -57,6 +57,32 @@ type ResourceSpec[M any, P proto.Message] struct {
 	// Toggles are the resource's boolean attributes that methods of their
 	// own set and clear, rather than an update.
 	Toggles []Toggle[M, P]
+
+	// Pattern is the pattern of the resource's names, which an imported
+	// name must have, such as projects/{project}/zones/{zone}/volumes/{volume}.
+	Pattern string
+
+	// ClientID returns the id the client chooses (AIP-133), for a
+	// resource that has one, such as a project's project_id; IDAttribute
+	// is its attribute, and Singular names the resource in messages.
+	ClientID    func(*M) types.String
+	IDAttribute string
+	Singular    string
+	// Replaced returns the attributes that replace the resource, of those
+	// at the top level, from the planned and prior state and the
+	// configuration. The framework doesn't tell a resource's ModifyPlan
+	// which its attributes' plan modifiers replace it for.
+	Replaced func(plan, state, config *M) []string
+
+	// A singleton, which exists with its parent, is created by updating
+	// it; Terraform owns the fields it set, which it records. Configured
+	// returns the fields a configuration sets; Release plans null those of
+	// owned that the configuration no longer sets, which unsets them; Clear
+	// unsets fields, when the singleton is destroyed. Nil for any other
+	// resource.
+	Configured func(config *M) []string
+	Release    func(plan, config *M, owned []string)
+	Clear      func(ctx context.Context, client *core.Client, name string, fields []string) error
 }
 
 // A Toggle is a boolean attribute that a pair of custom methods (AIP-136)
@@ -90,6 +116,7 @@ type Resource[M any, P proto.Message] struct {
 var (
 	_ resource.ResourceWithConfigure   = (*Resource[struct{}, proto.Message])(nil)
 	_ resource.ResourceWithImportState = (*Resource[struct{}, proto.Message])(nil)
+	_ resource.ResourceWithModifyPlan  = (*Resource[struct{}, proto.Message])(nil)
 )
 
 func (r *Resource[M, P]) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -125,6 +152,7 @@ func (r *Resource[M, P]) Create(ctx context.Context, req resource.CreateRequest,
 			return
 		}
 		r.created(ctx, m, created, resp)
+		r.ownIfDone(ctx, req.Config, resp.Private, &resp.Diagnostics)
 		return
 	}
 	op, err := r.spec.Create(ctx, r.client, &m)
@@ -146,6 +174,7 @@ func (r *Resource[M, P]) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 	r.created(ctx, m, created, resp)
+	r.ownIfDone(ctx, req.Config, resp.Private, &resp.Diagnostics)
 }
 
 // created sets the state from the resource a create answered with, plan
@@ -222,6 +251,7 @@ func (r *Resource[M, P]) Update(ctx context.Context, req resource.UpdateRequest,
 		resp.Diagnostics.AddError(r.summary("update"), toggleErr.Error())
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+	r.ownIfDone(ctx, req.Config, resp.Private, &resp.Diagnostics)
 }
 
 func (r *Resource[M, P]) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
@@ -230,6 +260,17 @@ func (r *Resource[M, P]) Delete(ctx context.Context, req resource.DeleteRequest,
 		return
 	}
 	name := r.spec.Name(&m)
+	if r.spec.Clear != nil {
+		// A singleton stays: what Terraform set is unset.
+		owned, diags := owned(ctx, req.Private)
+		if resp.Diagnostics.Append(diags...); resp.Diagnostics.HasError() || len(owned) == 0 {
+			return
+		}
+		if err := r.spec.Clear(ctx, r.client, name, owned); err != nil && !NotFound(err) {
+			resp.Diagnostics.AddError(r.summary("unset"), err.Error())
+		}
+		return
+	}
 	gone, err := r.clearBeforeDelete(ctx, name)
 	if err != nil {
 		if !NotFound(err) {
@@ -317,6 +358,12 @@ func (r *Resource[M, P]) clearBeforeDelete(ctx context.Context, name string) (bo
 // projects/my-project/zones/eu-central1-az1/volumes/vol-1: Terraform
 // reads the rest after.
 func (r *Resource[M, P]) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	if r.spec.Pattern != "" {
+		if _, err := NameValues(r.spec.Pattern, req.ID); err != nil {
+			resp.Diagnostics.AddError(r.summary("import"), err.Error())
+			return
+		}
+	}
 	resource.ImportStatePassthroughID(ctx, path.Root("name"), req, resp)
 }
 

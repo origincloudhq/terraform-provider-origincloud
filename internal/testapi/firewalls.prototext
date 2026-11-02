@@ -1,4 +1,5 @@
-# A test API, as a FileDescriptorProto: a firewall, whose fields are nested
+# A test API, as a FileDescriptorProto: a vault, whose id the client
+# chooses, listed by a required filter, with a singleton quota; a firewall, whose fields are nested
 # messages, repeated fields, ordered and unordered, and maps; and a key,
 # created synchronously, with timestamps and durations, fields with explicit
 # presence, oneofs, a secret, a toggle and a terminal state.
@@ -54,6 +55,23 @@ service {
     name: "DisableKey" input_type: ".test.firewalls.v1.KeyNameRequest" output_type: ".google.longrunning.Operation"
     options { [google.longrunning.operation_info] { response_type: "Key" metadata_type: "Key" } }
   }
+}
+service {
+  name: "VaultService"
+  options { [google.api.default_host]: "vaults.origincloudapis.eu" }
+  method { name: "GetVault" input_type: ".test.firewalls.v1.VaultNameRequest" output_type: ".test.firewalls.v1.Vault" }
+  # Listed by owner, a required filter.
+  method { name: "ListVaults" input_type: ".test.firewalls.v1.ListVaultsRequest" output_type: ".test.firewalls.v1.ListVaultsResponse" }
+  # The client chooses the id (vault_id), AIP-133.
+  method {
+    name: "CreateVault" input_type: ".test.firewalls.v1.CreateVaultRequest" output_type: ".test.firewalls.v1.Vault"
+    options { [google.api.http] { post: "/v1/vaults" body: "vault" } }
+  }
+  method { name: "UpdateVault" input_type: ".test.firewalls.v1.UpdateVaultRequest" output_type: ".test.firewalls.v1.Vault" }
+  method { name: "DeleteVault" input_type: ".test.firewalls.v1.VaultNameRequest" output_type: ".google.protobuf.Empty" }
+  # A singleton: each vault has its quota, which is read and updated only.
+  method { name: "GetVaultQuota" input_type: ".test.firewalls.v1.VaultNameRequest" output_type: ".test.firewalls.v1.VaultQuota" }
+  method { name: "UpdateVaultQuota" input_type: ".test.firewalls.v1.UpdateVaultQuotaRequest" output_type: ".test.firewalls.v1.VaultQuota" }
 }
 enum_type {
   name: "Mode"
@@ -234,6 +252,52 @@ message_type {
 message_type {
   name: "UpdateKeyRequest"
   field { name: "key" number: 1 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".test.firewalls.v1.Key" json_name: "key" }
+  field { name: "update_mask" number: 2 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".google.protobuf.FieldMask" json_name: "updateMask" }
+}
+message_type {
+  name: "Vault"
+  options { [google.api.resource] { type: "vaults.origincloudapis.eu/Vault" pattern: "vaults/{vault}" singular: "vault" plural: "vaults" } }
+  field { name: "name" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "name" options { [google.api.field_behavior]: IDENTIFIER } }
+  field { name: "owner" number: 2 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "owner" options { [google.api.field_behavior]: REQUIRED [google.api.field_behavior]: IMMUTABLE } }
+  field { name: "display_name" number: 3 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "displayName" options { [google.api.field_behavior]: REQUIRED } }
+  field { name: "create_time" number: 4 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".google.protobuf.Timestamp" json_name: "createTime" options { [google.api.field_behavior]: OUTPUT_ONLY } }
+}
+message_type {
+  name: "VaultQuota"
+  options { [google.api.resource] { type: "vaults.origincloudapis.eu/VaultQuota" pattern: "vaults/{vault}/quota" singular: "vaultQuota" plural: "vaultQuotas" } }
+  field { name: "name" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "name" options { [google.api.field_behavior]: IDENTIFIER } }
+  # Budgets with presence: the API chooses those left out.
+  field { name: "max_secrets" number: 2 label: LABEL_OPTIONAL type: TYPE_INT64 json_name: "maxSecrets" oneof_index: 0 proto3_optional: true options { [google.api.field_behavior]: OPTIONAL } }
+  field { name: "max_versions" number: 3 label: LABEL_OPTIONAL type: TYPE_INT64 json_name: "maxVersions" oneof_index: 1 proto3_optional: true options { [google.api.field_behavior]: OPTIONAL } }
+  field { name: "usage" number: 4 label: LABEL_OPTIONAL type: TYPE_INT64 json_name: "usage" options { [google.api.field_behavior]: OUTPUT_ONLY } }
+  oneof_decl { name: "_max_secrets" }
+  oneof_decl { name: "_max_versions" }
+}
+message_type {
+  name: "VaultNameRequest"
+  field { name: "name" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "name" }
+}
+message_type {
+  name: "ListVaultsRequest"
+  field { name: "owner" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "owner" options { [google.api.field_behavior]: REQUIRED } }
+}
+message_type {
+  name: "ListVaultsResponse"
+  field { name: "vaults" number: 1 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.firewalls.v1.Vault" json_name: "vaults" }
+}
+message_type {
+  name: "CreateVaultRequest"
+  field { name: "vault" number: 1 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".test.firewalls.v1.Vault" json_name: "vault" options { [google.api.field_behavior]: REQUIRED } }
+  field { name: "vault_id" number: 2 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "vaultId" options { [google.api.field_behavior]: REQUIRED } }
+}
+message_type {
+  name: "UpdateVaultRequest"
+  field { name: "vault" number: 1 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".test.firewalls.v1.Vault" json_name: "vault" }
+  field { name: "update_mask" number: 2 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".google.protobuf.FieldMask" json_name: "updateMask" }
+}
+message_type {
+  name: "UpdateVaultQuotaRequest"
+  field { name: "vault_quota" number: 1 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".test.firewalls.v1.VaultQuota" json_name: "vaultQuota" }
   field { name: "update_mask" number: 2 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".google.protobuf.FieldMask" json_name: "updateMask" }
 }
 message_type {

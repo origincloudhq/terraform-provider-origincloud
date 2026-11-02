@@ -42,6 +42,33 @@ to the plugin or `internal/framework`.
   without such a binding, or with one no pattern matches, generation fails.
   It also gets a data source of the same name, which reads one in any
   pattern by its resource name.
+- A create that takes the id the client chooses (AIP-133), such as
+  `CreateProject`'s `project_id`, makes it an attribute that replaces the
+  resource: required when the field is `REQUIRED`, optional and computed
+  when it is `OPTIONAL`. It is the last segment of the resource's name, which
+  is how it is read back and how an import derives it. A deleted resource's
+  id can't be used again, so a plan that would replace the resource with the
+  id it has, because an immutable top-level attribute changed, or a oneof
+  switched away from an immutable member, fails with a message asking for a
+  new id. Moving it to another parent doesn't count: its new name is
+  another. The guard doesn't see an immutable field nested under a mutable
+  one, a replacement forced from the command line (`-replace`), or one of a
+  tainted resource: Terraform decides those, not the provider.
+- A **singleton**, a resource its parent has one of, such as a project's
+  quota (`projects/{project}/quota`), that the service gets and updates but
+  doesn't create or delete, is a resource too. Creating it updates it, with
+  the fields the configuration sets. Terraform owns a field once it has sent
+  it, recorded in the resource's private state after the API accepted it,
+  so a failed update changes nothing it owns. A field it owns that the
+  configuration no longer sets is unset, planned unknown, as the API may
+  answer with no value or fall back to a default, which the state then
+  keeps; destroying the resource unsets the fields it owns and leaves the
+  others. A field set to the value the API already has, as after an import,
+  isn't sent, so it isn't owned until a change sends it. `REQUIRED` fields
+  are sent but never owned or unset. Its `OPTIONAL` fields need explicit
+  presence; a singleton with a create fails generation. A singleton the
+  service doesn't update is a data source.
+- An imported name must have the resource's pattern.
 - A field referring to another resource (`google.api.resource_reference`) is
   a string the API checks, so a reference that may take several patterns
   needs nothing of its own.
@@ -49,9 +76,11 @@ to the plugin or `internal/framework`.
   second data source named after its plural, such as
   `origincloud_pvs_volumes`, that reads every page of the list. The name's
   variables before the resource's own are its required attributes; each
-  item has the data source's attributes, all computed, except secrets. The
-  list request's other fields, such as a filter, are left unset; a required
-  one fails generation. Items in a terminal state are left out.
+  item has the data source's attributes, all computed, except secrets. A
+  required field of the list's request, such as the organization projects
+  are listed in, is a required attribute, if it is a string, number, boolean
+  or enum; its other fields, such as a filter, are left unset. Items in a
+  terminal state are left out.
 - `REQUIRED` is required, `OUTPUT_ONLY` computed, `IMMUTABLE` replaces the
   resource when it changes. An `OPTIONAL` `IMMUTABLE` field is also computed,
   keeping the value the API chose when it was left out (the default storage

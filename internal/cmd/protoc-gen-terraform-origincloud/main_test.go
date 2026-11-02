@@ -337,6 +337,225 @@ func TestAResourceWithTwoPatterns(t *testing.T) {
 	}
 }
 
+// A list request's required field, such as the organization projects are
+// listed in, is a required attribute of the list data source, sent in the
+// request.
+func TestAListRequestsRequiredFieldIsARequiredAttribute(t *testing.T) {
+	files, failure := run(t, func(file *descriptorpb.FileDescriptorProto) {
+		m := message(file, "ListWidgetsRequest")
+		m.Field = append(m.Field, &descriptorpb.FieldDescriptorProto{
+			Name: proto.String("owner"), Number: proto.Int32(4), JsonName: proto.String("owner"),
+			Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
+			Options: behaviors(annotations.FieldBehavior_REQUIRED),
+		})
+	})
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	contains(t, "widget.gen.go", files["internal/services/widgetsv1/widget.gen.go"],
+		"type widgetListModel struct { Project types.String `tfsdk:\"project\"` Owner types.String `tfsdk:\"owner\"`",
+		`"owner": schema1.StringAttribute{ MarkdownDescription: "", Required: true, },`,
+		`&v1.ListWidgetsRequest{Parent: "projects/" + m.Project.ValueString(), Owner: m.Owner.ValueString()}`,
+	)
+}
+
+// The id the client chooses (AIP-133) is a required attribute replacing
+// the resource, sent in the create and read from the name.
+func TestAClientChosenIdIsAnAttribute(t *testing.T) {
+	files, failure := run(t, withField("CreateWidgetRequest", `name: "widget_id" number: 9 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: REQUIRED }`))
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	contains(t, "widget.gen.go", files["internal/services/widgetsv1/widget.gen.go"],
+		`"widget_id": schema.StringAttribute{ MarkdownDescription: "The widget's id, the last segment of its name. Changing it replaces the widget.", Required: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}, },`,
+		"WidgetId: plan.WidgetId.ValueString(),",
+		"m.WidgetId = types.StringValue(values[1])",
+	)
+}
+
+// withSingleton adds a singleton, projects/{project}/settings, with the
+// field given in prototext, and the methods given in prototext.
+func withSingleton(field string, methods ...string) func(*descriptorpb.FileDescriptorProto) {
+	return func(file *descriptorpb.FileDescriptorProto) {
+		withField("NameRequest", `name: "dummy" number: 2 label: LABEL_OPTIONAL type: TYPE_STRING`,
+			`name: "Settings"
+			 options { [google.api.resource] { type: "widgets.origincloudapis.eu/Settings" pattern: "projects/{project}/settings" singular: "settings" plural: "allSettings" } }
+			 field { name: "name" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: IDENTIFIER } }
+			 `+field,
+			`name: "UpdateSettingsRequest"
+			 field { name: "settings" number: 1 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".test.widgets.v1.Settings" }
+			 field { name: "update_mask" number: 2 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".google.protobuf.FieldMask" }`)(file)
+		for _, text := range methods {
+			m := new(descriptorpb.MethodDescriptorProto)
+			if err := prototext.Unmarshal([]byte(text), m); err != nil {
+				panic(err)
+			}
+			file.Service[0].Method = append(file.Service[0].Method, m)
+		}
+	}
+}
+
+const (
+	getSettings    = `name: "GetSettings" input_type: ".test.widgets.v1.NameRequest" output_type: ".test.widgets.v1.Settings"`
+	updateSettings = `name: "UpdateSettings" input_type: ".test.widgets.v1.UpdateSettingsRequest" output_type: ".google.longrunning.Operation"
+		options { [google.longrunning.operation_info] { response_type: "Settings" metadata_type: "Settings" } }`
+	budget = `field { name: "budget" number: 2 label: LABEL_OPTIONAL type: TYPE_INT64 oneof_index: 0 proto3_optional: true options { [google.api.field_behavior]: OPTIONAL } }
+		oneof_decl { name: "_budget" }`
+)
+
+// A singleton the service updates is a resource, whose create and destroy
+// update it; an update answering with an operation is waited on.
+func TestASingletonIsAResource(t *testing.T) {
+	files, failure := run(t, withSingleton(budget, getSettings, updateSettings))
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	settings := files["internal/services/widgetsv1/settings.gen.go"]
+	contains(t, "settings.gen.go", settings,
+		`resource.Name = "projects/" + plan.Project.ValueString() + "/settings"`,
+		`if len(mask) == 0 { return v1.NewWidgetClient(client).GetSettings(ctx, &v1.NameRequest{Name: resource.Name}) }`,
+		"return op.Wait(ctx)",
+		`Clear: func(ctx context.Context, client *core.Client, name string, fields []string) error { resource := &v1.Settings{Name: name}`,
+		"_, err = op.Wait(ctx) return err",
+		`if config.Budget.IsNull() && slices.Contains(owned, "budget") { plan.Budget = types.Int64Unknown() }`,
+		"Destroying it unsets the settings Terraform set",
+	)
+	contains(t, "services.gen.go", files["internal/services/widgetsv1/services.gen.go"], "framework.NewResource(settingsResource()),")
+}
+
+// A singleton the service only reads is a data source.
+func TestAReadOnlySingletonIsADataSource(t *testing.T) {
+	files, failure := run(t, withSingleton(`field { name: "limit" number: 2 label: LABEL_OPTIONAL type: TYPE_INT64 options { [google.api.field_behavior]: OUTPUT_ONLY } }`, getSettings))
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	contains(t, "services.gen.go", files["internal/services/widgetsv1/services.gen.go"], "framework.NewDataSource(settingsDataSource()),")
+	if strings.Contains(files["internal/services/widgetsv1/services.gen.go"], "settingsResource") {
+		t.Error("a read-only singleton is a resource")
+	}
+}
+
+func TestSingletonsThatFailGeneration(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*descriptorpb.FileDescriptorProto)
+		want   string
+	}{
+		{
+			name:   "an optional field without presence",
+			change: withSingleton(`field { name: "budget" number: 2 label: LABEL_OPTIONAL type: TYPE_INT64 options { [google.api.field_behavior]: OPTIONAL } }`, getSettings, updateSettings),
+			want:   "Settings: field budget: a singleton's OPTIONAL field needs explicit presence (proto3 optional)",
+		},
+		{
+			name: "a create",
+			change: withSingleton(budget, getSettings, updateSettings,
+				`name: "CreateSettings" input_type: ".test.widgets.v1.UpdateSettingsRequest" output_type: ".test.widgets.v1.Settings"`,
+				`name: "DeleteSettings" input_type: ".test.widgets.v1.NameRequest" output_type: ".google.protobuf.Empty"`),
+			want: "Settings: CreateSettings creates a singleton, the only one of its parent (projects/{project}/settings), which isn't supported",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, failure := run(t, tc.change); !strings.Contains(failure, tc.want) {
+				t.Errorf("generation failed with %q, want %q", failure, tc.want)
+			}
+		})
+	}
+}
+
+// An OPTIONAL id is optional and computed, the API's choice when left out;
+// one neither REQUIRED nor OPTIONAL fails generation.
+func TestClientChosenIds(t *testing.T) {
+	files, failure := run(t, withField("CreateWidgetRequest", `name: "widget_id" number: 9 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: OPTIONAL }`))
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	contains(t, "widget.gen.go", files["internal/services/widgetsv1/widget.gen.go"],
+		`"widget_id": schema.StringAttribute{ MarkdownDescription: "The widget's id, the last segment of its name; left out, the API chooses it. Changing it replaces the widget.", Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()}, },`,
+		`ClientID: func(m *widgetModel) types.String { return m.WidgetId },`,
+		`IDAttribute: "widget_id",`,
+		`Pattern: "projects/{project}/widgets/{widget}",`,
+	)
+	_, failure = run(t, withField("CreateWidgetRequest", `name: "widget_id" number: 9 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: IMMUTABLE }`))
+	if want := "CreateWidget's widget_id is neither REQUIRED nor OPTIONAL"; !strings.Contains(failure, want) {
+		t.Errorf("generation failed with %q, want %q", failure, want)
+	}
+}
+
+// withComment gives the field name of the message to a leading comment.
+func withComment(to, name, comment string) func(*descriptorpb.FileDescriptorProto) {
+	return func(file *descriptorpb.FileDescriptorProto) {
+		for i, m := range file.GetMessageType() {
+			for j, f := range m.GetField() {
+				if m.GetName() == to && f.GetName() == name {
+					if file.SourceCodeInfo == nil {
+						file.SourceCodeInfo = &descriptorpb.SourceCodeInfo{}
+					}
+					file.SourceCodeInfo.Location = append(file.SourceCodeInfo.Location, &descriptorpb.SourceCodeInfo_Location{
+						Path: []int32{4, int32(i), 2, int32(j)}, Span: []int32{0, 0, 0}, LeadingComments: proto.String(" " + comment + "\n"),
+					})
+				}
+			}
+		}
+	}
+}
+
+// The client-chosen id's description starts with its field's comment; a
+// parent's variable doesn't count among the attributes the guard against
+// replacing with the same id checks, as another parent is another name;
+// a oneof's immutable member kept from the state does, by the plan.
+func TestAClientChosenIdsDescriptionAndGuard(t *testing.T) {
+	files, failure := run(t, func(file *descriptorpb.FileDescriptorProto) {
+		withField("CreateWidgetRequest", `name: "widget_id" number: 9 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: REQUIRED }`)(file)
+		withComment("CreateWidgetRequest", "widget_id", "Unique in the project, and never used again.")(file)
+		withField("Widget", `name: "zone" number: 10 label: LABEL_OPTIONAL type: TYPE_STRING oneof_index: 0 options { [google.api.field_behavior]: IMMUTABLE }`)(file)
+		withField("Widget", `name: "region" number: 11 label: LABEL_OPTIONAL type: TYPE_STRING oneof_index: 0 options { [google.api.field_behavior]: OPTIONAL }`)(file)
+		withField("Widget", `name: "size" number: 12 label: LABEL_OPTIONAL type: TYPE_INT64 options { [google.api.field_behavior]: OPTIONAL [google.api.field_behavior]: IMMUTABLE }`)(file)
+		message(file, "Widget").OneofDecl = []*descriptorpb.OneofDescriptorProto{{Name: proto.String("place")}}
+	})
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	widget := files["internal/services/widgetsv1/widget.gen.go"]
+	contains(t, "widget.gen.go", widget,
+		`MarkdownDescription: "Unique in the project, and never used again. The widget's id, the last segment of its name. Changing it replaces the widget."`,
+		`Replaced: func(plan, state, config *widgetModel) []string { var replaced []string if !plan.Zone.Equal(state.Zone) { replaced = append(replaced, "zone") } if !config.Size.IsNull() && !plan.Size.Equal(state.Size) { replaced = append(replaced, "size") } return replaced },`,
+	)
+}
+
+// A singleton's required field is sent, but neither owned nor unset.
+func TestASingletonsRequiredFieldIsntOwned(t *testing.T) {
+	files, failure := run(t, withSingleton(budget+` field { name: "contact" number: 3 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: REQUIRED } }`, getSettings, updateSettings))
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	contains(t, "settings.gen.go", files["internal/services/widgetsv1/settings.gen.go"],
+		`if framework.IsSet(plan.Contact) { mask = append(mask, "contact") }`,
+		`Configured: func(config *settingsModel) []string { var fields []string if !config.Budget.IsNull() { fields = append(fields, "budget") } return fields },`,
+	)
+}
+
+// A list's required number and enum filters are attributes too.
+func TestAListsRequiredNumberAndEnumFilters(t *testing.T) {
+	files, failure := run(t, func(file *descriptorpb.FileDescriptorProto) {
+		file.EnumType = append(file.EnumType, &descriptorpb.EnumDescriptorProto{Name: proto.String("Kind"), Value: []*descriptorpb.EnumValueDescriptorProto{
+			{Name: proto.String("KIND_UNSPECIFIED"), Number: proto.Int32(0)}, {Name: proto.String("ROUND"), Number: proto.Int32(1)},
+		}})
+		m := message(file, "ListWidgetsRequest")
+		m.Field = append(m.Field,
+			&descriptorpb.FieldDescriptorProto{Name: proto.String("size"), Number: proto.Int32(4), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_INT32.Enum(), Options: behaviors(annotations.FieldBehavior_REQUIRED)},
+			&descriptorpb.FieldDescriptorProto{Name: proto.String("kind"), Number: proto.Int32(5), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_ENUM.Enum(), TypeName: proto.String(".test.widgets.v1.Kind"), Options: behaviors(annotations.FieldBehavior_REQUIRED)},
+		)
+	})
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	contains(t, "widget.gen.go", files["internal/services/widgetsv1/widget.gen.go"],
+		`"size": schema1.Int64Attribute{ MarkdownDescription: "", Required: true, Validators: []validator.Int64{framework.Int32()}, },`,
+		`"kind": schema1.StringAttribute{ MarkdownDescription: "One of `+"`ROUND`"+`.", Required: true, Validators: []validator.String{framework.OneOf("ROUND")}, },`,
+		`Size: int32(m.Size.ValueInt64()), Kind: v1.Kind(v1.Kind_value[m.Kind.ValueString()])}`,
+	)
+}
+
 // A secret declared for a field the API hasn't, or that isn't an
 // output-only string, fails generation.
 func TestSecretsAreCheckedAgainstTheAPI(t *testing.T) {
@@ -469,16 +688,16 @@ func TestUnsupportedFieldsFailGeneration(t *testing.T) {
 			want: "Widget: field tree: Tree: field children: test.widgets.v1.Tree holds itself, which isn't supported",
 		},
 		{
-			name: "a list request's required field",
+			name: "a list request's required repeated field",
 			change: func(file *descriptorpb.FileDescriptorProto) {
 				m := message(file, "ListWidgetsRequest")
 				m.Field = append(m.Field, &descriptorpb.FieldDescriptorProto{
-					Name: proto.String("filter"), Number: proto.Int32(4),
-					Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
+					Name: proto.String("owners"), Number: proto.Int32(4),
+					Label: descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
 					Options: behaviors(annotations.FieldBehavior_REQUIRED),
 				})
 			},
-			want: "Widget: ListWidgets's request field filter is required, which isn't supported yet",
+			want: "Widget: ListWidgets's request field owners is required, and only a required string, number, boolean or enum is supported",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

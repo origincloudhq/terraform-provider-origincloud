@@ -110,6 +110,19 @@ Credentials come from the environment, the first of:
 - **Values the API chooses.** An optional attribute the API fills in when it
   is left out, such as a default, keeps the API's value; removing it from the
   configuration keeps the current value rather than resetting it.
+- **Singletons.** A resource its parent has exactly one of, such as a
+  project's quota, exists with its parent: creating it in Terraform updates
+  it with the values configured. Removing a value from the configuration
+  unsets it, or returns it to its default, and destroying the resource
+  unsets the values Terraform set, leaving the others. A value is
+  Terraform's once Terraform has sent it: one configured with the value
+  the API already has, as after an import, is left as it is on destroy. To stop managing one without unsetting anything,
+  remove it from the state: a `removed` block with
+  `lifecycle { destroy = false }`, or `terraform state rm`. Manage each with
+  one resource only.
+- **Ids you choose.** A resource whose id you choose, such as a project's
+  `project_id`, can't be replaced with the same id: a deleted resource's id
+  isn't used again. Change the id along with what replaces it.
 - **Protection.** A snapshot is the source of new volumes only while it is
   protected. `protected = true` protects it, and destroying it unprotects it
   first.

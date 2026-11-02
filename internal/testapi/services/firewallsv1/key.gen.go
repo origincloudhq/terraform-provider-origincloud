@@ -92,13 +92,13 @@ func keySchema() schema.Schema {
 				Computed:            true,
 			},
 			"algorithm": schema.StringAttribute{
-				MarkdownDescription: "Left out, the API chooses it; removing it keeps the current value.",
+				MarkdownDescription: "Left out, it keeps its current value; see the field's description.",
 				Optional:            true,
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"bits": schema.Int64Attribute{
-				MarkdownDescription: "Left out, the API chooses it; removing it keeps the current value.",
+				MarkdownDescription: "Left out, it keeps its current value; see the field's description.",
 				Optional:            true,
 				Computed:            true,
 				Validators:          []validator.Int64{framework.Int32()},
@@ -154,7 +154,7 @@ func keySchema() schema.Schema {
 							Required:            true,
 						},
 						"weight": schema.Int64Attribute{
-							MarkdownDescription: "Left out, the API chooses it; removing it keeps the current value.",
+							MarkdownDescription: "Left out, it keeps its current value; see the field's description.",
 							Optional:            true,
 							Computed:            true,
 							Validators:          []validator.Int64{framework.Int32()},
@@ -178,7 +178,7 @@ func keySchema() schema.Schema {
 							Required:            true,
 						},
 						"weight": schema.Int64Attribute{
-							MarkdownDescription: "Left out, the API chooses it; removing it keeps the current value.",
+							MarkdownDescription: "Left out, it keeps its current value; see the field's description.",
 							Optional:            true,
 							Computed:            true,
 							Validators:          []validator.Int64{framework.Int32()},
@@ -200,7 +200,7 @@ func keySchema() schema.Schema {
 				Validators:          []validator.String{framework.Oneof{Others: []string{"zone"}}},
 			},
 			"primary": schema.SingleNestedAttribute{
-				MarkdownDescription: "Left out, the API chooses it; removing it keeps the current value.",
+				MarkdownDescription: "Left out, it keeps its current value; see the field's description.",
 				Optional:            true,
 				Computed:            true,
 				PlanModifiers:       []planmodifier.Object{objectplanmodifier.UseStateForUnknown()},
@@ -211,7 +211,7 @@ func keySchema() schema.Schema {
 						Computed:            true,
 					},
 					"weight": schema.Int64Attribute{
-						MarkdownDescription: "Left out, the API chooses it; removing it keeps the current value.",
+						MarkdownDescription: "Left out, it keeps its current value; see the field's description.",
 						Optional:            true,
 						Computed:            true,
 						Validators:          []validator.Int64{framework.Int32()},
@@ -397,6 +397,7 @@ func keyFromProto(p *firewallsv1.Key, m *keyModel) error {
 func keyResource() framework.ResourceSpec[keyModel, *firewallsv1.Key] {
 	return framework.ResourceSpec[keyModel, *firewallsv1.Key]{
 		TypeName:  "_keys_key",
+		Pattern:   "projects/{project}/keys/{key}",
 		Schema:    keySchema(),
 		Name:      func(m *keyModel) string { return m.Name.ValueString() },
 		ToProto:   keyToProto,

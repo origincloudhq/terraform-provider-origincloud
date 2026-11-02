@@ -75,6 +75,10 @@ type attribute struct {
 	// toggle is the attribute's toggle, when methods of their own set and
 	// clear it (toggles.go).
 	toggle *resolvedToggle
+	// nameValue is the index, among the resource name's variable values,
+	// of an attribute that isn't a field but a part of the name: a parent's
+	// variable, or the id the client chooses.
+	nameValue int
 }
 
 // computedOnly says that the configuration can't set the attribute.
@@ -116,11 +120,30 @@ func attributes(t resourceType, forResource bool, prefix string) ([]attribute, e
 			name: "id", goName: "ID", kind: "String", computed: true, keep: true,
 			doc: fmt.Sprintf("The %s's resource name, the same as `name`.", singular),
 		})
-		for _, v := range t.variables[:len(t.variables)-1] {
+		for i, v := range t.parentVariables() {
 			attrs = append(attrs, attribute{
-				name: v, goName: camel(v), kind: "String", required: true, replace: true,
+				name: v, goName: camel(v), kind: "String", required: true, replace: true, nameValue: i,
 				doc: fmt.Sprintf("The %s the %s is in. Changing it replaces the %s.", words(v), singular, singular),
 			})
+		}
+		if id := t.idField(); id != nil {
+			// The id the client chooses (AIP-133): its name's last segment.
+			comment := prose(id.Comments.Leading)
+			a := attribute{
+				name: string(id.Desc.Name()), goName: camel(string(id.Desc.Name())), kind: "String", replace: true,
+				nameValue: len(t.variables) - 1,
+				doc:       strings.TrimSpace(comment + " " + fmt.Sprintf("The %s's id, the last segment of its name. Changing it replaces the %s.", singular, singular)),
+			}
+			switch behaviors := fieldBehaviors(id); {
+			case slices.Contains(behaviors, annotations.FieldBehavior_REQUIRED):
+				a.required = true
+			case slices.Contains(behaviors, annotations.FieldBehavior_OPTIONAL):
+				a.optional, a.computed, a.keep = true, true, true
+				a.doc = strings.TrimSpace(comment + " " + fmt.Sprintf("The %s's id, the last segment of its name; left out, the API chooses it. Changing it replaces the %s.", singular, singular))
+			default:
+				return nil, fmt.Errorf("Create%s's %s is neither REQUIRED nor OPTIONAL", t.message.Desc.Name(), id.Desc.Name())
+			}
+			attrs = append(attrs, a)
 		}
 	}
 	s := scope{t: t, forResource: forResource, computed: !forResource, prefix: prefix, seen: []protoreflect.FullName{t.message.Desc.FullName()}}
@@ -323,13 +346,21 @@ func applyBehaviors(s scope, a *attribute, behaviors []annotations.FieldBehavior
 	case (a.presence || a.chosenObject) && s.inList && !s.replaced:
 		// Kept by position, a value could be planned for another element.
 		return fmt.Errorf("a field with explicit presence (proto3 optional) can't be in a list's elements: they are matched by position, so the value kept for one could be planned for another")
+	case has(annotations.FieldBehavior_OPTIONAL) && s.t.managedSingleton() && !s.nested && !a.presence && !a.chosenObject:
+		// Created by an update, a singleton's field left out would plan
+		// null while the API has a value.
+		return fmt.Errorf("a singleton's OPTIONAL field needs explicit presence (proto3 optional), so that leaving it out keeps its value")
 	case has(annotations.FieldBehavior_OPTIONAL):
 		a.optional = true
 		// With explicit presence, the API chooses the value left out, and
 		// the state keeps it until one is set.
 		a.computed, a.keep = a.presence || a.chosenObject, a.presence || a.chosenObject
 		if a.presence || a.chosenObject {
-			a.doc = strings.TrimSpace(a.doc + " Left out, the API chooses it; removing it keeps the current value.")
+			if s.t.managedSingleton() && !s.nested {
+				a.doc = strings.TrimSpace(a.doc + " Left out, Terraform doesn't manage it, and it keeps its current value; removed from the configuration once set, it is unset. See the field's description for what unset means.")
+			} else {
+				a.doc = strings.TrimSpace(a.doc + " Left out, it keeps its current value; see the field's description.")
+			}
 		}
 		if !s.nested {
 			a.replace = !updatable
@@ -580,12 +611,19 @@ func generateConversions(g *protogen.GeneratedFile, t resourceType, name, model,
 	g.P()
 	g.P("func ", name, "FromProto(p ", message, ", m *", model, ") error {")
 	if forResource {
-		g.P("values, err := ", c.framework("NameValues"), "(", fmt.Sprintf("%q", t.pattern), ", p.GetName())")
-		g.P("if err != nil {")
+		// The name's values set the attributes that are parts of it; a
+		// name of no such part is checked all the same.
+		used := slices.ContainsFunc(attrs, func(a attribute) bool { return a.field == nil && a.name != "id" && a.toggle == nil })
+		if used {
+			g.P("values, err := ", c.framework("NameValues"), "(", fmt.Sprintf("%q", t.pattern), ", p.GetName())")
+			g.P("if err != nil {")
+		} else {
+			g.P("if _, err := ", c.framework("NameValues"), "(", fmt.Sprintf("%q", t.pattern), ", p.GetName()); err != nil {")
+		}
 		g.P("return err")
 		g.P("}")
 	}
-	for i, a := range attrs {
+	for _, a := range attrs {
 		if a.toggle != nil {
 			g.P("m.", a.goName, " = ", c.types("BoolValue"), "(p.Get", a.toggle.state.GoName, "() == ", g.QualifiedGoIdent(a.toggle.on.GoIdent), ")")
 			continue
@@ -594,7 +632,7 @@ func generateConversions(g *protogen.GeneratedFile, t resourceType, name, model,
 			if a.name == "id" {
 				g.P("m.ID = ", c.types("StringValue"), "(p.GetName())")
 			} else {
-				g.P("m.", a.goName, " = ", c.types("StringValue"), "(values[", i-1, "])")
+				g.P("m.", a.goName, " = ", c.types("StringValue"), "(values[", a.nameValue, "])")
 			}
 			continue
 		}
@@ -715,17 +753,34 @@ func updateChanged(g *protogen.GeneratedFile, a attribute) string {
 	return "!" + sentSame(g, a, "plan."+a.goName, "state."+a.goName)
 }
 
+// replaceSame returns the condition under which a's planned and prior
+// values, in plan and state, send the same, for a timestamp or duration
+// by instant or length.
+func replaceSame(g *protogen.GeneratedFile, a attribute) string {
+	if a.wellKnown != "" {
+		c := conv{g}
+		return g.QualifiedGoIdent(protoPackage.Ident("Equal")) + "(" + c.toProto(a, "plan."+a.goName) + ", " + c.toProto(a, "state."+a.goName) + ")"
+	}
+	return sentSame(g, a, "plan."+a.goName, "state."+a.goName)
+}
+
 // sentSame returns the condition under which plan and state, values of an
 // attribute holding nested messages, send the same: their output-only
 // fields, which the plan doesn't know, don't count.
 func sentSame(g *protogen.GeneratedFile, a attribute, plan, state string) string {
 	c := conv{g}
-	same := map[string]string{
-		"Object": g.QualifiedGoIdent(protoPackage.Ident("Equal")),
-		"List":   c.framework("SameMessages"),
-		"Set":    c.framework("SameMessageSets"),
-		"Map":    c.framework("SameMessageMaps"),
-	}[a.kind]
+	// Only the one used: naming an identifier imports its package.
+	var same string
+	switch a.kind {
+	case "Object":
+		same = g.QualifiedGoIdent(protoPackage.Ident("Equal"))
+	case "List":
+		same = c.framework("SameMessages")
+	case "Set":
+		same = c.framework("SameMessageSets")
+	default:
+		same = c.framework("SameMessageMaps")
+	}
 	return same + "(" + c.toProto(a, plan) + ", " + c.toProto(a, state) + ")"
 }
 
@@ -772,6 +827,18 @@ func (c conv) null(a attribute) string {
 		return c.types(a.kind+"Null") + "(" + c.elemType(a) + ")"
 	default:
 		return c.types(a.kind+"Null") + "()"
+	}
+}
+
+// unknown returns the attribute's unknown value.
+func (c conv) unknown(a attribute) string {
+	switch {
+	case a.kind == "Object":
+		return c.types("ObjectUnknown") + "(" + a.prefix + "AttrTypes())"
+	case a.collection():
+		return c.types(a.kind+"Unknown") + "(" + c.elemType(a) + ")"
+	default:
+		return c.types(a.kind+"Unknown") + "()"
 	}
 }
 
