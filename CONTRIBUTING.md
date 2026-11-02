@@ -181,7 +181,10 @@ to the plugin or `internal/framework`.
   such as a generated private key, is a **secret**: sensitive, and kept from
   the create on, though the API never answers with it again. Nothing in the
   API marks such a field either, so each is declared in `secrets.go`, which
-  generation checks against the API. An imported resource has none, and
+  generation checks against the API. A secret of a package the API doesn't
+  have yet waits for it, so that it is declared before its service is
+  published, and the service's first regeneration has it from the start.
+  An imported resource has none, and
   data sources leave it out: no read answers with it.
 
 The plugin's tests include a test API, `internal/testapi/firewalls.prototext`,

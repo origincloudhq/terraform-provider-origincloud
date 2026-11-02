@@ -557,21 +557,26 @@ func TestAListsRequiredNumberAndEnumFilters(t *testing.T) {
 }
 
 // A secret declared for a field the API hasn't, or that isn't an
-// output-only string, fails generation.
+// output-only string, fails generation; one of a package the API hasn't yet
+// waits for it.
 func TestSecretsAreCheckedAgainstTheAPI(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		secret secret
-		want   string
+		want   string // empty: generation succeeds
 	}{
 		{"no such field", secret{"test.widgets.v1.Widget", "token"}, "secret token: no field test.widgets.v1.Widget.token"},
+		{"no such message", secret{"test.widgets.v1.Gizmo", "token"}, "secret token: no field test.widgets.v1.Gizmo.token"},
+		{"a message nested in one", secret{"test.widgets.v1.Widget.Part", "token"}, "secret token: no field test.widgets.v1.Widget.Part.token"},
 		{"a settable field", secret{"test.widgets.v1.Widget", "name"}, "secret name: the field isn't an output-only string"},
+		{"a package the API hasn't yet", secret{"test.gizmos.v1.Gizmo", "token"}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			saved := secrets
 			secrets = []secret{tc.secret}
 			t.Cleanup(func() { secrets = saved })
-			if _, failure := run(t, nil); !strings.Contains(failure, tc.want) {
+			_, failure := run(t, nil)
+			if tc.want == "" && failure != "" || !strings.Contains(failure, tc.want) {
 				t.Errorf("generation failed with %q, want %q", failure, tc.want)
 			}
 		})
