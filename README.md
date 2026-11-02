@@ -17,6 +17,20 @@ data sources are generated from the API definitions in
 | Data source | `origincloud_location_regions` | Every region |
 | Data source | `origincloud_location_zone` | A zone, its region and the services it offers |
 | Data source | `origincloud_location_zones` | Every zone |
+| Resource | `origincloud_compute_instance` | A virtual machine in one zone |
+| Resource | `origincloud_compute_key_pair` | An SSH public key, and the private key generated for it |
+| Resource | `origincloud_compute_volume_attachment` | A volume an instance holds |
+| Resource | `origincloud_compute_image` | A project's own image, which boot volumes are created from |
+| Data source | `origincloud_compute_instance_type` | A size an instance is launched as |
+| Data source | `origincloud_compute_instance_types` | Every instance type |
+| Data source | `origincloud_compute_image_family` | The current public image of an operating system release |
+| Data source | `origincloud_compute_image_families` | Every image family |
+| Data source | `origincloud_compute_public_image` | One of the platform's images, in one zone |
+| Data source | `origincloud_compute_public_images` | The public images in a zone |
+| Data source | `origincloud_compute_images` | A project's own images in a zone |
+| Data source | `origincloud_compute_instances` | The instances in a zone |
+| Data source | `origincloud_compute_key_pairs` | A project's key pairs |
+| Data source | `origincloud_compute_volume_attachments` | The volumes an instance holds |
 
 ## Using it
 
@@ -139,7 +153,7 @@ Credentials come from the environment, the first of:
 
 ## Versions
 
-The resources follow their API's version: PVS and location are `v1beta1`, a
+The resources follow their API's version: every service is `v1beta1`, a
 preview that may change in incompatible ways, like the API itself.
 
 ## Contributing
