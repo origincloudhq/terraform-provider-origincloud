@@ -5,15 +5,44 @@
 A `v*` tag runs `.github/workflows/release.yml`: goreleaser (`.goreleaser.yml`)
 builds the archives for every platform and signs `SHA256SUMS` with the
 provider's signing key. The Terraform Registry and the OpenTofu registry read
-the release from here. Tag a commit on `main` whose CI passed, with the next
-version:
+the release from here. A version is never moved or deleted once released: the
+registries keep it.
+
+`VERSION` holds the version the next release tags. Before v1, a minor version
+may change the resources incompatibly, as the preview APIs themselves may.
+
+### The automatic path
+
+1. **Regeneration.** When the Go SDK releases (its release dispatches it), or
+   daily, `regenerate.yml` opens or refreshes the pull request from the branch
+   `regenerate`, and sets the next version in `VERSION` with
+   `scripts/version.sh bump`: a minor version when `API_REVISION` moved, a
+   patch for a new SDK or a change of the generator alone.
+2. **Merge.** Once CI passes on that pull request's head commit,
+   `merge-regeneration.yml` merges it, if every commit in it is the
+   regeneration workflow's. A pull request someone added commits to waits for
+   review.
+3. **Tag.** Once CI passes on `main`, `tag.yml` tags `VERSION` if it has no tag
+   yet (`scripts/version.sh unreleased`), which runs `release.yml`.
+
+The merge and the tag use the regeneration App's token, whose ID is the
+variable `REGENERATE_APP_ID` and whose key is the secret
+`REGENERATE_APP_PRIVATE_KEY`: a merge or a tag pushed with the workflow token
+would start no further workflow, and so no release. Without the App, step 1
+still opens the pull request, and the rest is done by hand.
+
+### By hand
+
+A change outside a regeneration is released by setting `VERSION` in the same
+pull request: `scripts/version.sh bump minor` or `scripts/version.sh bump
+patch`. `tag.yml` tags it once the pull request is merged and CI passes on
+`main`. Without the App, tag a commit on `main` whose CI passed with the
+version `VERSION` names:
 
 ```sh
-git tag v0.2.0 origin/main
-git push origin v0.2.0
+git tag v0.4.0 origin/main
+git push origin v0.4.0
 ```
-
-A version is never moved or deleted once released: the registries keep it.
 
 ## The signing key
 
