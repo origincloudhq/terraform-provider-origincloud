@@ -337,6 +337,42 @@ func TestAResourceWithTwoPatterns(t *testing.T) {
 	}
 }
 
+// A list request's required field, such as the organization projects are
+// listed in, is a required attribute of the list data source, sent in the
+// request.
+func TestAListRequestsRequiredFieldIsARequiredAttribute(t *testing.T) {
+	files, failure := run(t, func(file *descriptorpb.FileDescriptorProto) {
+		m := message(file, "ListWidgetsRequest")
+		m.Field = append(m.Field, &descriptorpb.FieldDescriptorProto{
+			Name: proto.String("owner"), Number: proto.Int32(4), JsonName: proto.String("owner"),
+			Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
+			Options: behaviors(annotations.FieldBehavior_REQUIRED),
+		})
+	})
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	contains(t, "widget.gen.go", files["internal/services/widgetsv1/widget.gen.go"],
+		"type widgetListModel struct { Project types.String `tfsdk:\"project\"` Owner types.String `tfsdk:\"owner\"`",
+		`"owner": schema1.StringAttribute{ MarkdownDescription: "", Required: true, },`,
+		`&v1.ListWidgetsRequest{Parent: "projects/" + m.Project.ValueString(), Owner: m.Owner.ValueString()}`,
+	)
+}
+
+// The id the client chooses (AIP-133) is a required attribute replacing
+// the resource, sent in the create and read from the name.
+func TestAClientChosenIdIsAnAttribute(t *testing.T) {
+	files, failure := run(t, withField("CreateWidgetRequest", `name: "widget_id" number: 9 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: REQUIRED }`))
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	contains(t, "widget.gen.go", files["internal/services/widgetsv1/widget.gen.go"],
+		`"widget_id": schema.StringAttribute{ MarkdownDescription: "The widget's id, the last segment of its name. Changing it replaces the widget.", Required: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}, },`,
+		"WidgetId: plan.WidgetId.ValueString(),",
+		"m.WidgetId = types.StringValue(values[1])",
+	)
+}
+
 // A secret declared for a field the API hasn't, or that isn't an
 // output-only string, fails generation.
 func TestSecretsAreCheckedAgainstTheAPI(t *testing.T) {
@@ -469,16 +505,16 @@ func TestUnsupportedFieldsFailGeneration(t *testing.T) {
 			want: "Widget: field tree: Tree: field children: test.widgets.v1.Tree holds itself, which isn't supported",
 		},
 		{
-			name: "a list request's required field",
+			name: "a list request's required repeated field",
 			change: func(file *descriptorpb.FileDescriptorProto) {
 				m := message(file, "ListWidgetsRequest")
 				m.Field = append(m.Field, &descriptorpb.FieldDescriptorProto{
-					Name: proto.String("filter"), Number: proto.Int32(4),
-					Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
+					Name: proto.String("owners"), Number: proto.Int32(4),
+					Label: descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
 					Options: behaviors(annotations.FieldBehavior_REQUIRED),
 				})
 			},
-			want: "Widget: ListWidgets's request field filter is required, which isn't supported yet",
+			want: "Widget: ListWidgets's request field owners is required, and only a required string, number, boolean or enum is supported",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

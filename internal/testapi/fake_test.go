@@ -83,10 +83,14 @@ type fakeFirewalls struct {
 	// keys are served too, under projects/{project}/keys.
 	keys     map[string]*firewallsv1.Key
 	keyMasks []string
+	// vaults, and their quotas, too.
+	vaults     map[string]*firewallsv1.Vault
+	quotas     map[string]*firewallsv1.VaultQuota
+	quotaMasks []string
 }
 
 func newFakeFirewalls(t *testing.T) *fakeFirewalls {
-	f := &fakeFirewalls{firewalls: map[string]*firewallsv1.Firewall{}, keys: map[string]*firewallsv1.Key{
+	f := &fakeFirewalls{firewalls: map[string]*firewallsv1.Firewall{}, vaults: map[string]*firewallsv1.Vault{}, quotas: map[string]*firewallsv1.VaultQuota{}, keys: map[string]*firewallsv1.Key{
 		// A public key, in the other pattern.
 		"keys/pub-1": {Name: "keys/pub-1", State: firewallsv1.Key_ENABLED, Algorithm: proto.String("ed25519"), Usage: &firewallsv1.Key_Sign{Sign: true}},
 	}}
@@ -100,6 +104,10 @@ func (f *fakeFirewalls) serve(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 	path := strings.TrimPrefix(r.URL.Path, "/v1/")
 	body, _ := io.ReadAll(r.Body)
+	if path == "vaults" || strings.HasPrefix(path, "vaults/") {
+		f.serveVault(w, r, path, body)
+		return
+	}
 	if strings.HasPrefix(path, "keys/") || strings.Contains(path, "/keys") {
 		f.serveKey(w, r, path, body)
 		return
@@ -365,4 +373,105 @@ func (f *fakeFirewalls) lastKeyMask() string {
 		return ""
 	}
 	return f.keyMasks[len(f.keyMasks)-1]
+}
+
+// serveVault serves the vaults, created with the id the client chose, and
+// their quotas, which exist with them: 100 secrets and 10 versions until
+// updated.
+func (f *fakeFirewalls) serveVault(w http.ResponseWriter, r *http.Request, path string, body []byte) {
+	switch {
+	case path == "vaults" && r.Method == http.MethodPost:
+		vault := new(firewallsv1.Vault)
+		if err := protojson.Unmarshal(body, vault); err != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+			return
+		}
+		id := r.URL.Query().Get("vaultId")
+		if id == "" {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "vault_id is required")
+			return
+		}
+		vault.Name = "vaults/" + id
+		if _, ok := f.vaults[vault.Name]; ok {
+			writeError(w, http.StatusConflict, "ALREADY_EXISTS", vault.Name+" exists")
+			return
+		}
+		vault.CreateTime = timestamppb.New(keyCreated)
+		f.vaults[vault.Name] = vault
+		f.quotas[vault.Name+"/quota"] = &firewallsv1.VaultQuota{Name: vault.Name + "/quota", MaxSecrets: proto.Int64(100), MaxVersions: proto.Int64(10)}
+		writeMessage(w, vault)
+	case path == "vaults" && r.Method == http.MethodGet:
+		owner := r.URL.Query().Get("owner")
+		if owner == "" {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "owner is required")
+			return
+		}
+		list := &firewallsv1.ListVaultsResponse{}
+		for _, name := range slices.Sorted(maps.Keys(f.vaults)) {
+			if f.vaults[name].GetOwner() == owner {
+				list.Vaults = append(list.Vaults, f.vaults[name])
+			}
+		}
+		writeMessage(w, list)
+	case strings.HasSuffix(path, "/quota"):
+		quota, ok := f.quotas[path]
+		if !ok {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", path+" doesn't exist")
+			return
+		}
+		if r.Method == http.MethodPatch {
+			update := new(firewallsv1.VaultQuota)
+			if err := protojson.Unmarshal(body, update); err != nil {
+				writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+				return
+			}
+			mask := r.URL.Query().Get("updateMask")
+			f.quotaMasks = append(f.quotaMasks, mask)
+			for _, field := range strings.Split(mask, ",") {
+				switch field {
+				case "maxSecrets":
+					quota.MaxSecrets = update.MaxSecrets
+				case "maxVersions":
+					quota.MaxVersions = update.MaxVersions
+				case "":
+				default:
+					writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", field+" can't be updated")
+					return
+				}
+			}
+		}
+		writeMessage(w, quota)
+	default:
+		vault, ok := f.vaults[path]
+		if !ok {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", path+" doesn't exist")
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			writeMessage(w, vault)
+		case http.MethodPatch:
+			update := new(firewallsv1.Vault)
+			if err := protojson.Unmarshal(body, update); err != nil || r.URL.Query().Get("updateMask") != "displayName" {
+				writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "only display_name can be updated")
+				return
+			}
+			vault.DisplayName = update.GetDisplayName()
+			writeMessage(w, vault)
+		case http.MethodDelete:
+			delete(f.vaults, path)
+			delete(f.quotas, path+"/quota")
+			writeMessage(w, &emptypb.Empty{})
+		}
+	}
+}
+
+func (f *fakeFirewalls) quota(name string) (*firewallsv1.VaultQuota, []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	q, ok := f.quotas[name]
+	if !ok {
+		return nil, slices.Clone(f.quotaMasks)
+	}
+	return proto.Clone(q).(*firewallsv1.VaultQuota), slices.Clone(f.quotaMasks)
 }

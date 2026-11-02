@@ -42,6 +42,17 @@ to the plugin or `internal/framework`.
   without such a binding, or with one no pattern matches, generation fails.
   It also gets a data source of the same name, which reads one in any
   pattern by its resource name.
+- A create that takes the id the client chooses (AIP-133), such as
+  `CreateProject`'s `project_id`, makes it an attribute that replaces the
+  resource: required when the field is `REQUIRED`, optional and computed
+  when it is `OPTIONAL`. It is the last segment of the resource's name, which
+  is how it is read back and how an import derives it.
+- A **singleton**, a resource its parent has one of, such as a project's
+  quota (`projects/{project}/quota`), that the service gets and updates but
+  doesn't create or delete, is a resource too. Creating it updates it, with
+  the fields the configuration sets; destroying it leaves it as it is.
+  Imported by its name. A singleton the service doesn't update is a data
+  source.
 - A field referring to another resource (`google.api.resource_reference`) is
   a string the API checks, so a reference that may take several patterns
   needs nothing of its own.
@@ -49,9 +60,11 @@ to the plugin or `internal/framework`.
   second data source named after its plural, such as
   `origincloud_pvs_volumes`, that reads every page of the list. The name's
   variables before the resource's own are its required attributes; each
-  item has the data source's attributes, all computed, except secrets. The
-  list request's other fields, such as a filter, are left unset; a required
-  one fails generation. Items in a terminal state are left out.
+  item has the data source's attributes, all computed, except secrets. A
+  required field of the list's request, such as the organization projects
+  are listed in, is a required attribute, if it is a string, number, boolean
+  or enum; its other fields, such as a filter, are left unset. Items in a
+  terminal state are left out.
 - `REQUIRED` is required, `OUTPUT_ONLY` computed, `IMMUTABLE` replaces the
   resource when it changes. An `OPTIONAL` `IMMUTABLE` field is also computed,
   keeping the value the API chose when it was left out (the default storage

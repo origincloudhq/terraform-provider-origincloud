@@ -13,6 +13,8 @@ func Resources() []func() resource.Resource {
 	return []func() resource.Resource{
 		framework.NewResource(firewallResource()),
 		framework.NewResource(keyResource()),
+		framework.NewResource(vaultResource()),
+		framework.NewResource(vaultQuotaResource()),
 	}
 }
 
@@ -22,5 +24,6 @@ func DataSources() []func() datasource.DataSource {
 		framework.NewListDataSource(firewallListDataSource()),
 		framework.NewDataSource(keyByNameDataSource()),
 		framework.NewListDataSource(keyListDataSource()),
+		framework.NewListDataSource(vaultListDataSource()),
 	}
 }

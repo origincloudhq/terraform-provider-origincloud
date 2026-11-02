@@ -122,3 +122,74 @@ func operation[T proto.Message](ctx context.Context, service *core.Service, meth
 	}
 	return core.NewOperation[T](service, out), nil
 }
+
+// VaultClient calls the test API's VaultService. Its paths are /v1/{name},
+// /v1/vaults for creating (the id in the query) and listing (the owner in
+// the query).
+type VaultClient struct {
+	service *core.Service
+}
+
+// NewVaultClient returns a client of VaultService that sends its calls
+// through client.
+func NewVaultClient(client *core.Client) *VaultClient {
+	return &VaultClient{service: client.Service("vaults", false)}
+}
+
+func (c *VaultClient) GetVault(ctx context.Context, req *VaultNameRequest) (*Vault, error) {
+	out := new(Vault)
+	err := c.service.Call(ctx, core.Request{Method: http.MethodGet, Path: "/v1/" + req.GetName(), Idempotent: true}, out)
+	return out, err
+}
+
+func (c *VaultClient) ListVaults(ctx context.Context, req *ListVaultsRequest) (*ListVaultsResponse, error) {
+	query, err := core.Query(req)
+	if err != nil {
+		return nil, err
+	}
+	out := new(ListVaultsResponse)
+	err = c.service.Call(ctx, core.Request{Method: http.MethodGet, Path: "/v1/vaults", Query: query, Idempotent: true}, out)
+	return out, err
+}
+
+func (c *VaultClient) CreateVault(ctx context.Context, req *CreateVaultRequest) (*Vault, error) {
+	query, err := core.Query(req, "vault")
+	if err != nil {
+		return nil, err
+	}
+	out := new(Vault)
+	err = c.service.Call(ctx, core.Request{Method: http.MethodPost, Path: "/v1/vaults", Query: query, Body: req.GetVault()}, out)
+	return out, err
+}
+
+func (c *VaultClient) UpdateVault(ctx context.Context, req *UpdateVaultRequest) (*Vault, error) {
+	query, err := core.Query(req, "vault")
+	if err != nil {
+		return nil, err
+	}
+	out := new(Vault)
+	err = c.service.Call(ctx, core.Request{Method: http.MethodPatch, Path: "/v1/" + req.GetVault().GetName(), Query: query, Body: req.GetVault()}, out)
+	return out, err
+}
+
+func (c *VaultClient) DeleteVault(ctx context.Context, req *VaultNameRequest) (*emptypb.Empty, error) {
+	out := new(emptypb.Empty)
+	err := c.service.Call(ctx, core.Request{Method: http.MethodDelete, Path: "/v1/" + req.GetName()}, out)
+	return out, err
+}
+
+func (c *VaultClient) GetVaultQuota(ctx context.Context, req *VaultNameRequest) (*VaultQuota, error) {
+	out := new(VaultQuota)
+	err := c.service.Call(ctx, core.Request{Method: http.MethodGet, Path: "/v1/" + req.GetName(), Idempotent: true}, out)
+	return out, err
+}
+
+func (c *VaultClient) UpdateVaultQuota(ctx context.Context, req *UpdateVaultQuotaRequest) (*VaultQuota, error) {
+	query, err := core.Query(req, "vaultQuota")
+	if err != nil {
+		return nil, err
+	}
+	out := new(VaultQuota)
+	err = c.service.Call(ctx, core.Request{Method: http.MethodPatch, Path: "/v1/" + req.GetVaultQuota().GetName(), Query: query, Body: req.GetVaultQuota()}, out)
+	return out, err
+}

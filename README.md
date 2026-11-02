@@ -110,6 +110,9 @@ Credentials come from the environment, the first of:
 - **Values the API chooses.** An optional attribute the API fills in when it
   is left out, such as a default, keeps the API's value; removing it from the
   configuration keeps the current value rather than resetting it.
+- **Singletons.** A resource its parent has exactly one of, such as a
+  project's quota, exists with its parent: creating it in Terraform updates
+  it with the values configured, and destroying it leaves it as it is.
 - **Protection.** A snapshot is the source of new volumes only while it is
   protected. `protected = true` protects it, and destroying it unprotects it
   first.
