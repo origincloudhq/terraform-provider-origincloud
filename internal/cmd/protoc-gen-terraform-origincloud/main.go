@@ -83,7 +83,7 @@ func generate(gen *protogen.Plugin) error {
 	if err := checkTogglesFound(); err != nil {
 		return err
 	}
-	if err := checkSecretsFound(); err != nil {
+	if err := checkSecretsFound(gen.Files); err != nil {
 		return err
 	}
 	for _, p := range packages {
