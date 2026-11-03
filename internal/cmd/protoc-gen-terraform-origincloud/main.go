@@ -433,6 +433,13 @@ func generateResource(g *protogen.GeneratedFile, t resourceType) error {
 		g.P("Gone: func(p ", message, ") bool { return ", strings.Join(conditions, " || "), " },")
 	}
 
+	// The API answers a create repeated with its request id with the
+	// resource, except where the answer carries a secret, which only the
+	// first one does.
+	if slices.ContainsFunc(attrs, func(a attribute) bool { return a.kept }) {
+		g.P("RefusesReplays: true,")
+	}
+
 	// Create
 	if t.create == nil {
 		if err := generateSingletonCreate(g, t, model, message, client, attrs); err != nil {

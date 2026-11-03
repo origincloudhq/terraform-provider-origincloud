@@ -126,7 +126,8 @@ func serviceAccountResource() framework.ResourceSpec[serviceAccountModel, *v1bet
 			var mask []string
 			return mask
 		},
-		Gone: func(p *v1beta1.ServiceAccount) bool { return p.GetState() == v1beta1.ServiceAccount_DELETED },
+		Gone:           func(p *v1beta1.ServiceAccount) bool { return p.GetState() == v1beta1.ServiceAccount_DELETED },
+		RefusesReplays: true,
 		CreateSync: func(ctx context.Context, client *core.Client, plan *serviceAccountModel) (*v1beta1.ServiceAccount, error) {
 			return v1beta1.NewServiceAccountClient(client).CreateServiceAccount(ctx, &v1beta1.CreateServiceAccountRequest{
 				Parent:         "organizations/" + plan.Organization.ValueString(),

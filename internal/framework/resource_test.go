@@ -2,6 +2,8 @@ package framework
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -21,6 +23,42 @@ func TestAGoneResourceIsntDeleted(t *testing.T) {
 		gone, err := r.clearBeforeDelete(context.Background(), "things/t-1")
 		if err != nil || gone != (state == "TERMINATED") {
 			t.Errorf("%s: gone %v, %v", state, gone, err)
+		}
+	}
+}
+
+// Only a CONFLICT naming exactly one resource of the created type, which
+// refuses replays and whose name the API chose, is a create's replay; a
+// resource whose id the client chooses may be someone else's.
+func TestAReplayedCreateIsACONFLICTNamingOneResourceOfTheType(t *testing.T) {
+	const name = "organizations/acme/things/t-1"
+	conflict := func(metadata map[string]string) error {
+		return &core.Error{HTTPStatus: 409, Reason: "CONFLICT", Metadata: metadata}
+	}
+	spec := ResourceSpec[struct{}, *wrapperspb.StringValue]{Pattern: "organizations/{organization}/things/{thing}", RefusesReplays: true}
+	chosen := spec
+	chosen.ClientID = func(*struct{}) types.String { return types.StringValue("t-1") }
+	answered := spec
+	answered.RefusesReplays = false
+	for _, c := range []struct {
+		what string
+		spec ResourceSpec[struct{}, *wrapperspb.StringValue]
+		err  error
+		want string
+	}{
+		{"named in the metadata", spec, conflict(map[string]string{"thing": name}), name},
+		{"wrapped", spec, fmt.Errorf("create: %w", conflict(map[string]string{"thing": name})), name},
+		{"another type", spec, conflict(map[string]string{"organization": "organizations/acme"}), ""},
+		{"two of the type", spec, conflict(map[string]string{"thing": name, "other": name + "2"}), ""},
+		{"no metadata", spec, conflict(map[string]string{}), ""},
+		{"another reason", spec, &core.Error{HTTPStatus: 400, Reason: "BAD_REQUEST", Metadata: map[string]string{"thing": name}}, ""},
+		{"not the API's", spec, errors.New(name), ""},
+		{"an id the client chose", chosen, conflict(map[string]string{"thing": name}), ""},
+		{"replays answered", answered, conflict(map[string]string{"thing": name}), ""},
+	} {
+		r := &Resource[struct{}, *wrapperspb.StringValue]{spec: c.spec}
+		if got := r.replayedCreate(c.err); got != c.want {
+			t.Errorf("%s: %q, want %q", c.what, got, c.want)
 		}
 	}
 }

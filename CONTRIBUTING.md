@@ -88,7 +88,12 @@ to the plugin or `internal/framework`.
 - Creates, updates and deletes wait on their operation; a create, update or
   delete that answers with the resource, or with nothing, is done when it
   answers. A resource whose create failed after it existed (the operation's
-  metadata names it) is kept as tainted.
+  metadata names it) is kept as tainted. So is a resource with a secret
+  whose create was sent again with its request id after the answer was
+  lost: the API refuses the repeat with `CONFLICT`, naming the resource in
+  the error's metadata, as only the first answer carries the secret. Only
+  where the API chose its name: a `CONFLICT` naming one whose id the client
+  chooses may be about someone else's.
 - A resource not found, or whose `state` is a terminal value, `DELETED` or
   `TERMINATED`, is gone: it leaves the state at a refresh, isn't deleted
   again, and a delete that fails while it goes there succeeds.

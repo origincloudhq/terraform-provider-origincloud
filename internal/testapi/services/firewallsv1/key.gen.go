@@ -439,7 +439,8 @@ func keyResource() framework.ResourceSpec[keyModel, *firewallsv1.Key] {
 			}
 			return mask
 		},
-		Gone: func(p *firewallsv1.Key) bool { return p.GetState() == firewallsv1.Key_TERMINATED },
+		Gone:           func(p *firewallsv1.Key) bool { return p.GetState() == firewallsv1.Key_TERMINATED },
+		RefusesReplays: true,
 		CreateSync: func(ctx context.Context, client *core.Client, plan *keyModel) (*firewallsv1.Key, error) {
 			return firewallsv1.NewKeyClient(client).CreateKey(ctx, &firewallsv1.CreateKeyRequest{
 				Parent: "projects/" + plan.Project.ValueString(),

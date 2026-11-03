@@ -235,13 +235,12 @@ output "secret" {
 	})
 }
 
-// A create whose answer is lost is sent again by the SDK with the same
-// request id. The account exists by then, and its client secret went out
-// with the lost answer only, so the API refuses the repeat with CONFLICT:
-// the apply fails with an error that names the account, to delete, and
-// the state holds no service account, so the next plan creates one
-// rather than replacing one.
-func TestAServiceAccountCreateWhoseAnswerIsLostFailsNamingTheAccount(t *testing.T) {
+// A service account create whose answer is lost is sent again with the
+// same request id; the secret went out with the lost answer only, so the
+// API refuses the repeat with CONFLICT, naming the account in the
+// metadata. The apply fails saying so, the state holds the account,
+// tainted, and the next apply replaces it with one that has a secret.
+func TestAServiceAccountCreateWhoseAnswerIsLostIsReplacedByTheNextApply(t *testing.T) {
 	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
 	fake := newFakeIAM(t)
 	fake.loseCreateAnswer = true
@@ -257,7 +256,7 @@ resource "origincloud_iam_service_account" "ci" {
 		Steps: []resource.TestStep{
 			{
 				Config:      config,
-				ExpectError: regexp.MustCompile(`CONFLICT:\s+the\s+service\s+account\s+organizations/acme/serviceAccounts/sa-1\s+was\s+created\s+by\s+an\s+earlier\s+request`),
+				ExpectError: regexp.MustCompile(`(?s)CONFLICT:\s+the\s+service\s+account\s+organizations/acme/serviceAccounts/sa-1\s+was\s+created\s+by\s+an\s+earlier\s+request.*tainted:\s+the\s+next\s+apply\s+replaces\s+it`),
 			},
 			{
 				Config:             config,
@@ -265,19 +264,31 @@ resource "origincloud_iam_service_account" "ci" {
 				ExpectNonEmptyPlan: true,
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PostApplyPreRefresh: []plancheck.PlanCheck{
-						plancheck.ExpectResourceAction(ciServiceAccount, plancheck.ResourceActionCreate),
+						plancheck.ExpectResourceAction(ciServiceAccount, plancheck.ResourceActionDestroyBeforeCreate),
 					},
 				},
+			},
+			{
+				Config: config,
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue(ciServiceAccount, tfjsonpath.New("name"), knownvalue.StringExact("organizations/acme/serviceAccounts/sa-2")),
+				},
+				Check: checkClientSecret(fake),
 			},
 		},
 	})
 
 	calls, ids := fake.mutations(), fake.mutationRequestIDs()
-	if want := []string{"POST organizations/acme/serviceAccounts", "POST organizations/acme/serviceAccounts"}; !slices.Equal(calls, want) {
+	want := []string{
+		"POST organizations/acme/serviceAccounts", "POST organizations/acme/serviceAccounts",
+		"DELETE organizations/acme/serviceAccounts/sa-1", "POST organizations/acme/serviceAccounts",
+		"DELETE organizations/acme/serviceAccounts/sa-2",
+	}
+	if !slices.Equal(calls, want) {
 		t.Fatalf("mutations %v, want %v", calls, want)
 	}
-	if !requestID.MatchString(ids[0]) || ids[1] != ids[0] {
-		t.Errorf("request ids %q, want the same new one twice", ids)
+	if !requestID.MatchString(ids[0]) || ids[1] != ids[0] || ids[3] == ids[0] {
+		t.Errorf("request ids %q, want the same new one twice, then another", ids)
 	}
 }
 

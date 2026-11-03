@@ -583,6 +583,27 @@ func TestSecretsAreCheckedAgainstTheAPI(t *testing.T) {
 	}
 }
 
+// The API refuses a create repeated with its request id where the answer
+// carries a secret, which only the first one does; it answers any other
+// with the resource.
+func TestAResourceWithASecretRefusesReplays(t *testing.T) {
+	files, failure := run(t, nil)
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	if code := files["internal/services/widgetsv1/widget.gen.go"]; strings.Contains(code, "RefusesReplays") {
+		t.Error("a widget without a secret refuses replays")
+	}
+	saved := secrets
+	secrets = []secret{{"test.widgets.v1.Widget", "token"}}
+	t.Cleanup(func() { secrets = saved })
+	files, failure = run(t, withField("Widget", `name: "token" number: 9 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: OUTPUT_ONLY }`))
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	contains(t, "widget.gen.go", files["internal/services/widgetsv1/widget.gen.go"], "RefusesReplays: true,")
+}
+
 func TestUnsupportedFieldsFailGeneration(t *testing.T) {
 	const optional = `options { [google.api.field_behavior]: OPTIONAL }`
 	for _, tc := range []struct {

@@ -117,6 +117,7 @@ func keyPairResource() framework.ResourceSpec[keyPairModel, *v1beta1.KeyPair] {
 			}
 			return mask
 		},
+		RefusesReplays: true,
 		CreateSync: func(ctx context.Context, client *core.Client, plan *keyPairModel) (*v1beta1.KeyPair, error) {
 			return v1beta1.NewKeyPairClient(client).CreateKeyPair(ctx, &v1beta1.CreateKeyPairRequest{
 				Parent:  "projects/" + plan.Project.ValueString(),
