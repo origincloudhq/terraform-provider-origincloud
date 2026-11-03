@@ -163,7 +163,9 @@ Credentials come from the environment, the first of:
   attribute's description says when it does.
 - **Failed creates.** A resource whose creation failed after it came to exist,
   such as a volume whose storage couldn't be created, is kept in the state as
-  tainted, and the next apply replaces it.
+  tainted, and the next apply replaces it. So is a service account whose
+  create answer was lost: the API refuses the repeated create, as the client
+  secret went out with the lost answer only.
 - **Deleted resources.** A resource deleted outside Terraform, or left in a
   terminal state such as an instance's `TERMINATED`, leaves the state at the
   next refresh, and the next apply creates it again.

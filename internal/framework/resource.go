@@ -88,6 +88,12 @@ type ResourceSpec[M any, P proto.Message] struct {
 	// Spelled are the attributes the API answers in a form of its own,
 	// such as a role binding's member (Spelling).
 	Spelled []Spelled[M]
+
+	// RefusesReplays says that the API refuses a create repeated with its
+	// request id with CONFLICT, naming in the error's metadata the
+	// resource the first one created, as for a resource with a secret,
+	// which only the first answer carries.
+	RefusesReplays bool
 }
 
 // A Toggle is a boolean attribute that a pair of custom methods (AIP-136)
@@ -153,7 +159,14 @@ func (r *Resource[M, P]) Create(ctx context.Context, req resource.CreateRequest,
 	if r.spec.CreateSync != nil {
 		var err error
 		if created, err = r.spec.CreateSync(ctx, r.client, &m); err != nil {
-			resp.Diagnostics.AddError(r.summary("create"), err.Error())
+			// A create the API refuses as a repeat of one that created the
+			// resource, as when the SDK sent it again after losing the
+			// answer, names the resource; it goes into the state, tainted.
+			detail := err.Error()
+			if r.keepCreated(ctx, r.replayedCreate(err), m, resp) {
+				detail += "\n\nThe state holds that resource, tainted: the next apply replaces it."
+			}
+			resp.Diagnostics.AddError(r.summary("create"), detail)
 			return
 		}
 		r.created(ctx, m, created, resp)
@@ -169,18 +182,56 @@ func (r *Resource[M, P]) Create(ctx context.Context, req resource.CreateRequest,
 	if err != nil {
 		resp.Diagnostics.AddError(r.summary("create"), err.Error())
 		// A create that fails after the resource exists, such as a volume
-		// whose storage couldn't be created, leaves it to delete: it goes
-		// into the state, where Terraform marks it tainted and replaces it.
-		if target := OperationTarget(op.Proto()); target != "" {
-			plan := m
-			if created, err = r.spec.Get(ctx, r.client, target); err == nil && r.fromProto(ctx, created, &plan, &m, resp.Private, &resp.Diagnostics) == nil {
-				resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
-			}
-		}
+		// whose storage couldn't be created, leaves it to delete.
+		r.keepCreated(ctx, OperationTarget(op.Proto()), m, resp)
 		return
 	}
 	r.created(ctx, m, created, resp)
 	r.ownIfDone(ctx, req.Config, resp.Private, &resp.Diagnostics)
+}
+
+// keepCreated sets the state from the resource named target, which a
+// failed create left behind, m being the planned state: Terraform marks
+// it tainted and replaces it. It says whether it did; it doesn't when
+// target is empty or the resource is gone.
+func (r *Resource[M, P]) keepCreated(ctx context.Context, target string, m M, resp *resource.CreateResponse) bool {
+	if target == "" {
+		return false
+	}
+	created, err := r.spec.Get(ctx, r.client, target)
+	if err != nil || (r.spec.Gone != nil && r.spec.Gone(created)) {
+		return false
+	}
+	plan := m
+	if r.fromProto(ctx, created, &plan, &m, resp.Private, &resp.Diagnostics) != nil {
+		return false
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
+	return true
+}
+
+// replayedCreate returns the resource a create's CONFLICT names in its
+// metadata, a resource of this type, which an earlier request with the
+// same request id created, for a resource whose API refuses replays; ""
+// for any other error. Only a resource whose name the API chooses counts:
+// a CONFLICT naming one whose id the client chooses may be about someone
+// else's.
+func (r *Resource[M, P]) replayedCreate(err error) string {
+	var apiErr *core.Error
+	if !r.spec.RefusesReplays || r.spec.ClientID != nil || r.spec.Pattern == "" ||
+		!errors.As(err, &apiErr) || apiErr.Reason != "CONFLICT" {
+		return ""
+	}
+	var named []string
+	for _, v := range apiErr.Metadata {
+		if _, err := NameValues(r.spec.Pattern, v); err == nil {
+			named = append(named, v)
+		}
+	}
+	if len(named) != 1 {
+		return ""
+	}
+	return named[0]
 }
 
 // created sets the state from the resource a create answered with, plan
