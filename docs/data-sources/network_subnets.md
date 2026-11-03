@@ -30,7 +30,7 @@ Lists the subnets in a zone, oldest first. For every zone's subnets, list the zo
 Read-Only:
 
 - `acl` (String) The ACL that filters traffic in and out of the subnet, as the subnet's ACL association (an `AclAssociation`) sets it. Empty while it has none: nothing is filtered at the subnet's edge, and its interfaces' security groups still apply.
-- `auto_assign_public_ip` (Boolean) Whether an instance launched into the subnet gets a floating IP of its own, released when the instance is terminated.
+- `auto_assign_public_ip` (Boolean) Whether a launch that creates its network interface in the subnet, as the GraphQL API's `launchInstance` does, gives that interface a floating IP of its own, released when the instance is terminated. `CreateInstance` takes existing interfaces, so an instance it launches gets none: create a floating IP and a floating IP association for its interface instead.
 - `available_ipv4_address_count` (Number) How many IPv4 addresses in the subnet are free for interfaces.
 - `create_time` (String) When the subnet was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
 - `creator` (String) The principal that created the subnet, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.
