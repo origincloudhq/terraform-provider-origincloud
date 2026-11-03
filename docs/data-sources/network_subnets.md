@@ -41,7 +41,7 @@ Read-Only:
 - `ipv6_dns_servers` (List of String) The DNS servers instances in the subnet use over IPv6.
 - `ipv6_gateway` (String) The IPv6 address of the subnet's router.
 - `name` (String) The subnet's resource name.
-- `route_table` (String) The route table that decides where the subnet's traffic goes, as the subnet's route table association (a `RouteTableAssociation`) sets it. Empty while it has none: the subnet then has no route out of its VPC and counts as a subnet whose route table has no default route. Internet access is decided per VPC and address family, from the route tables of all its subnets (a `Route` with that family's default destination).
+- `route_table` (String) The route table that decides where the subnet's traffic goes, as the subnet's route table association (a `RouteTableAssociation`) sets it. A subnet reaches, and is reached from, the internet for an address family only if its own route table has that family's default route (a `Route` with that family's default destination). Empty while it has none: a subnet with no route table has no route out of its VPC and isn't reachable from the internet, even when the VPC has an internet gateway.
 - `tags` (Map of String) Labels of your own, at most 50. The `origin:name` tag is the name the console shows.
 - `urn` (String) The subnet's URN, the identifier access policies and the audit log use.
 - `vpc` (String) The VPC the subnet is part of, in the same project and in the zone's region. For now a VPC lives in one zone of its region: a subnet in another zone is refused with `FAILED_PRECONDITION`.
