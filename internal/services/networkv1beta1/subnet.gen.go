@@ -82,7 +82,7 @@ func subnetSchema() schema.Schema {
 				Computed:            true,
 			},
 			"auto_assign_public_ip": schema.BoolAttribute{
-				MarkdownDescription: "Whether an instance launched into the subnet gets a floating IP of its own, released when the instance is terminated.",
+				MarkdownDescription: "Whether a launch that creates its network interface in the subnet, as the GraphQL API's `launchInstance` does, gives that interface a floating IP of its own, released when the instance is terminated. `CreateInstance` takes existing interfaces, so an instance it launches gets none: create a floating IP and a floating IP association for its interface instead.",
 				Optional:            true,
 			},
 			"ipv4_cidr_block": schema.StringAttribute{
@@ -299,7 +299,7 @@ func subnetListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"auto_assign_public_ip": schema1.BoolAttribute{
-							MarkdownDescription: "Whether an instance launched into the subnet gets a floating IP of its own, released when the instance is terminated.",
+							MarkdownDescription: "Whether a launch that creates its network interface in the subnet, as the GraphQL API's `launchInstance` does, gives that interface a floating IP of its own, released when the instance is terminated. `CreateInstance` takes existing interfaces, so an instance it launches gets none: create a floating IP and a floating IP association for its interface instead.",
 							Computed:            true,
 						},
 						"ipv4_cidr_block": schema1.StringAttribute{

@@ -23,7 +23,7 @@ The part of a VPC in one zone, with its own address ranges.
 
 ### Optional
 
-- `auto_assign_public_ip` (Boolean) Whether an instance launched into the subnet gets a floating IP of its own, released when the instance is terminated.
+- `auto_assign_public_ip` (Boolean) Whether a launch that creates its network interface in the subnet, as the GraphQL API's `launchInstance` does, gives that interface a floating IP of its own, released when the instance is terminated. `CreateInstance` takes existing interfaces, so an instance it launches gets none: create a floating IP and a floating IP association for its interface instead.
 - `tags` (Map of String) Labels of your own, at most 50. The `origin:name` tag is the name the console shows.
 
 ### Read-Only

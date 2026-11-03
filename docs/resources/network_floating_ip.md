@@ -27,7 +27,7 @@ A public IPv4 address of your own.
 ### Read-Only
 
 - `address` (String) The public address.
-- `auto_assigned` (Boolean) Whether the platform assigned the address at launch, from a subnet with `auto_assign_public_ip`. Such an address is released when its instance is terminated.
+- `auto_assigned` (Boolean) Whether the platform assigned the address at launch, to an interface the launch created in a subnet with `auto_assign_public_ip`. Such an address is released when its instance is terminated.
 - `create_time` (String) When the floating IP was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
 - `creator` (String) The principal that created the floating IP, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.
 - `id` (String) The floating ip's resource name, the same as `name`.

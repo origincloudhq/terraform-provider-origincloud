@@ -74,7 +74,7 @@ func floatingIpSchema() schema.Schema {
 				Computed:            true,
 			},
 			"auto_assigned": schema.BoolAttribute{
-				MarkdownDescription: "Whether the platform assigned the address at launch, from a subnet with `auto_assign_public_ip`. Such an address is released when its instance is terminated.",
+				MarkdownDescription: "Whether the platform assigned the address at launch, to an interface the launch created in a subnet with `auto_assign_public_ip`. Such an address is released when its instance is terminated.",
 				Computed:            true,
 			},
 			"create_time": schema.StringAttribute{
@@ -235,7 +235,7 @@ func floatingIpListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"auto_assigned": schema1.BoolAttribute{
-							MarkdownDescription: "Whether the platform assigned the address at launch, from a subnet with `auto_assign_public_ip`. Such an address is released when its instance is terminated.",
+							MarkdownDescription: "Whether the platform assigned the address at launch, to an interface the launch created in a subnet with `auto_assign_public_ip`. Such an address is released when its instance is terminated.",
 							Computed:            true,
 						},
 						"create_time": schema1.StringAttribute{
