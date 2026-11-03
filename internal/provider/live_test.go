@@ -144,3 +144,90 @@ data "origincloud_iam_role_bindings" "mine" {
 		},
 	})
 }
+
+// TestLiveResourceManager reads, in the live API, the organizations the
+// caller belongs to and the projects of the first of them, with the
+// credentials TestLivePVS uses. It changes nothing.
+func TestLiveResourceManager(t *testing.T) {
+	if os.Getenv("ORIGINCLOUD_LIVE_ZONE") == "" {
+		t.Skip("ORIGINCLOUD_LIVE_ZONE isn't set")
+	}
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			{
+				Config: `
+data "origincloud_resourcemanager_organizations" "mine" {}
+
+data "origincloud_resourcemanager_projects" "first" {
+  organization = data.origincloud_resourcemanager_organizations.mine.organizations[0].name
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestMatchResourceAttr("data.origincloud_resourcemanager_organizations.mine", "organizations.0.name", regexp.MustCompile(`^organizations/[^/]+$`)),
+					resource.TestMatchResourceAttr("data.origincloud_resourcemanager_projects.first", "projects.0.name", regexp.MustCompile(`^projects/[^/]+$`)),
+				),
+			},
+		},
+	})
+}
+
+// TestLiveCompute reads, in the live API, the instance type catalog and the
+// key pairs of the project ORIGINCLOUD_LIVE_ZONE names. It changes nothing.
+func TestLiveCompute(t *testing.T) {
+	zone := os.Getenv("ORIGINCLOUD_LIVE_ZONE")
+	if zone == "" {
+		t.Skip("ORIGINCLOUD_LIVE_ZONE isn't set")
+	}
+	values, err := framework.NameValues("projects/{project}/zones/{zone}", zone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			{
+				Config: fmt.Sprintf(`
+data "origincloud_compute_instance_types" "all" {}
+
+data "origincloud_compute_key_pairs" "project" {
+  project = %q
+}
+`, values[0]),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestMatchResourceAttr("data.origincloud_compute_instance_types.all", "instance_types.0.name", regexp.MustCompile(`^instanceTypes/`)),
+					resource.TestCheckResourceAttrSet("data.origincloud_compute_key_pairs.project", "key_pairs.#"),
+				),
+			},
+		},
+	})
+}
+
+// TestLiveNetwork reads, in the live API, the VPCs of the project
+// ORIGINCLOUD_LIVE_ZONE names, in its zone's region: among them the
+// project's default VPC. It changes nothing.
+func TestLiveNetwork(t *testing.T) {
+	zone := os.Getenv("ORIGINCLOUD_LIVE_ZONE")
+	if zone == "" {
+		t.Skip("ORIGINCLOUD_LIVE_ZONE isn't set")
+	}
+	values, err := framework.NameValues("projects/{project}/zones/{zone}", zone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	region := regexp.MustCompile(`-az[0-9]+$`).ReplaceAllString(values[1], "")
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			{
+				Config: fmt.Sprintf(`
+data "origincloud_network_vpcs" "project" {
+  project = %q
+  region  = %q
+}
+`, values[0], region),
+				Check: resource.TestCheckTypeSetElemNestedAttrs("data.origincloud_network_vpcs.project", "vpcs.*", map[string]string{"project_default": "true"}),
+			},
+		},
+	})
+}
