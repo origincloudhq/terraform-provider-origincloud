@@ -86,6 +86,9 @@ func generate(gen *protogen.Plugin) error {
 	if err := checkSecretsFound(gen.Files); err != nil {
 		return err
 	}
+	if err := checkSpellingsFound(gen.Files); err != nil {
+		return err
+	}
 	for _, p := range packages {
 		generatePackageList(gen, p)
 	}
@@ -389,6 +392,9 @@ func generateResource(g *protogen.GeneratedFile, t resourceType) error {
 			if a.message != nil || a.wellKnown != "" {
 				changed = "!" + replaceSame(g, a)
 			}
+			if a.spelling != nil {
+				changed = "!" + g.QualifiedGoIdent(frameworkPackage.Ident(a.spelling.framework)) + ".Equal(plan." + a.goName + ".ValueString(), state." + a.goName + ".ValueString())"
+			}
 			// A oneof's member kept from the state replaces it by the plan,
 			// as it switches away from it; any other computed one only
 			// when configured.
@@ -476,6 +482,7 @@ func generateResource(g *protogen.GeneratedFile, t resourceType) error {
 		g.P("return nil")
 		g.P("},")
 		generateToggles(g, t, model, message, client, attrs)
+		generateSpelled(g, model, attrs)
 		g.P("}")
 		g.P("}")
 		return nil
@@ -495,10 +502,34 @@ func generateResource(g *protogen.GeneratedFile, t resourceType) error {
 	g.P("},")
 
 	generateToggles(g, t, model, message, client, attrs)
+	generateSpelled(g, model, attrs)
 
 	g.P("}")
 	g.P("}")
 	return nil
+}
+
+// generateSpelled writes the spec's spelled attributes, when the resource
+// has any.
+func generateSpelled(g *protogen.GeneratedFile, model string, attrs []attribute) {
+	first := true
+	for _, a := range attrs {
+		if a.spelling == nil {
+			continue
+		}
+		if first {
+			g.P("Spelled: []", g.QualifiedGoIdent(frameworkPackage.Ident("Spelled")), "[", model, "]{")
+			first = false
+		}
+		g.P("{")
+		g.P("Attribute: ", fmt.Sprintf("%q", a.name), ",")
+		g.P("Spelling: ", g.QualifiedGoIdent(frameworkPackage.Ident(a.spelling.framework)), ",")
+		g.P("Value: func(m *", model, ") *", g.QualifiedGoIdent(typesPackage.Ident("String")), " { return &m.", a.goName, " },")
+		g.P("},")
+	}
+	if !first {
+		g.P("},")
+	}
 }
 
 // generateCreate writes the spec's create.

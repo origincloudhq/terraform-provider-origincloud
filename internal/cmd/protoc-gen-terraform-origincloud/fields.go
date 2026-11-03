@@ -75,6 +75,9 @@ type attribute struct {
 	// toggle is the attribute's toggle, when methods of their own set and
 	// clear it (toggles.go).
 	toggle *resolvedToggle
+	// spelling is the attribute's spelling, when the API answers it in a
+	// form of its own (spellings.go).
+	spelling *spelling
 	// nameValue is the index, among the resource name's variable values,
 	// of an attribute that isn't a field but a part of the name: a parent's
 	// variable, or the id the client chooses.
@@ -151,6 +154,9 @@ func attributes(t resourceType, forResource bool, prefix string) ([]attribute, e
 		a, err := fieldAttribute(s, f)
 		if err == nil {
 			err = applySecret(t, &a, forResource)
+		}
+		if err == nil {
+			err = applySpelling(t, &a, forResource)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("field %s: %w", f.Desc.Name(), err)
@@ -497,6 +503,9 @@ func generateAttributes(g *protogen.GeneratedFile, schemaPackage protogen.GoImpo
 			// replace the resource.
 			value := c.types(a.kind)
 			modifiers = append(modifiers, c.framework(a.kind+"ReplaceIfSent")+"(func(plan, state "+value+") bool { return "+sentSame(g, a, "plan", "state")+" }, "+fmt.Sprint(ifConfigured)+")")
+		} else if a.replace && a.spelling != nil {
+			// Not when the configuration only writes it another way.
+			modifiers = append(modifiers, c.framework("StringReplaceSpelled")+"("+c.framework(a.spelling.framework)+")")
 		} else if a.replace && a.wellKnown != "" {
 			// The same instant or length, however written.
 			same := g.QualifiedGoIdent(protoPackage.Ident("Equal")) + "(" + c.toProto(a, "plan") + ", " + c.toProto(a, "state") + ")"

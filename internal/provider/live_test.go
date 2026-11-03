@@ -3,6 +3,7 @@ package provider
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -107,6 +108,38 @@ resource "origincloud_pvs_volume" "restored" {
 				ResourceName:      "origincloud_pvs_snapshot.data",
 				ImportState:       true,
 				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
+// TestLiveIAM reads IAM against the live API, with the credentials the
+// provider finds in the environment, when ORIGINCLOUD_LIVE_ZONE is set as
+// for TestLivePVS: it lists the predefined roles and the caller's own role
+// bindings (organizations/-), which it needs no permission for. It changes
+// nothing.
+func TestLiveIAM(t *testing.T) {
+	if os.Getenv("ORIGINCLOUD_LIVE_ZONE") == "" {
+		t.Skip("ORIGINCLOUD_LIVE_ZONE isn't set")
+	}
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			{
+				Config: `
+data "origincloud_iam_roles" "all" {}
+
+data "origincloud_iam_role_bindings" "mine" {
+  organization = "-"
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckTypeSetElemNestedAttrs("data.origincloud_iam_roles.all", "roles.*", map[string]string{"name": "roles/owner"}),
+					// The caller holds a role somewhere, or couldn't run
+					// TestLivePVS.
+					resource.TestMatchResourceAttr("data.origincloud_iam_role_bindings.mine", "role_bindings.0.name", regexp.MustCompile(`^organizations/[^/]+/roleBindings/[^/]+$`)),
+					resource.TestMatchResourceAttr("data.origincloud_iam_role_bindings.mine", "role_bindings.0.role", regexp.MustCompile(`^roles/`)),
+				),
 			},
 		},
 	})
