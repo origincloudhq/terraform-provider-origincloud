@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -71,8 +72,10 @@ type iamBinding struct {
 // deleted:user:{user} once the account is gone, which changeEmail,
 // unverify and deleteUser bring about, as a user would outside Terraform.
 // A service account's client secret is in its create's response only. A
-// create repeated with the same request id answers as the first did, as
-// it is now: a service account without its secret.
+// create repeated with the same request id is refused with 409 CONFLICT,
+// naming the account in its ErrorInfo metadata, as the secret went out
+// with the first answer only; loseCreateAnswer drops that first answer, as
+// a connection that breaks off after the server acted does.
 type fakeIAM struct {
 	*httptest.Server
 
@@ -86,6 +89,9 @@ type fakeIAM struct {
 	secrets map[string]string
 	// created are the resources each request id created.
 	created map[string]string
+	// loseCreateAnswer makes the next service account create close the
+	// connection instead of answering, once the account exists.
+	loseCreateAnswer bool
 	// calls are the mutations received, such as
 	// "DELETE organizations/acme/roleBindings/rb-1", and requestIDs their
 	// request ids, empty for a mutation that sent none.
@@ -348,7 +354,7 @@ func (f *fakeIAM) owners(organization string) int {
 
 func (f *fakeIAM) createServiceAccount(w http.ResponseWriter, organization, requestID string, body []byte) {
 	if name, ok := f.created[requestID]; ok && requestID != "" {
-		writeMessage(w, f.serviceAccounts[name])
+		writeReplayedCreate(w, name)
 		return
 	}
 	a := new(iamv1beta1.ServiceAccount)
@@ -370,7 +376,35 @@ func (f *fakeIAM) createServiceAccount(w http.ResponseWriter, organization, requ
 	created := proto.Clone(a).(*iamv1beta1.ServiceAccount)
 	created.ClientSecret = "secret-" + id
 	f.secrets[a.Name] = created.ClientSecret
+	if f.loseCreateAnswer {
+		f.loseCreateAnswer = false
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			panic(err)
+		}
+		_ = conn.Close()
+		return
+	}
 	writeMessage(w, created)
+}
+
+// writeReplayedCreate refuses a service account create whose request id
+// already created account, as the API does.
+func writeReplayedCreate(w http.ResponseWriter, account string) {
+	body, _ := json.Marshal(map[string]any{"error": map[string]any{
+		"code":   http.StatusConflict,
+		"status": "FAILED_PRECONDITION",
+		"message": "the service account " + account + " was created by an earlier request with this request_id; " +
+			"its client secret was returned only to that request. To get a working secret, delete that account and create a new one",
+		"details": []map[string]any{
+			{"@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": "CONFLICT", "domain": "origincloudapis.eu",
+				"metadata": map[string]string{"serviceAccount": account}},
+			{"@type": "type.googleapis.com/google.rpc.RequestInfo", "requestId": "fake-request"},
+		},
+	}})
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusConflict)
+	_, _ = w.Write(body)
 }
 
 func (f *fakeIAM) serviceAccount(w http.ResponseWriter, r *http.Request, name string) {
