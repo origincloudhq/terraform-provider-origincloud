@@ -713,3 +713,51 @@ func TestUnsupportedFieldsFailGeneration(t *testing.T) {
 		})
 	}
 }
+
+// withMember gives Widget a required, immutable string field member.
+var withMember = withField("Widget", `name: "member" number: 9 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: REQUIRED [google.api.field_behavior]: IMMUTABLE }`)
+
+// A spelled field replaces the resource only when it names something
+// else, and the framework keeps its configured value.
+func TestASpelledFieldIsReplacedOnlyWhenItNamesSomethingElse(t *testing.T) {
+	saved := spellings
+	spellings = []spelling{{resource: "test.widgets.v1.Widget", field: "member", framework: "MemberSpelling", doc: "Spelled."}}
+	t.Cleanup(func() { spellings = saved })
+	files, failure := run(t, withMember)
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	contains(t, "widget.gen.go", files["internal/services/widgetsv1/widget.gen.go"],
+		`"member": schema.StringAttribute{ MarkdownDescription: "Spelled.", Required: true, PlanModifiers: []planmodifier.String{framework.StringReplaceSpelled(framework.MemberSpelling)}, },`,
+		`Spelled: []framework.Spelled[widgetModel]{ { Attribute: "member", Spelling: framework.MemberSpelling, Value: func(m *widgetModel) *types.String { return &m.Member }, }, },`,
+	)
+	// The list data source's item isn't.
+	contains(t, "widget.gen.go", files["internal/services/widgetsv1/widget.gen.go"],
+		`"member": schema1.StringAttribute{ MarkdownDescription: "", Computed: true, },`,
+	)
+}
+
+// A spelling declared for a field the API hasn't, or that isn't a
+// required, immutable string, fails generation; one of a package the API
+// hasn't yet waits for it.
+func TestSpellingsAreCheckedAgainstTheAPI(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		spelling spelling
+		want     string // empty: generation succeeds
+	}{
+		{"no such field", spelling{resource: "test.widgets.v1.Widget", field: "owner"}, "spelling owner: no field test.widgets.v1.Widget.owner"},
+		{"an output-only field", spelling{resource: "test.widgets.v1.Widget", field: "aliases"}, "spelling aliases: the field isn't a REQUIRED, IMMUTABLE string"},
+		{"a package the API hasn't yet", spelling{resource: "test.gizmos.v1.Gizmo", field: "member"}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			saved := spellings
+			spellings = []spelling{tc.spelling}
+			t.Cleanup(func() { spellings = saved })
+			_, failure := run(t, withMember)
+			if tc.want == "" && failure != "" || !strings.Contains(failure, tc.want) {
+				t.Errorf("generation failed with %q, want %q", failure, tc.want)
+			}
+		})
+	}
+}

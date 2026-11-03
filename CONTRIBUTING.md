@@ -186,6 +186,16 @@ to the plugin or `internal/framework`.
   published, and the service's first regeneration has it from the start.
   An imported resource has none, and
   data sources leave it out: no read answers with it.
+- A required, immutable string the API answers in a form of its own, such
+  as a role binding's `member` (`user:Mail@Example.com` is answered as
+  `user:mail@example.com`, and later with the user's new address), is
+  **spelled**: the state keeps the value configured while the API's answer
+  names the same thing, as the framework's `Spelling` for it says, and
+  records the answer in the resource's private state, so that a
+  configuration changed to it doesn't replace the resource either; only a
+  value that names something else does. Nothing in the API marks such a
+  field, so each is declared in `spellings.go`, which generation checks
+  against the API, as it does secrets.
 
 The plugin's tests include a test API, `internal/testapi/firewalls.prototext`,
 with a firewall, whose fields are nested messages, lists, sets and maps,
@@ -221,7 +231,7 @@ scripts/generate.sh --write   # generate the code and docs again; without --writ
 scripts/update.sh             # move to the newest API and SDK, and generate
 go test ./...                 # runs Terraform against fakes of each service and the test API
 ORIGINCLOUD_LIVE_ZONE=projects/<project>/zones/<zone> \
-  go test -count=1 -v -run TestLivePVS ./internal/provider   # against the live API
+  go test -count=1 -v -run TestLive ./internal/provider   # against the live API
 ```
 
 CI also checks formatting (`gofmt`), `go mod tidy`, `go vet`, the release

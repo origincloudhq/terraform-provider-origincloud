@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -83,6 +84,10 @@ type ResourceSpec[M any, P proto.Message] struct {
 	Configured func(config *M) []string
 	Release    func(plan, config *M, owned []string)
 	Clear      func(ctx context.Context, client *core.Client, name string, fields []string) error
+
+	// Spelled are the attributes the API answers in a form of its own,
+	// such as a role binding's member (Spelling).
+	Spelled []Spelled[M]
 }
 
 // A Toggle is a boolean attribute that a pair of custom methods (AIP-136)
@@ -167,7 +172,8 @@ func (r *Resource[M, P]) Create(ctx context.Context, req resource.CreateRequest,
 		// whose storage couldn't be created, leaves it to delete: it goes
 		// into the state, where Terraform marks it tainted and replaces it.
 		if target := OperationTarget(op.Proto()); target != "" {
-			if created, err = r.spec.Get(ctx, r.client, target); err == nil && r.spec.FromProto(created, &m) == nil {
+			plan := m
+			if created, err = r.spec.Get(ctx, r.client, target); err == nil && r.fromProto(ctx, created, &plan, &m, resp.Private, &resp.Diagnostics) == nil {
 				resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
 			}
 		}
@@ -181,7 +187,7 @@ func (r *Resource[M, P]) Create(ctx context.Context, req resource.CreateRequest,
 // being the planned state, after setting its toggles.
 func (r *Resource[M, P]) created(ctx context.Context, m M, created P, resp *resource.CreateResponse) {
 	plan := m
-	if err := r.spec.FromProto(created, &m); err != nil {
+	if err := r.fromProto(ctx, created, &plan, &m, resp.Private, &resp.Diagnostics); err != nil {
 		resp.Diagnostics.AddError(r.summary("read the created"), err.Error())
 		return
 	}
@@ -192,7 +198,7 @@ func (r *Resource[M, P]) created(ctx context.Context, m M, created P, resp *reso
 		resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
 		return
 	}
-	if err := r.spec.FromProto(toggled, &m); err != nil {
+	if err := r.fromProto(ctx, toggled, &plan, &m, resp.Private, &resp.Diagnostics); err != nil {
 		resp.Diagnostics.AddError(r.summary("read the created"), err.Error())
 		return
 	}
@@ -213,7 +219,8 @@ func (r *Resource[M, P]) Read(ctx context.Context, req resource.ReadRequest, res
 		resp.Diagnostics.AddError(r.summary("read"), err.Error())
 		return
 	}
-	if err := r.spec.FromProto(got, &m); err != nil {
+	prior := m
+	if err := r.fromProto(ctx, got, &prior, &m, resp.Private, &resp.Diagnostics); err != nil {
 		resp.Diagnostics.AddError(r.summary("read"), err.Error())
 		return
 	}
@@ -243,7 +250,8 @@ func (r *Resource[M, P]) Update(ctx context.Context, req resource.UpdateRequest,
 		return
 	}
 	toggled, toggleErr := r.toggle(ctx, &plan, r.spec.Name(&state), got)
-	if err := r.spec.FromProto(toggled, &plan); err != nil {
+	planned := plan
+	if err := r.fromProto(ctx, toggled, &planned, &plan, resp.Private, &resp.Diagnostics); err != nil {
 		resp.Diagnostics.AddError(r.summary("read the updated"), err.Error())
 		return
 	}
@@ -291,6 +299,18 @@ func (r *Resource[M, P]) Delete(ctx context.Context, req resource.DeleteRequest,
 		}
 		resp.Diagnostics.AddError(r.summary("delete"), err.Error())
 	}
+}
+
+// fromProto sets m from got, the resource the API answered with, over
+// prior, the plan or the state m held before: the attributes the API
+// spells in a form of its own keep their values in prior while got names
+// the same thing, and the private state records got's.
+func (r *Resource[M, P]) fromProto(ctx context.Context, got P, prior, m *M, private privateWriter, diags *diag.Diagnostics) error {
+	if err := r.spec.FromProto(got, m); err != nil {
+		return err
+	}
+	r.respell(ctx, prior, m, private, diags)
+	return nil
 }
 
 // toggle brings the resource named name, which is got, to the toggles'

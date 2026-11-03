@@ -17,7 +17,7 @@ One role granted to one member, organization-wide or in one project. A binding c
 
 ### Required
 
-- `member` (String) Who holds the role: `user:{email}` or `serviceAccount:{service_account}`. A user is shown with their account's current verified address, as `userId:{user}` when it has none, or as `deleted:user:{user}` once the account is gone. Changing it replaces the role binding.
+- `member` (String) Who holds the role: `user:{email}` or `serviceAccount:{service_account}`. A user is shown with their account's current verified address, as `userId:{user}` when it has none, or as `deleted:user:{user}` once the account is gone. Changing it replaces the role binding, unless it names the same member another way: an address in another case, or the address the user's account has now. While the API answers with the same account under another address, or as `userId:{user}`, the state keeps the member as configured; answered as `deleted:user:{user}`, once the account is gone, the binding is replaced.
 - `organization` (String) The organization the role binding is in. Changing it replaces the role binding.
 - `role` (String) The role granted, `roles/{role}`. Changing it replaces the role binding.
 
