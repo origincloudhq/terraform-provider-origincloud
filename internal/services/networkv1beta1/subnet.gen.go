@@ -74,7 +74,7 @@ func subnetSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"route_table": schema.StringAttribute{
-				MarkdownDescription: "The route table that decides where the subnet's traffic goes, as the subnet's route table association (a `RouteTableAssociation`) sets it. Empty while it has none: the subnet then has no route out of its VPC and counts as a subnet whose route table has no default route. Internet access is decided per VPC and address family, from the route tables of all its subnets (a `Route` with that family's default destination).",
+				MarkdownDescription: "The route table that decides where the subnet's traffic goes, as the subnet's route table association (a `RouteTableAssociation`) sets it. A subnet reaches, and is reached from, the internet for an address family only if its own route table has that family's default route (a `Route` with that family's default destination). Empty while it has none: a subnet with no route table has no route out of its VPC and isn't reachable from the internet, even when the VPC has an internet gateway.",
 				Computed:            true,
 			},
 			"acl": schema.StringAttribute{
@@ -291,7 +291,7 @@ func subnetListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"route_table": schema1.StringAttribute{
-							MarkdownDescription: "The route table that decides where the subnet's traffic goes, as the subnet's route table association (a `RouteTableAssociation`) sets it. Empty while it has none: the subnet then has no route out of its VPC and counts as a subnet whose route table has no default route. Internet access is decided per VPC and address family, from the route tables of all its subnets (a `Route` with that family's default destination).",
+							MarkdownDescription: "The route table that decides where the subnet's traffic goes, as the subnet's route table association (a `RouteTableAssociation`) sets it. A subnet reaches, and is reached from, the internet for an address family only if its own route table has that family's default route (a `Route` with that family's default destination). Empty while it has none: a subnet with no route table has no route out of its VPC and isn't reachable from the internet, even when the VPC has an internet gateway.",
 							Computed:            true,
 						},
 						"acl": schema1.StringAttribute{

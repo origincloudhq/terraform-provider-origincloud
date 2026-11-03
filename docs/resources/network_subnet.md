@@ -40,5 +40,5 @@ The part of a VPC in one zone, with its own address ranges.
 - `ipv6_dns_servers` (List of String) The DNS servers instances in the subnet use over IPv6.
 - `ipv6_gateway` (String) The IPv6 address of the subnet's router.
 - `name` (String) The subnet's resource name.
-- `route_table` (String) The route table that decides where the subnet's traffic goes, as the subnet's route table association (a `RouteTableAssociation`) sets it. Empty while it has none: the subnet then has no route out of its VPC and counts as a subnet whose route table has no default route. Internet access is decided per VPC and address family, from the route tables of all its subnets (a `Route` with that family's default destination).
+- `route_table` (String) The route table that decides where the subnet's traffic goes, as the subnet's route table association (a `RouteTableAssociation`) sets it. A subnet reaches, and is reached from, the internet for an address family only if its own route table has that family's default route (a `Route` with that family's default destination). Empty while it has none: a subnet with no route table has no route out of its VPC and isn't reachable from the internet, even when the VPC has an internet gateway.
 - `urn` (String) The subnet's URN, the identifier access policies and the audit log use.
