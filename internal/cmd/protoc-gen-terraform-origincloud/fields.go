@@ -352,21 +352,30 @@ func applyBehaviors(s scope, a *attribute, behaviors []annotations.FieldBehavior
 	case (a.presence || a.chosenObject) && s.inList && !s.replaced:
 		// Kept by position, a value could be planned for another element.
 		return fmt.Errorf("a field with explicit presence (proto3 optional) can't be in a list's elements: they are matched by position, so the value kept for one could be planned for another")
-	case has(annotations.FieldBehavior_OPTIONAL) && s.t.managedSingleton() && !s.nested && !a.presence && !a.chosenObject:
+	case has(annotations.FieldBehavior_OPTIONAL) && s.t.managedSingleton() && !s.nested && !a.presence && !a.chosenObject && !a.collection():
 		// Created by an update, a singleton's field left out would plan
 		// null while the API has a value.
 		return fmt.Errorf("a singleton's OPTIONAL field needs explicit presence (proto3 optional), so that leaving it out keeps its value")
 	case has(annotations.FieldBehavior_OPTIONAL):
 		a.optional = true
 		// With explicit presence, the API chooses the value left out, and
-		// the state keeps it until one is set.
-		a.computed, a.keep = a.presence || a.chosenObject, a.presence || a.chosenObject
-		if a.presence || a.chosenObject {
-			if s.t.managedSingleton() && !s.nested {
-				a.doc = strings.TrimSpace(a.doc + " Left out, Terraform doesn't manage it, and it keeps its current value; removed from the configuration once set, it is unset. See the field's description for what unset means.")
-			} else {
-				a.doc = strings.TrimSpace(a.doc + " Left out, it keeps its current value; see the field's description.")
+		// the state keeps it until one is set. A singleton's repeated or
+		// map field can't have presence, but is chosen the same way: left
+		// out (null), it isn't sent, while [] or {} is, empty.
+		singleton := s.t.managedSingleton() && !s.nested
+		chosen := a.presence || a.chosenObject || singleton && a.collection()
+		a.computed, a.keep = chosen, chosen
+		switch {
+		case singleton && a.collection():
+			empty := "`[]`"
+			if a.kind == "Map" {
+				empty = "`{}`"
 			}
+			a.doc = strings.TrimSpace(a.doc + " Left out, Terraform doesn't manage it, and it keeps its current value; set to " + empty + ", or removed from the configuration once set, it is emptied.")
+		case singleton && chosen:
+			a.doc = strings.TrimSpace(a.doc + " Left out, Terraform doesn't manage it, and it keeps its current value; removed from the configuration once set, it is unset. See the field's description for what unset means.")
+		case chosen:
+			a.doc = strings.TrimSpace(a.doc + " Left out, it keeps its current value; see the field's description.")
 		}
 		if !s.nested {
 			a.replace = !updatable

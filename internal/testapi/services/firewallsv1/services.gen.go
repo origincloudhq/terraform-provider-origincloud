@@ -25,5 +25,7 @@ func DataSources() []func() datasource.DataSource {
 		framework.NewDataSource(keyByNameDataSource()),
 		framework.NewListDataSource(keyListDataSource()),
 		framework.NewListDataSource(vaultListDataSource()),
+		framework.NewDataSource(ticketDataSource()),
+		framework.NewListDataSource(ticketListDataSource()),
 	}
 }

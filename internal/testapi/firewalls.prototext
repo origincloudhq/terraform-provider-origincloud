@@ -1,6 +1,8 @@
 # A test API, as a FileDescriptorProto: a vault, whose id the client
-# chooses, listed by a required filter, with a singleton quota; a firewall, whose fields are nested
-# messages, repeated fields, ordered and unordered, and maps; and a key,
+# chooses, listed by a required filter, with a singleton quota, whose
+# fields have presence or are repeated, and tickets, created outside
+# Terraform; a firewall, whose fields are nested messages, repeated fields,
+# ordered and unordered, and maps; and a key,
 # created synchronously, with timestamps and durations, fields with explicit
 # presence, oneofs, a secret, a toggle and a terminal state.
 # The plugin's tests generate the provider's code for it, and the protobuf
@@ -72,6 +74,11 @@ service {
   # A singleton: each vault has its quota, which is read and updated only.
   method { name: "GetVaultQuota" input_type: ".test.firewalls.v1.VaultNameRequest" output_type: ".test.firewalls.v1.VaultQuota" }
   method { name: "UpdateVaultQuota" input_type: ".test.firewalls.v1.UpdateVaultQuotaRequest" output_type: ".test.firewalls.v1.VaultQuota" }
+  # A vault's tickets are opened and never deleted: created outside
+  # Terraform.
+  method { name: "GetTicket" input_type: ".test.firewalls.v1.VaultNameRequest" output_type: ".test.firewalls.v1.Ticket" }
+  method { name: "ListTickets" input_type: ".test.firewalls.v1.ListTicketsRequest" output_type: ".test.firewalls.v1.ListTicketsResponse" }
+  method { name: "CreateTicket" input_type: ".test.firewalls.v1.CreateTicketRequest" output_type: ".test.firewalls.v1.Ticket" }
 }
 enum_type {
   name: "Mode"
@@ -270,8 +277,38 @@ message_type {
   field { name: "max_secrets" number: 2 label: LABEL_OPTIONAL type: TYPE_INT64 json_name: "maxSecrets" oneof_index: 0 proto3_optional: true options { [google.api.field_behavior]: OPTIONAL } }
   field { name: "max_versions" number: 3 label: LABEL_OPTIONAL type: TYPE_INT64 json_name: "maxVersions" oneof_index: 1 proto3_optional: true options { [google.api.field_behavior]: OPTIONAL } }
   field { name: "usage" number: 4 label: LABEL_OPTIONAL type: TYPE_INT64 json_name: "usage" options { [google.api.field_behavior]: OUTPUT_ONLY } }
+  # Repeated and map fields, which can't have presence: a list, a set and
+  # a map.
+  field { name: "alert_percents" number: 5 label: LABEL_REPEATED type: TYPE_INT32 json_name: "alertPercents" options { [google.api.field_behavior]: OPTIONAL } }
+  field { name: "recipients" number: 6 label: LABEL_REPEATED type: TYPE_STRING json_name: "recipients" options { [google.api.field_behavior]: OPTIONAL [google.api.field_behavior]: UNORDERED_LIST } }
+  field { name: "labels" number: 7 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.firewalls.v1.VaultQuota.LabelsEntry" json_name: "labels" options { [google.api.field_behavior]: OPTIONAL } }
   oneof_decl { name: "_max_secrets" }
   oneof_decl { name: "_max_versions" }
+  nested_type {
+    name: "LabelsEntry"
+    options { map_entry: true }
+    field { name: "key" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "key" }
+    field { name: "value" number: 2 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "value" }
+  }
+}
+message_type {
+  name: "Ticket"
+  options { [google.api.resource] { type: "vaults.origincloudapis.eu/Ticket" pattern: "vaults/{vault}/tickets/{ticket}" singular: "ticket" plural: "tickets" } }
+  field { name: "name" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "name" options { [google.api.field_behavior]: IDENTIFIER } }
+  field { name: "subject" number: 2 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "subject" options { [google.api.field_behavior]: REQUIRED [google.api.field_behavior]: IMMUTABLE } }
+}
+message_type {
+  name: "ListTicketsRequest"
+  field { name: "parent" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "parent" }
+}
+message_type {
+  name: "ListTicketsResponse"
+  field { name: "tickets" number: 1 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.firewalls.v1.Ticket" json_name: "tickets" }
+}
+message_type {
+  name: "CreateTicketRequest"
+  field { name: "parent" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING json_name: "parent" }
+  field { name: "ticket" number: 2 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".test.firewalls.v1.Ticket" json_name: "ticket" }
 }
 message_type {
   name: "VaultNameRequest"

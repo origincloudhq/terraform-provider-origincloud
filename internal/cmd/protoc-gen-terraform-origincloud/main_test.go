@@ -385,6 +385,13 @@ func withSingleton(field string, methods ...string) func(*descriptorpb.FileDescr
 			`name: "UpdateSettingsRequest"
 			 field { name: "settings" number: 1 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".test.widgets.v1.Settings" }
 			 field { name: "update_mask" number: 2 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".google.protobuf.FieldMask" }`)(file)
+		withMethods(methods...)(file)
+	}
+}
+
+// withMethods adds the methods, given in prototext, to the service.
+func withMethods(methods ...string) func(*descriptorpb.FileDescriptorProto) {
+	return func(file *descriptorpb.FileDescriptorProto) {
 		for _, text := range methods {
 			m := new(descriptorpb.MethodDescriptorProto)
 			if err := prototext.Unmarshal([]byte(text), m); err != nil {
@@ -421,6 +428,32 @@ func TestASingletonIsAResource(t *testing.T) {
 		"Destroying it unsets the settings Terraform set",
 	)
 	contains(t, "services.gen.go", files["internal/services/widgetsv1/services.gen.go"], "framework.NewResource(settingsResource()),")
+}
+
+// A singleton's repeated and map fields can't have presence, but are
+// chosen as a field with presence is: optional and computed, kept while
+// left out, and released, to be sent empty, once owned and removed.
+func TestASingletonsRepeatedFieldsAreChosen(t *testing.T) {
+	files, failure := run(t, withSingleton(budget+`
+		field { name: "contacts" number: 3 label: LABEL_REPEATED type: TYPE_STRING options { [google.api.field_behavior]: OPTIONAL } }
+		field { name: "tags" number: 4 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.widgets.v1.Settings.TagsEntry" options { [google.api.field_behavior]: OPTIONAL } }
+		nested_type {
+		  name: "TagsEntry" options { map_entry: true }
+		  field { name: "key" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING }
+		  field { name: "value" number: 2 label: LABEL_OPTIONAL type: TYPE_STRING }
+		}`, getSettings, updateSettings))
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	contains(t, "settings.gen.go", files["internal/services/widgetsv1/settings.gen.go"],
+		`"contacts": schema.ListAttribute{ MarkdownDescription: "Left out, Terraform doesn't manage it, and it keeps its current value; set to `+"`[]`"+`, or removed from the configuration once set, it is emptied.", Optional: true, Computed: true, ElementType: types.StringType, Validators: []validator.List{framework.ElementCheck{}}, PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()}, },`,
+		`"tags": schema.MapAttribute{ MarkdownDescription: "Left out, Terraform doesn't manage it, and it keeps its current value; set to `+"`{}`"+`, or removed from the configuration once set, it is emptied.", Optional: true, Computed: true,`,
+		`PlanModifiers: []planmodifier.Map{mapplanmodifier.UseStateForUnknown()},`,
+		`if framework.IsSet(plan.Contacts) { mask = append(mask, "contacts") }`,
+		`if !config.Tags.IsNull() { fields = append(fields, "tags") }`,
+		`if config.Contacts.IsNull() && slices.Contains(owned, "contacts") { plan.Contacts = types.ListUnknown(types.StringType) }`,
+		`if config.Tags.IsNull() && slices.Contains(owned, "tags") { plan.Tags = types.MapUnknown(types.StringType) }`,
+	)
 }
 
 // A singleton the service only reads is a data source.
@@ -576,6 +609,59 @@ func TestSecretsAreCheckedAgainstTheAPI(t *testing.T) {
 			secrets = []secret{tc.secret}
 			t.Cleanup(func() { secrets = saved })
 			_, failure := run(t, nil)
+			if tc.want == "" && failure != "" || !strings.Contains(failure, tc.want) {
+				t.Errorf("generation failed with %q, want %q", failure, tc.want)
+			}
+		})
+	}
+}
+
+// createGadget creates gadgets, which the API never deletes.
+const createGadget = `name: "CreateGadget" input_type: ".test.widgets.v1.NameRequest" output_type: ".test.widgets.v1.Gadget"`
+
+// A create without a delete fails generation: Terraform could create the
+// resource but never destroy it. Declared created outside Terraform, the
+// type is read only, by its data source.
+func TestATypeCreatedOutsideTerraformIsReadOnly(t *testing.T) {
+	_, failure := run(t, withMethods(createGadget))
+	if want := "Gadget: CreateGadget without DeleteGadget, and not declared created outside Terraform"; !strings.Contains(failure, want) {
+		t.Errorf("generation failed with %q, want %q", failure, want)
+	}
+	saved := createdOutside
+	createdOutside = []outside{{"test.widgets.v1.Gadget", "a gadget is never deleted"}}
+	t.Cleanup(func() { createdOutside = saved })
+	files, failure := run(t, withMethods(createGadget))
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	services := files["internal/services/widgetsv1/services.gen.go"]
+	contains(t, "services.gen.go", services, "framework.NewDataSource(gadgetDataSource()),")
+	if strings.Contains(services, "gadgetResource") {
+		t.Error("a type created outside Terraform is a resource")
+	}
+}
+
+// A type declared created outside Terraform that the API hasn't, doesn't
+// create or deletes fails generation; one of a package the API hasn't yet
+// waits for it.
+func TestTypesCreatedOutsideAreCheckedAgainstTheAPI(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		resource protoreflect.FullName
+		change   func(*descriptorpb.FileDescriptorProto)
+		want     string // empty: generation succeeds
+	}{
+		{"no such type", "test.widgets.v1.Gizmo", nil, "created outside Terraform: no resource type test.widgets.v1.Gizmo"},
+		{"deleted", "test.widgets.v1.Widget", nil, "Widget: declared created outside Terraform, but DeleteWidget deletes it, so it can be a resource"},
+		{"not created", "test.widgets.v1.Gadget", nil, "Gadget: declared created outside Terraform, but there is no CreateGadget"},
+		{"a package the API hasn't yet", "test.gizmos.v1.Gizmo", nil, ""},
+		{"created", "test.widgets.v1.Gadget", withMethods(createGadget), ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			saved := createdOutside
+			createdOutside = []outside{{tc.resource, "a test"}}
+			t.Cleanup(func() { createdOutside = saved })
+			_, failure := run(t, tc.change)
 			if tc.want == "" && failure != "" || !strings.Contains(failure, tc.want) {
 				t.Errorf("generation failed with %q, want %q", failure, tc.want)
 			}

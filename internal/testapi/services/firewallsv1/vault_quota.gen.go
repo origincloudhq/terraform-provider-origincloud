@@ -5,10 +5,15 @@ package firewallsv1
 
 import (
 	context "context"
+	attr "github.com/hashicorp/terraform-plugin-framework/attr"
 	schema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	int64planmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
+	listplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
+	mapplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/mapplanmodifier"
 	planmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	setplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	stringplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	validator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	types "github.com/hashicorp/terraform-plugin-framework/types"
 	framework "github.com/origincloudhq/terraform-provider-origincloud/internal/framework"
 	firewallsv1 "github.com/origincloudhq/terraform-provider-origincloud/internal/testapi/firewallsv1"
@@ -19,12 +24,15 @@ import (
 
 // vaultQuotaModel is origincloud_vaults_vault_quota's state.
 type vaultQuotaModel struct {
-	ID          types.String `tfsdk:"id"`
-	Vault       types.String `tfsdk:"vault"`
-	Name        types.String `tfsdk:"name"`
-	MaxSecrets  types.Int64  `tfsdk:"max_secrets"`
-	MaxVersions types.Int64  `tfsdk:"max_versions"`
-	Usage       types.Int64  `tfsdk:"usage"`
+	ID            types.String `tfsdk:"id"`
+	Vault         types.String `tfsdk:"vault"`
+	Name          types.String `tfsdk:"name"`
+	MaxSecrets    types.Int64  `tfsdk:"max_secrets"`
+	MaxVersions   types.Int64  `tfsdk:"max_versions"`
+	Usage         types.Int64  `tfsdk:"usage"`
+	AlertPercents types.List   `tfsdk:"alert_percents"`
+	Recipients    types.Set    `tfsdk:"recipients"`
+	Labels        types.Map    `tfsdk:"labels"`
 }
 
 func vaultQuotaSchema() schema.Schema {
@@ -62,15 +70,42 @@ func vaultQuotaSchema() schema.Schema {
 				MarkdownDescription: "",
 				Computed:            true,
 			},
+			"alert_percents": schema.ListAttribute{
+				MarkdownDescription: "Left out, Terraform doesn't manage it, and it keeps its current value; set to `[]`, or removed from the configuration once set, it is emptied.",
+				Optional:            true,
+				Computed:            true,
+				ElementType:         types.Int64Type,
+				Validators:          []validator.List{framework.ElementCheck{Int32: true}},
+				PlanModifiers:       []planmodifier.List{listplanmodifier.UseStateForUnknown()},
+			},
+			"recipients": schema.SetAttribute{
+				MarkdownDescription: "Left out, Terraform doesn't manage it, and it keeps its current value; set to `[]`, or removed from the configuration once set, it is emptied.",
+				Optional:            true,
+				Computed:            true,
+				ElementType:         types.StringType,
+				Validators:          []validator.Set{framework.ElementCheck{}},
+				PlanModifiers:       []planmodifier.Set{setplanmodifier.UseStateForUnknown()},
+			},
+			"labels": schema.MapAttribute{
+				MarkdownDescription: "Left out, Terraform doesn't manage it, and it keeps its current value; set to `{}`, or removed from the configuration once set, it is emptied.",
+				Optional:            true,
+				Computed:            true,
+				ElementType:         types.StringType,
+				Validators:          []validator.Map{framework.ElementCheck{}},
+				PlanModifiers:       []planmodifier.Map{mapplanmodifier.UseStateForUnknown()},
+			},
 		},
 	}
 }
 
 func vaultQuotaToProto(m *vaultQuotaModel) *firewallsv1.VaultQuota {
 	return &firewallsv1.VaultQuota{
-		Name:        m.Name.ValueString(),
-		MaxSecrets:  framework.Int64Ptr(m.MaxSecrets),
-		MaxVersions: framework.Int64Ptr(m.MaxVersions),
+		Name:          m.Name.ValueString(),
+		MaxSecrets:    framework.Int64Ptr(m.MaxSecrets),
+		MaxVersions:   framework.Int64Ptr(m.MaxVersions),
+		AlertPercents: framework.Elements(m.AlertPercents, func(e attr.Value) int32 { return int32(e.(types.Int64).ValueInt64()) }),
+		Recipients:    framework.Elements(m.Recipients, func(e attr.Value) string { return e.(types.String).ValueString() }),
+		Labels:        framework.StringMapToProto(m.Labels),
 	}
 }
 
@@ -85,6 +120,9 @@ func vaultQuotaFromProto(p *firewallsv1.VaultQuota, m *vaultQuotaModel) error {
 	m.MaxSecrets = framework.PresentInt64(p.MaxSecrets)
 	m.MaxVersions = framework.PresentInt64(p.MaxVersions)
 	m.Usage = types.Int64Value(int64(p.GetUsage()))
+	m.AlertPercents = framework.ListOf(types.Int64Type, p.GetAlertPercents(), func(v int32) types.Int64 { return types.Int64Value(int64(v)) })
+	m.Recipients = framework.StringSet(p.GetRecipients())
+	m.Labels = framework.StringMap(p.GetLabels())
 	return nil
 }
 
@@ -104,6 +142,15 @@ func vaultQuotaResource() framework.ResourceSpec[vaultQuotaModel, *firewallsv1.V
 			if !plan.MaxVersions.Equal(state.MaxVersions) {
 				mask = append(mask, "max_versions")
 			}
+			if !plan.AlertPercents.Equal(state.AlertPercents) {
+				mask = append(mask, "alert_percents")
+			}
+			if !plan.Recipients.Equal(state.Recipients) {
+				mask = append(mask, "recipients")
+			}
+			if !plan.Labels.Equal(state.Labels) {
+				mask = append(mask, "labels")
+			}
 			return mask
 		},
 		CreateSync: func(ctx context.Context, client *core.Client, plan *vaultQuotaModel) (*firewallsv1.VaultQuota, error) {
@@ -115,6 +162,15 @@ func vaultQuotaResource() framework.ResourceSpec[vaultQuotaModel, *firewallsv1.V
 			}
 			if framework.IsSet(plan.MaxVersions) {
 				mask = append(mask, "max_versions")
+			}
+			if framework.IsSet(plan.AlertPercents) {
+				mask = append(mask, "alert_percents")
+			}
+			if framework.IsSet(plan.Recipients) {
+				mask = append(mask, "recipients")
+			}
+			if framework.IsSet(plan.Labels) {
+				mask = append(mask, "labels")
 			}
 			if len(mask) == 0 {
 				return firewallsv1.NewVaultClient(client).GetVaultQuota(ctx, &firewallsv1.VaultNameRequest{Name: resource.Name})
@@ -129,6 +185,15 @@ func vaultQuotaResource() framework.ResourceSpec[vaultQuotaModel, *firewallsv1.V
 			if !config.MaxVersions.IsNull() {
 				fields = append(fields, "max_versions")
 			}
+			if !config.AlertPercents.IsNull() {
+				fields = append(fields, "alert_percents")
+			}
+			if !config.Recipients.IsNull() {
+				fields = append(fields, "recipients")
+			}
+			if !config.Labels.IsNull() {
+				fields = append(fields, "labels")
+			}
 			return fields
 		},
 		Release: func(plan, config *vaultQuotaModel, owned []string) {
@@ -137,6 +202,15 @@ func vaultQuotaResource() framework.ResourceSpec[vaultQuotaModel, *firewallsv1.V
 			}
 			if config.MaxVersions.IsNull() && slices.Contains(owned, "max_versions") {
 				plan.MaxVersions = types.Int64Unknown()
+			}
+			if config.AlertPercents.IsNull() && slices.Contains(owned, "alert_percents") {
+				plan.AlertPercents = types.ListUnknown(types.Int64Type)
+			}
+			if config.Recipients.IsNull() && slices.Contains(owned, "recipients") {
+				plan.Recipients = types.SetUnknown(types.StringType)
+			}
+			if config.Labels.IsNull() && slices.Contains(owned, "labels") {
+				plan.Labels = types.MapUnknown(types.StringType)
 			}
 		},
 		Clear: func(ctx context.Context, client *core.Client, name string, fields []string) error {

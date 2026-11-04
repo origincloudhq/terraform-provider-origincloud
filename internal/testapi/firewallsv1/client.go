@@ -125,7 +125,7 @@ func operation[T proto.Message](ctx context.Context, service *core.Service, meth
 
 // VaultClient calls the test API's VaultService. Its paths are /v1/{name},
 // /v1/vaults for creating (the id in the query) and listing (the owner in
-// the query).
+// the query), and /v1/{parent}/tickets for listing tickets.
 type VaultClient struct {
 	service *core.Service
 }
@@ -191,5 +191,17 @@ func (c *VaultClient) UpdateVaultQuota(ctx context.Context, req *UpdateVaultQuot
 	}
 	out := new(VaultQuota)
 	err = c.service.Call(ctx, core.Request{Method: http.MethodPatch, Path: "/v1/" + req.GetVaultQuota().GetName(), Query: query, Body: req.GetVaultQuota()}, out)
+	return out, err
+}
+
+func (c *VaultClient) GetTicket(ctx context.Context, req *VaultNameRequest) (*Ticket, error) {
+	out := new(Ticket)
+	err := c.service.Call(ctx, core.Request{Method: http.MethodGet, Path: "/v1/" + req.GetName(), Idempotent: true}, out)
+	return out, err
+}
+
+func (c *VaultClient) ListTickets(ctx context.Context, req *ListTicketsRequest) (*ListTicketsResponse, error) {
+	out := new(ListTicketsResponse)
+	err := c.service.Call(ctx, core.Request{Method: http.MethodGet, Path: "/v1/" + req.GetParent() + "/tickets", Idempotent: true}, out)
 	return out, err
 }

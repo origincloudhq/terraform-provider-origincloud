@@ -89,6 +89,9 @@ func generate(gen *protogen.Plugin) error {
 	if err := checkSpellingsFound(gen.Files); err != nil {
 		return err
 	}
+	if err := checkOutsideFound(gen.Files); err != nil {
+		return err
+	}
 	for _, p := range packages {
 		generatePackageList(gen, p)
 	}
@@ -190,6 +193,9 @@ func generateFile(gen *protogen.Plugin, f *protogen.File, packages *[]*servicePa
 		}
 		shortcode, _, _ := strings.Cut(host, ".")
 		for _, t := range resourceTypes(f, s, shortcode) {
+			if err := applyOutside(&t); err != nil {
+				return fmt.Errorf("%s: %w", t.message.Desc.Name(), err)
+			}
 			if err := choosePattern(&t); err != nil {
 				return fmt.Errorf("%s: %w", t.message.Desc.Name(), err)
 			}
@@ -351,8 +357,10 @@ func enumValues(e *protogen.Enum) string {
 }
 
 func generateResource(g *protogen.GeneratedFile, t resourceType) error {
+	// Terraform could create it but never destroy it: one created outside
+	// Terraform is declared so (outside.go), and read only.
 	if t.create != nil && t.del == nil {
-		return fmt.Errorf("Create%s without Delete%[1]s", t.message.Desc.Name())
+		return fmt.Errorf("Create%s without Delete%[1]s, and not declared created outside Terraform", t.message.Desc.Name())
 	}
 	attrs, err := attributes(t, true, lowerFirst(t.message.GoIdent.GoName))
 	if err != nil {
