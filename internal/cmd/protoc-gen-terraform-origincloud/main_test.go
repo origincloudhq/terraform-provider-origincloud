@@ -868,3 +868,59 @@ func TestSpellingsAreCheckedAgainstTheAPI(t *testing.T) {
 		})
 	}
 }
+
+// polishWidget is a custom method no resource or data source calls.
+const polishWidget = `name: "PolishWidget" input_type: ".test.widgets.v1.NameRequest" output_type: ".test.widgets.v1.Widget"`
+
+// A method no resource or data source calls fails generation, unless it is
+// declared not managed by Terraform, with its reason.
+func TestAMethodNothingCallsFailsGeneration(t *testing.T) {
+	_, failure := run(t, withMethods(polishWidget))
+	if want := "test.widgets.v1.WidgetService.PolishWidget: no resource or data source calls it, and it isn't declared not managed by Terraform"; !strings.Contains(failure, want) {
+		t.Errorf("generation failed with %q, want %q", failure, want)
+	}
+	saved := methodsNotManaged
+	methodsNotManaged = []notManaged{{"test.widgets.v1.WidgetService.PolishWidget", "a polish is an action"}}
+	t.Cleanup(func() { methodsNotManaged = saved })
+	if _, failure := run(t, withMethods(polishWidget)); failure != "" {
+		t.Error(failure)
+	}
+}
+
+// A method declared not managed that the API hasn't, or that a resource or
+// data source calls, fails generation; one of a package the API hasn't yet
+// waits for it.
+func TestMethodsNotManagedAreCheckedAgainstTheAPI(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		method protoreflect.FullName
+		want   string // empty: generation succeeds
+	}{
+		{"no such method", "test.widgets.v1.WidgetService.PolishWidget", "not managed by Terraform: no method test.widgets.v1.WidgetService.PolishWidget"},
+		{"called by a resource", "test.widgets.v1.WidgetService.UpdateWidget", "test.widgets.v1.WidgetService.UpdateWidget is declared not managed by Terraform, but a resource or data source calls it"},
+		{"called by a data source", "test.widgets.v1.WidgetService.GetGadget", "test.widgets.v1.WidgetService.GetGadget is declared not managed by Terraform, but a resource or data source calls it"},
+		{"a package the API hasn't yet", "test.gizmos.v1.GizmoService.PolishGizmo", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			saved := methodsNotManaged
+			methodsNotManaged = []notManaged{{tc.method, "a test"}}
+			t.Cleanup(func() { methodsNotManaged = saved })
+			_, failure := run(t, nil)
+			if tc.want == "" && failure != "" || !strings.Contains(failure, tc.want) {
+				t.Errorf("generation failed with %q, want %q", failure, tc.want)
+			}
+		})
+	}
+}
+
+// An update of a type that is read only, such as a type created outside
+// Terraform, is called by nothing.
+func TestAReadOnlyTypesUpdateIsCalledByNothing(t *testing.T) {
+	saved := createdOutside
+	createdOutside = []outside{{"test.widgets.v1.Gadget", "a gadget is never deleted"}}
+	t.Cleanup(func() { createdOutside = saved })
+	_, failure := run(t, withMethods(createGadget, `name: "UpdateGadget" input_type: ".test.widgets.v1.NameRequest" output_type: ".test.widgets.v1.Gadget"`))
+	if want := "test.widgets.v1.WidgetService.UpdateGadget: no resource or data source calls it"; !strings.Contains(failure, want) {
+		t.Errorf("generation failed with %q, want %q", failure, want)
+	}
+}

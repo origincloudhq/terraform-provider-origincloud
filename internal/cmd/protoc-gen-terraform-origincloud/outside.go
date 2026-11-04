@@ -50,6 +50,7 @@ func applyOutside(t *resourceType) error {
 		return fmt.Errorf("declared created outside Terraform, but there is no Create%s", t.message.Desc.Name())
 	}
 	outsideFound[name] = true
+	methodsCalled[t.create.Desc.FullName()] = true // its reason is declared here
 	t.create = nil
 	return nil
 }
