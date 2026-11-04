@@ -212,6 +212,13 @@ to the plugin or `internal/framework`.
   lists it. Nothing in the API marks such a type, so each is declared in
   `outside.go`, with the reason, which generation checks against the API,
   as it does secrets: one the API doesn't create, or deletes, fails it.
+- Every method of a service is called by a generated resource or data
+  source, or is **not managed**, such as a query over a window of time
+  series, whose answer would change at every plan. Each method not managed
+  is declared in `methods.go`, with the reason. A method neither called nor
+  declared fails generation, so a method the API adds is never left out
+  unnoticed. A declaration the API doesn't have, or that something calls,
+  fails it too.
 
 The plugin's tests include a test API, `internal/testapi/firewalls.prototext`,
 with a firewall, whose fields are nested messages, lists, sets and maps;

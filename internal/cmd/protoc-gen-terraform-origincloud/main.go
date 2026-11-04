@@ -72,6 +72,7 @@ func main() {
 func generate(gen *protogen.Plugin) error {
 	gen.SupportedFeatures = uint64(pluginpb.CodeGeneratorResponse_FEATURE_PROTO3_OPTIONAL)
 	var packages []*servicePackage
+	methodsCalled = map[protoreflect.FullName]bool{}
 	for _, f := range gen.Files {
 		if !f.Generate {
 			continue
@@ -90,6 +91,9 @@ func generate(gen *protogen.Plugin) error {
 		return err
 	}
 	if err := checkOutsideFound(gen.Files); err != nil {
+		return err
+	}
+	if err := checkMethodsCalled(gen.Files); err != nil {
 		return err
 	}
 	for _, p := range packages {
@@ -227,6 +231,7 @@ func generateFile(gen *protogen.Plugin, f *protogen.File, packages *[]*servicePa
 			if err != nil {
 				return fmt.Errorf("%s: %w", t.message.Desc.Name(), err)
 			}
+			callMethods(t)
 		}
 	}
 	return nil

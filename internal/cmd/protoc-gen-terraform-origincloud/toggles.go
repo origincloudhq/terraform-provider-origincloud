@@ -101,6 +101,8 @@ func togglesOf(t resourceType) ([]resolvedToggle, error) {
 		}
 		resolved = append(resolved, r)
 		togglesFound[d.resource] = true
+		methodsCalled[r.set.Desc.FullName()] = true
+		methodsCalled[r.clear.Desc.FullName()] = true
 	}
 	return resolved, nil
 }
