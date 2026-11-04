@@ -252,6 +252,11 @@ ORIGINCLOUD_LIVE_ZONE=projects/<project>/zones/<zone> \
   go test -count=1 -v -run TestLive ./internal/provider   # against the live API
 ```
 
+The live tests only read, except `TestLivePVS`, which creates and destroys
+volumes and snapshots in the zone's project. Their credentials need
+`roles/owner` on that project, and `roles/viewer` and `roles/billing.viewer`
+on its organization, to list its projects, billing accounts and support cases.
+
 CI also checks formatting (`gofmt`), `go mod tidy`, `go vet`, the release
 build and the scripts. Releases are described in [RELEASING.md](RELEASING.md).
 

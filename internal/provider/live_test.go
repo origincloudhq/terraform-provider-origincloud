@@ -231,3 +231,63 @@ data "origincloud_network_vpcs" "project" {
 		},
 	})
 }
+
+// TestLiveBilling reads, in the live API, the billing accounts of the first
+// organization the caller belongs to, among them its default account, and
+// the billing countries, with the credentials TestLivePVS uses. It changes
+// nothing.
+func TestLiveBilling(t *testing.T) {
+	if os.Getenv("ORIGINCLOUD_LIVE_ZONE") == "" {
+		t.Skip("ORIGINCLOUD_LIVE_ZONE isn't set")
+	}
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			{
+				Config: `
+data "origincloud_resourcemanager_organizations" "mine" {}
+
+data "origincloud_billing_billing_accounts" "first" {
+  organization = element(split("/", data.origincloud_resourcemanager_organizations.mine.organizations[0].name), 1)
+}
+
+data "origincloud_billing_billing_countries" "all" {}
+
+data "origincloud_billing_billing_country" "de" {
+  name = "billingCountries/DE"
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckTypeSetElemNestedAttrs("data.origincloud_billing_billing_accounts.first", "billing_accounts.*", map[string]string{"default_account": "true"}),
+					resource.TestMatchResourceAttr("data.origincloud_billing_billing_accounts.first", "billing_accounts.0.name", regexp.MustCompile(`^organizations/[^/]+/billingAccounts/[^/]+$`)),
+					resource.TestCheckTypeSetElemNestedAttrs("data.origincloud_billing_billing_countries.all", "billing_countries.*", map[string]string{"region_code": "DE"}),
+					resource.TestCheckResourceAttr("data.origincloud_billing_billing_country.de", "vat_id_required", "false"),
+				),
+			},
+		},
+	})
+}
+
+// TestLiveSupport lists, in the live API, the support cases of the first
+// organization the caller belongs to, which may have none, with the
+// credentials TestLivePVS uses. It changes nothing.
+func TestLiveSupport(t *testing.T) {
+	if os.Getenv("ORIGINCLOUD_LIVE_ZONE") == "" {
+		t.Skip("ORIGINCLOUD_LIVE_ZONE isn't set")
+	}
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			{
+				Config: `
+data "origincloud_resourcemanager_organizations" "mine" {}
+
+data "origincloud_support_cases" "first" {
+  organization = element(split("/", data.origincloud_resourcemanager_organizations.mine.organizations[0].name), 1)
+}
+`,
+				Check: resource.TestCheckResourceAttrSet("data.origincloud_support_cases.first", "cases.#"),
+			},
+		},
+	})
+}
