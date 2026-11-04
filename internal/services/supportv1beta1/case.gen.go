@@ -39,7 +39,7 @@ func caseSchema() schema.Schema {
 				Computed:            true,
 			},
 			"project": schema.StringAttribute{
-				MarkdownDescription: "The project the case is about, `projects/{project}`, one of the organization's. Unset means the case is about the organization as a whole.",
+				MarkdownDescription: "The project the case is about, `projects/{project}`, one of the organization's. Empty for a case about the organization as a whole.",
 				Computed:            true,
 			},
 			"subject": schema.StringAttribute{
@@ -77,7 +77,7 @@ func caseSchema() schema.Schema {
 func caseFromProto(p *v1beta1.Case, m *caseModel) error {
 	m.Name = types.StringValue(p.GetName())
 	m.Urn = types.StringValue(p.GetUrn())
-	m.Project = framework.PresentString(p.Project)
+	m.Project = types.StringValue(p.GetProject())
 	m.Subject = types.StringValue(p.GetSubject())
 	m.Description = types.StringValue(p.GetDescription())
 	m.ContactEmail = types.StringValue(p.GetContactEmail())
@@ -128,7 +128,7 @@ func caseListSchema() schema.Schema {
 							Computed:            true,
 						},
 						"project": schema.StringAttribute{
-							MarkdownDescription: "The project the case is about, `projects/{project}`, one of the organization's. Unset means the case is about the organization as a whole.",
+							MarkdownDescription: "The project the case is about, `projects/{project}`, one of the organization's. Empty for a case about the organization as a whole.",
 							Computed:            true,
 						},
 						"subject": schema.StringAttribute{
