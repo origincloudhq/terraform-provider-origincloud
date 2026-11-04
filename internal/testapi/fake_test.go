@@ -91,10 +91,12 @@ type fakeFirewalls struct {
 	quotaMasks []string
 	// failQuota fails the quotas' updates.
 	failQuota bool
+	// tickets are opened outside Terraform (openTicket), and only read.
+	tickets map[string]*firewallsv1.Ticket
 }
 
 func newFakeFirewalls(t *testing.T) *fakeFirewalls {
-	f := &fakeFirewalls{firewalls: map[string]*firewallsv1.Firewall{}, vaults: map[string]*firewallsv1.Vault{}, tombstones: map[string]bool{}, quotas: map[string]*firewallsv1.VaultQuota{}, keys: map[string]*firewallsv1.Key{
+	f := &fakeFirewalls{firewalls: map[string]*firewallsv1.Firewall{}, vaults: map[string]*firewallsv1.Vault{}, tombstones: map[string]bool{}, quotas: map[string]*firewallsv1.VaultQuota{}, tickets: map[string]*firewallsv1.Ticket{}, keys: map[string]*firewallsv1.Key{
 		// A public key, in the other pattern.
 		"keys/pub-1": {Name: "keys/pub-1", State: firewallsv1.Key_ENABLED, Algorithm: proto.String("ed25519"), Usage: &firewallsv1.Key_Sign{Sign: true}},
 	}}
@@ -381,9 +383,12 @@ func (f *fakeFirewalls) lastKeyMask() string {
 
 // serveVault serves the vaults, created with the id the client chose,
 // which a deleted vault keeps, and their quotas, which exist with them,
-// without a budget of secrets until one is set, and with max_versions
-// falling back to 10 whenever it is unset. An update of a quota unsets a
-// field its mask names and its body leaves out, and refuses an empty mask.
+// without a budget of secrets until one is set, with max_versions
+// falling back to 10 whenever it is unset, and alerting at 80 and 100
+// percent, to the owner, labelled with the tier, until those are changed.
+// An update of a quota unsets a field its mask names and its body leaves
+// out, empties a repeated or map one, and refuses an empty mask. It serves
+// a vault's tickets too, for reading only.
 func (f *fakeFirewalls) serveVault(w http.ResponseWriter, r *http.Request, path string, body []byte) {
 	switch {
 	case path == "vaults" && r.Method == http.MethodPost:
@@ -406,7 +411,10 @@ func (f *fakeFirewalls) serveVault(w http.ResponseWriter, r *http.Request, path 
 		f.vaults[vault.Name] = vault
 		// No budget of secrets until one is set; max_versions falls back
 		// to its default, 10, whenever it is unset.
-		f.quotas[vault.Name+"/quota"] = &firewallsv1.VaultQuota{Name: vault.Name + "/quota", MaxVersions: proto.Int64(10)}
+		f.quotas[vault.Name+"/quota"] = &firewallsv1.VaultQuota{
+			Name: vault.Name + "/quota", MaxVersions: proto.Int64(10),
+			AlertPercents: []int32{80, 100}, Recipients: []string{"owner@example.com"}, Labels: map[string]string{"tier": "free"},
+		}
 		writeMessage(w, vault)
 	case path == "vaults" && r.Method == http.MethodGet:
 		owner := r.URL.Query().Get("owner")
@@ -421,6 +429,21 @@ func (f *fakeFirewalls) serveVault(w http.ResponseWriter, r *http.Request, path 
 			}
 		}
 		writeMessage(w, list)
+	case strings.HasSuffix(path, "/tickets") && r.Method == http.MethodGet:
+		list := &firewallsv1.ListTicketsResponse{}
+		for _, name := range slices.Sorted(maps.Keys(f.tickets)) {
+			if strings.HasPrefix(name, path+"/") {
+				list.Tickets = append(list.Tickets, f.tickets[name])
+			}
+		}
+		writeMessage(w, list)
+	case strings.Contains(path, "/tickets/") && r.Method == http.MethodGet:
+		ticket, ok := f.tickets[path]
+		if !ok {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", path+" doesn't exist")
+			return
+		}
+		writeMessage(w, ticket)
 	case strings.HasSuffix(path, "/quota"):
 		quota, ok := f.quotas[path]
 		if !ok {
@@ -449,6 +472,12 @@ func (f *fakeFirewalls) serveVault(w http.ResponseWriter, r *http.Request, path 
 					quota.MaxSecrets = update.MaxSecrets
 				case "maxVersions":
 					quota.MaxVersions = update.MaxVersions
+				case "alertPercents":
+					quota.AlertPercents = update.AlertPercents
+				case "recipients":
+					quota.Recipients = slices.Sorted(slices.Values(update.Recipients))
+				case "labels":
+					quota.Labels = update.Labels
 				default:
 					writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", field+" can't be updated")
 					return
@@ -489,6 +518,17 @@ func (f *fakeFirewalls) setFailQuota(fail bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.failQuota = fail
+}
+
+// openTicket opens a ticket in a vault, as a user does outside
+// Terraform, and returns its name.
+func (f *fakeFirewalls) openTicket(vault, subject string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.next++
+	name := fmt.Sprintf("%s/tickets/t-%d", vault, f.next)
+	f.tickets[name] = &firewallsv1.Ticket{Name: name, Subject: subject}
+	return name
 }
 
 func (f *fakeFirewalls) setMaxSecrets(name string, v int64) {

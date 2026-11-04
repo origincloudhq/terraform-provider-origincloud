@@ -2,6 +2,7 @@ package testapi
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
@@ -31,6 +32,17 @@ func vaultStep(fake *fakeFirewalls, body, address string, action plancheck.Resou
 			plancheck.ExpectResourceAction(address, action),
 		}},
 		Check: resource.ComposeAggregateTestCheckFunc(check...),
+	}
+}
+
+// quotaMasks checks that the vault v1's quota was updated with the masks
+// want, in order.
+func quotaMasks(fake *fakeFirewalls, want ...string) resource.TestCheckFunc {
+	return func(*terraform.State) error {
+		if _, got := fake.quota("vaults/v1/quota"); !slices.Equal(got, want) {
+			return fmt.Errorf("the quota's update masks were %v, not %v", got, want)
+		}
+		return nil
 	}
 }
 
@@ -108,14 +120,7 @@ resource "origincloud_vaults_vault_quota" "q" {
 }
 `
 	}
-	masks := func(want ...string) resource.TestCheckFunc {
-		return func(*terraform.State) error {
-			if _, got := fake.quota("vaults/v1/quota"); !slices.Equal(got, want) {
-				return fmt.Errorf("the quota's update masks were %v, not %v", got, want)
-			}
-			return nil
-		}
-	}
+	masks := func(want ...string) resource.TestCheckFunc { return quotaMasks(fake, want...) }
 	budgets := func(secrets, versions *int64) resource.TestCheckFunc {
 		return func(*terraform.State) error {
 			q, _ := fake.quota("vaults/v1/quota")
@@ -177,6 +182,83 @@ resource "origincloud_vaults_vault_quota" "q" {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					masks("maxSecrets", "maxVersions", "maxSecrets", "maxVersions", "maxSecrets", "maxSecrets"),
 					budgets(nil, n(10)),
+				),
+			},
+		},
+	})
+}
+
+// A quota's alert percentages, recipients and labels are a singleton's
+// list, set and map, which can't have presence: left out, each keeps the
+// API's value; set to [] or {}, it is sent empty, at the create too;
+// removed from the configuration once set, it is emptied; and destroying
+// the resource empties those it owns.
+func TestASingletonsRepeatedFieldsKeepTheAPIsValuesUntilSet(t *testing.T) {
+	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
+	fake := newFakeFirewalls(t)
+	const quota = "origincloud_vaults_vault_quota.q"
+	theVault := `
+resource "origincloud_vaults_vault" "v" {
+  vault_id     = "v1"
+  owner        = "o1"
+  display_name = "A"
+}
+`
+	config := func(fields string) string {
+		return theVault + `
+resource "origincloud_vaults_vault_quota" "q" {
+  vault = origincloud_vaults_vault.v.vault_id
+  ` + fields + `
+}
+`
+	}
+	masks := func(want ...string) resource.TestCheckFunc { return quotaMasks(fake, want...) }
+	alerts := func(percents []int32, recipients []string, labels map[string]string) resource.TestCheckFunc {
+		return func(*terraform.State) error {
+			q, _ := fake.quota("vaults/v1/quota")
+			if !slices.Equal(q.AlertPercents, percents) || !slices.Equal(q.Recipients, recipients) || !maps.Equal(q.Labels, labels) {
+				return fmt.Errorf("the quota is %v", q)
+			}
+			return nil
+		}
+	}
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			// Set to [] at the create, the recipients are sent empty; the
+			// percentages and labels left out keep the API's.
+			vaultStep(fake, config(`recipients = []`), quota, plancheck.ResourceActionCreate,
+				masks("recipients"),
+				alerts([]int32{80, 100}, nil, map[string]string{"tier": "free"}),
+				resource.TestCheckResourceAttr(quota, "recipients.#", "0"),
+				resource.TestCheckResourceAttr(quota, "alert_percents.#", "2"),
+				resource.TestCheckResourceAttr(quota, "alert_percents.1", "100"),
+				resource.TestCheckResourceAttr(quota, "labels.tier", "free"),
+			),
+			vaultStep(fake, config(`recipients = []
+  alert_percents = [50, 90]
+  labels = { team = "a" }`), quota, plancheck.ResourceActionUpdate,
+				masks("recipients", "alertPercents,labels"),
+				alerts([]int32{50, 90}, nil, map[string]string{"team": "a"}),
+			),
+			// Removed from the configuration, they are emptied.
+			vaultStep(fake, config(`recipients = []`), quota, plancheck.ResourceActionUpdate,
+				masks("recipients", "alertPercents,labels", "alertPercents,labels"),
+				alerts(nil, nil, nil),
+				resource.TestCheckResourceAttr(quota, "alert_percents.#", "0"),
+				resource.TestCheckResourceAttr(quota, "labels.%", "0"),
+			),
+			vaultStep(fake, config(`recipients = []`), quota, plancheck.ResourceActionNoop),
+			vaultStep(fake, config(`recipients = ["b@example.com", "a@example.com"]`), quota, plancheck.ResourceActionUpdate,
+				masks("recipients", "alertPercents,labels", "alertPercents,labels", "recipients"),
+				alerts(nil, []string{"a@example.com", "b@example.com"}, nil),
+			),
+			// Destroyed alone, it empties the recipients, which it owns.
+			{
+				Config: vaultConfig(fake, theVault),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					masks("recipients", "alertPercents,labels", "alertPercents,labels", "recipients", "recipients"),
+					alerts(nil, nil, nil),
 				),
 			},
 		},
@@ -290,6 +372,47 @@ resource "origincloud_vaults_vault" "v" {
 			{
 				Config:      vaultConfig(fake, config("v2", "o2")+strings.ReplaceAll(config("v1", "o1"), `"v"`, `"again"`)),
 				ExpectError: regexp.MustCompile(`vaults/v1 exists`),
+			},
+		},
+	})
+}
+
+// A ticket is opened outside Terraform, as the API never deletes one:
+// Terraform reads tickets, by name and by vault, and has no resource for
+// them.
+func TestATicketCreatedOutsideTerraformIsOnlyRead(t *testing.T) {
+	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
+	fake := newFakeFirewalls(t)
+	first := fake.openTicket("vaults/v1", "Can't rotate")
+	fake.openTicket("vaults/v1", "Slow reads")
+	fake.openTicket("vaults/v2", "Elsewhere")
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			{
+				Config: vaultConfig(fake, `
+resource "origincloud_vaults_ticket" "t" {
+  subject = "Can't rotate"
+}
+`),
+				ExpectError: regexp.MustCompile(`Invalid resource type`),
+			},
+			{
+				Config: vaultConfig(fake, fmt.Sprintf(`
+data "origincloud_vaults_ticket" "t" {
+  name = %q
+}
+
+data "origincloud_vaults_tickets" "v1" {
+  vault = "v1"
+}
+`, first)),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("data.origincloud_vaults_ticket.t", "subject", "Can't rotate"),
+					resource.TestCheckResourceAttr("data.origincloud_vaults_tickets.v1", "tickets.#", "2"),
+					resource.TestCheckResourceAttr("data.origincloud_vaults_tickets.v1", "tickets.0.name", first),
+					resource.TestCheckResourceAttr("data.origincloud_vaults_tickets.v1", "tickets.1.subject", "Slow reads"),
+				),
 			},
 		},
 	})

@@ -35,13 +35,14 @@ to the plugin or `internal/framework`.
 
 - A resource message the service can `Get` becomes a **resource** when the
   service can also `Create` and `Delete` it, and a **data source** otherwise.
-  Its name's variables before its own (`project`, `zone`) are required
-  attributes that replace it. A resource type with several patterns, such
-  as a project's images and the public ones, is created in the pattern
-  whose parent its create's HTTP binding takes (`{parent=projects/*}`):
-  without such a binding, or with one no pattern matches, generation fails.
-  It also gets a data source of the same name, which reads one in any
-  pattern by its resource name.
+  A create without a delete fails generation, unless the type is created
+  outside Terraform (below). Its name's variables before its own
+  (`project`, `zone`) are required attributes that replace it. A resource
+  type with several patterns, such as a project's images and the public
+  ones, is created in the pattern whose parent its create's HTTP binding
+  takes (`{parent=projects/*}`): without such a binding, or with one no
+  pattern matches, generation fails. It also gets a data source of the
+  same name, which reads one in any pattern by its resource name.
 - A create that takes the id the client chooses (AIP-133), such as
   `CreateProject`'s `project_id`, makes it an attribute that replaces the
   resource: required when the field is `REQUIRED`, optional and computed
@@ -66,8 +67,11 @@ to the plugin or `internal/framework`.
   others. A field set to the value the API already has, as after an import,
   isn't sent, so it isn't owned until a change sends it. `REQUIRED` fields
   are sent but never owned or unset. Its `OPTIONAL` fields need explicit
-  presence; a singleton with a create fails generation. A singleton the
-  service doesn't update is a data source.
+  presence, so that one left out keeps its value. A repeated or map field
+  can't have it, but is optional and computed the same way, unset meaning
+  empty: set to `[]` or `{}`, it is sent empty, and so is one it owns that
+  the configuration no longer sets. A singleton with a create fails
+  generation. A singleton the service doesn't update is a data source.
 - An imported name must have the resource's pattern.
 - A field referring to another resource (`google.api.resource_reference`) is
   a string the API checks, so a reference that may take several patterns
@@ -201,11 +205,20 @@ to the plugin or `internal/framework`.
   value that names something else does. Nothing in the API marks such a
   field, so each is declared in `spellings.go`, which generation checks
   against the API, as it does secrets.
+- A resource type the API creates but never deletes, such as a support
+  case, which is closed instead, is **created outside Terraform**: as a
+  resource, Terraform could create it but never destroy it, so its create
+  is ignored, and it is a data source, with its plural's when the service
+  lists it. Nothing in the API marks such a type, so each is declared in
+  `outside.go`, with the reason, which generation checks against the API,
+  as it does secrets: one the API doesn't create, or deletes, fails it.
 
 The plugin's tests include a test API, `internal/testapi/firewalls.prototext`,
-with a firewall, whose fields are nested messages, lists, sets and maps,
-and a key, created synchronously, with timestamps, durations, fields with
-explicit presence, oneofs, a toggle, a secret and a terminal state. The
+with a firewall, whose fields are nested messages, lists, sets and maps;
+a key, created synchronously, with timestamps, durations, fields with
+explicit presence, oneofs, a toggle, a secret and a terminal state; and a
+vault, whose id the client chooses, with a singleton quota, whose fields
+have presence or are repeated, and tickets, created outside Terraform. The
 tests check that its generated code in `internal/testapi` is current, and run
 Terraform against a fake of it. After changing the plugin or the test API,
 generate that code again:

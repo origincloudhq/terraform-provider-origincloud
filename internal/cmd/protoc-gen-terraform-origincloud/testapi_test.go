@@ -20,8 +20,8 @@ import (
 
 var update = flag.Bool("update", false, "write the test API's generated code")
 
-// The test API's toggle and secret, declared as toggles.go and secrets.go
-// declare the API's.
+// The test API's toggle, secret and type created outside Terraform,
+// declared as toggles.go, secrets.go and outside.go declare the API's.
 var (
 	testAPIToggles = []toggle{{
 		resource: "test.firewalls.v1.Key", attribute: "enabled",
@@ -30,6 +30,7 @@ var (
 		doc: "Whether the key is enabled. Left out, it is left as it is.",
 	}}
 	testAPISecrets = []secret{{resource: "test.firewalls.v1.Key", field: "secret"}}
+	testAPIOutside = []outside{{"test.firewalls.v1.Ticket", "a ticket is closed, never deleted"}}
 )
 
 // The repository's root, from this package's directory.
@@ -67,10 +68,10 @@ func testAPIFiles(t *testing.T) map[string][]byte {
 	internal_gengo.GenerateFile(messages, messages.FilesByPath[file.GetName()])
 	add(messages.Response(), module+"/")
 
-	savedServices, savedProvider, savedToggles, savedSecrets := servicesDir, providerDir, toggles, secrets
-	servicesDir, providerDir, toggles, secrets = "internal/testapi/services", "internal/testapi", testAPIToggles, testAPISecrets
+	savedServices, savedProvider, savedToggles, savedSecrets, savedOutside := servicesDir, providerDir, toggles, secrets, createdOutside
+	servicesDir, providerDir, toggles, secrets, createdOutside = "internal/testapi/services", "internal/testapi", testAPIToggles, testAPISecrets, testAPIOutside
 	t.Cleanup(func() {
-		servicesDir, providerDir, toggles, secrets = savedServices, savedProvider, savedToggles, savedSecrets
+		servicesDir, providerDir, toggles, secrets, createdOutside = savedServices, savedProvider, savedToggles, savedSecrets, savedOutside
 	})
 	plugin, err := protogen.Options{}.New(request(t, file))
 	if err != nil {
