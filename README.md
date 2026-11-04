@@ -84,6 +84,16 @@ data sources are generated from the API definitions in
 | Data source | `origincloud_iam_user` | You, as the platform knows you |
 | Data source | `origincloud_iam_audit_log_entry` | One recorded change to who may do what |
 | Data source | `origincloud_iam_audit_log_entries` | An organization's audit log, most recent first |
+| Resource | `origincloud_billing_billing_account` | Who an organization's invoices are issued to, and how its projects' usage is paid |
+| Resource | `origincloud_billing_project_billing_info` | The billing account that pays for a project |
+| Resource | `origincloud_billing_spend_limit` | The most a billing account means to spend in a month, and who is alerted |
+| Data source | `origincloud_billing_billing_accounts` | An organization's billing accounts |
+| Data source | `origincloud_billing_billing_country` | A country a billing address may be in, and whether it needs a VAT id |
+| Data source | `origincloud_billing_billing_countries` | Every billing country |
+| Data source | `origincloud_support_case` | One question or problem, and the conversation with support about it |
+| Data source | `origincloud_support_cases` | An organization's support cases, newest first |
+| Data source | `origincloud_support_case_message` | One message in a support case |
+| Data source | `origincloud_support_case_messages` | A support case's messages, oldest first |
 
 ## Using it
 
