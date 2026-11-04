@@ -33,7 +33,7 @@ Read-Only:
 - `creator` (String) The principal that opened the case, such as `user:<id>` or `service_account:<id>`.
 - `description` (String) What the case is about, in full. Not empty.
 - `name` (String) The case's resource name, `organizations/{organization}/cases/{case}`.
-- `project` (String) The project the case is about, `projects/{project}`, one of the organization's. Unset means the case is about the organization as a whole.
+- `project` (String) The project the case is about, `projects/{project}`, one of the organization's. Empty for a case about the organization as a whole.
 - `state` (String) Where the case stands. Changed by support, and by `CloseCase` and `ReopenCase`. One of `OPEN`, `IN_PROGRESS`, `RESOLVED`, `CLOSED`.
 - `subject` (String) A one-line summary. Not empty.
 - `update_time` (String) When the case last changed: a message added, or its state changed. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
