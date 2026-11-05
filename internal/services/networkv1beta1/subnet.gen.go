@@ -82,7 +82,7 @@ func subnetSchema() schema.Schema {
 				Computed:            true,
 			},
 			"auto_assign_public_ip": schema.BoolAttribute{
-				MarkdownDescription: "Whether a launch that creates its network interface in the subnet, as the GraphQL API's `launchInstance` does, gives that interface a floating IP of its own, released when the instance is terminated. `CreateInstance` takes existing interfaces, so an instance it launches gets none: create a floating IP and a floating IP association for its interface instead.",
+				MarkdownDescription: "Whether a launch that creates its network interface in the subnet, as the GraphQL API's `launchInstance` does, gives that interface a floating IP of its own, released when the instance is terminated. The interface is created with its address or not at all: with none free in the zone, or the public IP quota used up, the instance is `FAILED` with the reason. `CreateInstance` takes existing interfaces, so an instance it launches gets none: create a floating IP and a floating IP association for its interface instead.",
 				Optional:            true,
 			},
 			"ipv4_cidr_block": schema.StringAttribute{
@@ -299,7 +299,7 @@ func subnetListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"auto_assign_public_ip": schema1.BoolAttribute{
-							MarkdownDescription: "Whether a launch that creates its network interface in the subnet, as the GraphQL API's `launchInstance` does, gives that interface a floating IP of its own, released when the instance is terminated. `CreateInstance` takes existing interfaces, so an instance it launches gets none: create a floating IP and a floating IP association for its interface instead.",
+							MarkdownDescription: "Whether a launch that creates its network interface in the subnet, as the GraphQL API's `launchInstance` does, gives that interface a floating IP of its own, released when the instance is terminated. The interface is created with its address or not at all: with none free in the zone, or the public IP quota used up, the instance is `FAILED` with the reason. `CreateInstance` takes existing interfaces, so an instance it launches gets none: create a floating IP and a floating IP association for its interface instead.",
 							Computed:            true,
 						},
 						"ipv4_cidr_block": schema1.StringAttribute{
