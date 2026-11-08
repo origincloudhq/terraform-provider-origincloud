@@ -109,6 +109,10 @@ func StringReplaceSpelled(s Spelling) planmodifier.String {
 	}, description, description)
 }
 
+// DomainSpelling is a domain name, such as a hosted zone's: the same name
+// in any case, answered in lowercase. It is never renamed.
+var DomainSpelling = Spelling{Equal: strings.EqualFold, Renamed: func(string, string) string { return "" }}
+
 // MemberSpelling is a role binding's member: `user:{email}` or
 // `serviceAccount:{service_account}`, and, as the API answers only,
 // `userId:{user}` and `deleted:user:{user}`. An address is the same in any

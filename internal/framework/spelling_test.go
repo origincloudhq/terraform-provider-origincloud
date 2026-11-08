@@ -21,6 +21,25 @@ func (p private) SetKey(_ context.Context, key string, value []byte) diag.Diagno
 	return nil
 }
 
+func TestDomainsAreTheSameInAnyCase(t *testing.T) {
+	for _, tc := range []struct {
+		a, b string
+		same bool
+	}{
+		{"WWW.Example.com", "www.example.com", true},
+		{"www.example.com", "www.example.com", true},
+		{"www.example.com", "example.com", false},
+		{"www.example.com", "www.example.com.", false},
+	} {
+		if got := DomainSpelling.Equal(tc.a, tc.b); got != tc.same {
+			t.Errorf("Equal(%q, %q) = %v", tc.a, tc.b, got)
+		}
+		if why := DomainSpelling.Renamed(tc.a, tc.b); why != "" {
+			t.Errorf("Renamed(%q, %q) = %q", tc.a, tc.b, why)
+		}
+	}
+}
+
 func TestMembersAreTheSameInAnyCaseOfTheirAddress(t *testing.T) {
 	for _, tc := range []struct {
 		a, b string
