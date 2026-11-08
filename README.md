@@ -94,6 +94,12 @@ data sources are generated from the API definitions in
 | Data source | `origincloud_support_cases` | An organization's support cases, newest first |
 | Data source | `origincloud_support_case_message` | One message in a support case |
 | Data source | `origincloud_support_case_messages` | A support case's messages, oldest first |
+| Resource | `origincloud_dns_hosted_zone` | A domain a project's records are answered for, public or private |
+| Resource | `origincloud_dns_record_set` | Every record of one name and type in a hosted zone |
+| Resource | `origincloud_dns_vpc_attachment` | A VPC a private zone answers in |
+| Data source | `origincloud_dns_hosted_zones` | A project's hosted zones |
+| Data source | `origincloud_dns_record_sets` | A hosted zone's record sets |
+| Data source | `origincloud_dns_vpc_attachments` | A private zone's VPC attachments |
 
 ## Using it
 
@@ -196,6 +202,18 @@ Credentials come from the environment, the first of:
   address configured is no longer the account's: a new binding for it would
   be refused. Once the account is gone (`deleted:user:{user}`), the binding
   is replaced.
+- **Domain names.** A hosted zone's or a record set's `dns_name` is the same
+  name in any case: the API answers it in lowercase, and the state keeps it
+  as configured, so neither plans a change. Names in a record set's values,
+  such as a CNAME's target, are written in lowercase, as the API answers
+  them.
+- **Public zones.** A public zone is `PENDING_VERIFICATION` until it proves
+  control of its domain: create the TXT record its `challenge` names
+  (`challenge.dns_name`, holding `challenge.token`) where the domain is
+  hosted now, with any provider. The platform checks pending zones on its
+  own, and a refresh then finds the zone `ACTIVE`; Terraform doesn't wait
+  for it. A zone that doesn't verify within 7 days is deleted with its
+  record sets, and the next apply creates it again, with a new token.
 - **Values the API chooses.** An optional attribute the API fills in when it
   is left out, such as a default, keeps the API's value; removing it from the
   configuration keeps the current value rather than resetting it.

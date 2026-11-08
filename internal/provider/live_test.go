@@ -291,3 +291,102 @@ data "origincloud_support_cases" "first" {
 		},
 	})
 }
+
+// TestLiveDNS runs against the live API, in the project
+// ORIGINCLOUD_LIVE_ZONE names, with the credentials TestLivePVS uses. It
+// creates a public zone of terraform-provider.example.com, which stays
+// pending, as no one can publish its challenge, with a record set in it,
+// and a private zone attached to a VPC it creates in the zone's region;
+// then changes the record set's TTL and values, imports the zones' three
+// resources, and destroys everything at the end.
+func TestLiveDNS(t *testing.T) {
+	zone := os.Getenv("ORIGINCLOUD_LIVE_ZONE")
+	if zone == "" {
+		t.Skip("ORIGINCLOUD_LIVE_ZONE isn't set")
+	}
+	values, err := framework.NameValues("projects/{project}/zones/{zone}", zone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	region := regexp.MustCompile(`-az[0-9]+$`).ReplaceAllString(values[1], "")
+	config := func(ttl, address string) string {
+		return fmt.Sprintf(`
+resource "origincloud_network_vpc" "dns" {
+  project = %[1]q
+  region  = %[2]q
+  tags    = { test = "terraform-provider" }
+}
+
+resource "origincloud_dns_hosted_zone" "public" {
+  project    = %[1]q
+  dns_name   = "terraform-provider.example.com"
+  visibility = "PUBLIC"
+  tags       = { test = "terraform-provider" }
+}
+
+resource "origincloud_dns_record_set" "www" {
+  project     = %[1]q
+  hosted_zone = basename(origincloud_dns_hosted_zone.public.name)
+  dns_name    = "www.terraform-provider.example.com"
+  type        = "A"
+  ttl         = %[3]q
+  basic       = { values = [%[4]q] }
+}
+
+resource "origincloud_dns_hosted_zone" "private" {
+  project    = %[1]q
+  dns_name   = "terraform-provider.example"
+  visibility = "PRIVATE"
+}
+
+resource "origincloud_dns_vpc_attachment" "dns" {
+  project     = %[1]q
+  hosted_zone = basename(origincloud_dns_hosted_zone.private.name)
+  vpc         = origincloud_network_vpc.dns.name
+}
+`, values[0], region, ttl, address)
+	}
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			{
+				Config: config("60s", "192.0.2.10"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("origincloud_dns_hosted_zone.public", "state", "PENDING_VERIFICATION"),
+					resource.TestCheckResourceAttr("origincloud_dns_hosted_zone.public", "challenge.dns_name", "_origin-challenge.terraform-provider.example.com"),
+					resource.TestCheckResourceAttrSet("origincloud_dns_hosted_zone.public", "challenge.token"),
+					resource.TestCheckResourceAttrSet("origincloud_dns_hosted_zone.public", "name_servers.0"),
+					resource.TestCheckResourceAttr("origincloud_dns_record_set.www", "ttl", "60s"),
+					resource.TestCheckResourceAttr("origincloud_dns_hosted_zone.private", "state", "ACTIVE"),
+					resource.TestCheckResourceAttrPair("origincloud_dns_vpc_attachment.dns", "vpc", "origincloud_network_vpc.dns", "name"),
+				),
+			},
+			{
+				Config: config("120s", "192.0.2.11"),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction("origincloud_dns_record_set.www", plancheck.ResourceActionUpdate),
+				}},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("origincloud_dns_record_set.www", "ttl", "120s"),
+					resource.TestCheckTypeSetElemAttr("origincloud_dns_record_set.www", "basic.values.*", "192.0.2.11"),
+				),
+			},
+			{
+				ResourceName:      "origincloud_dns_hosted_zone.public",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+			{
+				ResourceName:      "origincloud_dns_record_set.www",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+			{
+				ResourceName:      "origincloud_dns_vpc_attachment.dns",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
