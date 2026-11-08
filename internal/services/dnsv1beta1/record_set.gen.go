@@ -75,9 +75,11 @@ func recordSetSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"ttl": schema.StringAttribute{
-				MarkdownDescription: "How long resolvers may keep the answer, from 30 seconds to 7 days, in whole seconds. 300 seconds when left out. A duration in seconds, such as `90s` or `1.5s`.",
+				MarkdownDescription: "How long resolvers may keep the answer, from 30 seconds to 7 days, in whole seconds. 300 seconds when left out. A duration in seconds, such as `90s` or `1.5s`. Left out, it keeps its current value; see the field's description.",
 				Optional:            true,
+				Computed:            true,
 				Validators:          []validator.String{framework.DurationFormat()},
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"basic": schema.SingleNestedAttribute{
 				MarkdownDescription: "Values of its own.",

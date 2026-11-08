@@ -69,7 +69,7 @@ resource "origincloud_dns_record_set" "apex" {
 
 - `alias` (Attributes) The address of a platform resource, followed as it changes. (see [below for nested schema](#nestedatt--alias))
 - `basic` (Attributes) Values of its own. (see [below for nested schema](#nestedatt--basic))
-- `ttl` (String) How long resolvers may keep the answer, from 30 seconds to 7 days, in whole seconds. 300 seconds when left out. A duration in seconds, such as `90s` or `1.5s`.
+- `ttl` (String) How long resolvers may keep the answer, from 30 seconds to 7 days, in whole seconds. 300 seconds when left out. A duration in seconds, such as `90s` or `1.5s`. Left out, it keeps its current value; see the field's description.
 
 ### Read-Only
 
