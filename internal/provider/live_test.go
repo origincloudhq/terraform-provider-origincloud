@@ -295,10 +295,10 @@ data "origincloud_support_cases" "first" {
 // TestLiveDNS runs against the live API, in the project
 // ORIGINCLOUD_LIVE_ZONE names, with the credentials TestLivePVS uses. It
 // creates a public zone of terraform-provider.example.com, which stays
-// pending, as no one can publish its challenge, with a record set in it,
-// and a private zone attached to a VPC it creates in the zone's region;
-// then changes the record set's TTL and values, imports the zones' three
-// resources, and destroys everything at the end.
+// pending, as no one can publish its challenge, with two record sets in it,
+// one left without a TTL, and a private zone attached to a VPC it creates
+// in the zone's region; then changes the other record set's TTL and values,
+// imports the zones' three resources, and destroys everything at the end.
 func TestLiveDNS(t *testing.T) {
 	zone := os.Getenv("ORIGINCLOUD_LIVE_ZONE")
 	if zone == "" {
@@ -333,6 +333,14 @@ resource "origincloud_dns_record_set" "www" {
   basic       = { values = [%[4]q] }
 }
 
+resource "origincloud_dns_record_set" "spf" {
+  project     = %[1]q
+  hosted_zone = basename(origincloud_dns_hosted_zone.public.name)
+  dns_name    = "terraform-provider.example.com"
+  type        = "TXT"
+  basic       = { values = ["v=spf1 -all"] }
+}
+
 resource "origincloud_dns_hosted_zone" "private" {
   project    = %[1]q
   dns_name   = "terraform-provider.example"
@@ -358,6 +366,7 @@ resource "origincloud_dns_vpc_attachment" "dns" {
 					resource.TestCheckResourceAttrSet("origincloud_dns_hosted_zone.public", "challenge.token"),
 					resource.TestCheckResourceAttrSet("origincloud_dns_hosted_zone.public", "name_servers.0"),
 					resource.TestCheckResourceAttr("origincloud_dns_record_set.www", "ttl", "60s"),
+					resource.TestCheckResourceAttr("origincloud_dns_record_set.spf", "ttl", "300s"),
 					resource.TestCheckResourceAttr("origincloud_dns_hosted_zone.private", "state", "ACTIVE"),
 					resource.TestCheckResourceAttrPair("origincloud_dns_vpc_attachment.dns", "vpc", "origincloud_network_vpc.dns", "name"),
 				),
@@ -366,6 +375,7 @@ resource "origincloud_dns_vpc_attachment" "dns" {
 				Config: config("120s", "192.0.2.11"),
 				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
 					plancheck.ExpectResourceAction("origincloud_dns_record_set.www", plancheck.ResourceActionUpdate),
+					plancheck.ExpectResourceAction("origincloud_dns_record_set.spf", plancheck.ResourceActionNoop),
 				}},
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("origincloud_dns_record_set.www", "ttl", "120s"),

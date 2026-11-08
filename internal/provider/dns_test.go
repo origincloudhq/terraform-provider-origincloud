@@ -14,6 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 )
 
 const (
@@ -21,6 +22,7 @@ const (
 	privateZone = "origincloud_dns_hosted_zone.private"
 	wwwRecords  = "origincloud_dns_record_set.www"
 	apexRecords = "origincloud_dns_record_set.apex"
+	spfRecords  = "origincloud_dns_record_set.spf"
 	corpVPC     = "origincloud_dns_vpc_attachment.corp"
 	// The VPC the private zone is attached to.
 	vpc1 = "projects/p-1/regions/eu-central1/vpcs/vpc-1"
@@ -229,6 +231,27 @@ data "origincloud_dns_vpc_attachments" "private" {
 			// Back to a configuration the API accepts.
 			{
 				Config: dnsConfig(fake, `dns_name = "example.com"`, www("www.example.com", "60s", `"192.0.2.10"`), apex(`basic = { values = ["192.0.2.20"] }`), vpc1, ""),
+			},
+			// A record set left without a TTL takes the API's default, and
+			// the plan after it changes nothing.
+			{
+				Config: dnsConfig(fake, `dns_name = "example.com"`, www("www.example.com", "60s", `"192.0.2.10"`), apex(`basic = { values = ["192.0.2.20"] }`), vpc1, `
+resource "origincloud_dns_record_set" "spf" {
+  project     = "p-1"
+  hosted_zone = basename(origincloud_dns_hosted_zone.public.name)
+  dns_name    = "example.com"
+  type        = "TXT"
+  basic       = { values = ["v=spf1 -all"] }
+}
+`),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction(spfRecords, plancheck.ResourceActionCreate),
+						plancheck.ExpectUnknownValue(spfRecords, tfjsonpath.New("ttl")),
+					},
+					PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
+				},
+				Check: resource.TestCheckResourceAttr(spfRecords, "ttl", "300s"),
 			},
 			// Adopted by name.
 			{
