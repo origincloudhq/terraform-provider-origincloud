@@ -21,8 +21,10 @@ An organization's quota: the most of each kind of resource its projects may hold
 
 ### Read-Only
 
+- `max_hosted_zones` (Number) The most DNS hosted zones, including those not yet verified.
 - `max_instances` (Number) The most instances that aren't terminated.
 - `max_public_ips` (Number) The most floating IPs.
+- `max_record_sets` (Number) The most DNS record sets, summed over every hosted zone.
 - `max_vcpu` (Number) The most vCPUs, summed over the instances that aren't terminated.
 - `max_volume_gib` (Number) The most GiB of volumes that aren't deleted.
 - `max_vpcs` (Number) The most VPCs.
@@ -33,8 +35,10 @@ An organization's quota: the most of each kind of resource its projects may hold
 
 Read-Only:
 
+- `hosted_zones` (Number) DNS hosted zones, including those not yet verified; unset while they can't be counted, the other figures answered all the same.
 - `instances` (Number) Instances that aren't terminated.
 - `public_ips` (Number) Floating IPs.
+- `record_sets` (Number) DNS record sets; unset while they can't be counted, the other figures answered all the same.
 - `vcpu` (Number) vCPUs of the instances that aren't terminated.
 - `volume_gib` (Number) GiB of volumes that aren't deleted.
 - `vpcs` (Number) VPCs.

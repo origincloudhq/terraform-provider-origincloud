@@ -20,15 +20,17 @@ import (
 
 // projectQuotaModel is origincloud_resourcemanager_project_quota's state.
 type projectQuotaModel struct {
-	ID           types.String `tfsdk:"id"`
-	Project      types.String `tfsdk:"project"`
-	Name         types.String `tfsdk:"name"`
-	MaxInstances types.Int64  `tfsdk:"max_instances"`
-	MaxVcpu      types.Int64  `tfsdk:"max_vcpu"`
-	MaxVolumeGib types.Int64  `tfsdk:"max_volume_gib"`
-	MaxVpcs      types.Int64  `tfsdk:"max_vpcs"`
-	MaxPublicIps types.Int64  `tfsdk:"max_public_ips"`
-	Usage        types.Object `tfsdk:"usage"`
+	ID             types.String `tfsdk:"id"`
+	Project        types.String `tfsdk:"project"`
+	Name           types.String `tfsdk:"name"`
+	MaxInstances   types.Int64  `tfsdk:"max_instances"`
+	MaxVcpu        types.Int64  `tfsdk:"max_vcpu"`
+	MaxVolumeGib   types.Int64  `tfsdk:"max_volume_gib"`
+	MaxVpcs        types.Int64  `tfsdk:"max_vpcs"`
+	MaxPublicIps   types.Int64  `tfsdk:"max_public_ips"`
+	MaxHostedZones types.Int64  `tfsdk:"max_hosted_zones"`
+	MaxRecordSets  types.Int64  `tfsdk:"max_record_sets"`
+	Usage          types.Object `tfsdk:"usage"`
 }
 
 func projectQuotaSchema() schema.Schema {
@@ -80,6 +82,18 @@ func projectQuotaSchema() schema.Schema {
 				Computed:            true,
 				PlanModifiers:       []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
 			},
+			"max_hosted_zones": schema.Int64Attribute{
+				MarkdownDescription: "The most DNS hosted zones, including those not yet verified; unset means no budget. Left out, Terraform doesn't manage it, and it keeps its current value; removed from the configuration once set, it is unset. See the field's description for what unset means.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers:       []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
+			},
+			"max_record_sets": schema.Int64Attribute{
+				MarkdownDescription: "The most DNS record sets, summed over the project's hosted zones; unset means no budget. Left out, Terraform doesn't manage it, and it keeps its current value; removed from the configuration once set, it is unset. See the field's description for what unset means.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers:       []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
+			},
 			"usage": schema.SingleNestedAttribute{
 				MarkdownDescription: "How much of each budget the project uses.",
 				Computed:            true,
@@ -104,6 +118,14 @@ func projectQuotaSchema() schema.Schema {
 						MarkdownDescription: "Floating IPs.",
 						Computed:            true,
 					},
+					"hosted_zones": schema.Int64Attribute{
+						MarkdownDescription: "DNS hosted zones, including those not yet verified; unset while they can't be counted, the other figures answered all the same.",
+						Computed:            true,
+					},
+					"record_sets": schema.Int64Attribute{
+						MarkdownDescription: "DNS record sets; unset while they can't be counted, the other figures answered all the same.",
+						Computed:            true,
+					},
 				},
 			},
 		},
@@ -112,21 +134,28 @@ func projectQuotaSchema() schema.Schema {
 
 func projectQuota_UsageAttrTypes() map[string]attr.Type {
 	return map[string]attr.Type{
-		"instances":  types.Int64Type,
-		"vcpu":       types.Int64Type,
-		"volume_gib": types.Int64Type,
-		"vpcs":       types.Int64Type,
-		"public_ips": types.Int64Type,
+		"instances":    types.Int64Type,
+		"vcpu":         types.Int64Type,
+		"volume_gib":   types.Int64Type,
+		"vpcs":         types.Int64Type,
+		"public_ips":   types.Int64Type,
+		"hosted_zones": types.Int64Type,
+		"record_sets":  types.Int64Type,
 	}
 }
 
 func projectQuota_UsageFromProto(p *v1beta1.QuotaUsage, prior types.Object) types.Object {
+	if p == nil {
+		p = &v1beta1.QuotaUsage{}
+	}
 	return types.ObjectValueMust(projectQuota_UsageAttrTypes(), map[string]attr.Value{
-		"instances":  types.Int64Value(int64(p.GetInstances())),
-		"vcpu":       types.Int64Value(int64(p.GetVcpu())),
-		"volume_gib": types.Int64Value(int64(p.GetVolumeGib())),
-		"vpcs":       types.Int64Value(int64(p.GetVpcs())),
-		"public_ips": types.Int64Value(int64(p.GetPublicIps())),
+		"instances":    types.Int64Value(int64(p.GetInstances())),
+		"vcpu":         types.Int64Value(int64(p.GetVcpu())),
+		"volume_gib":   types.Int64Value(int64(p.GetVolumeGib())),
+		"vpcs":         types.Int64Value(int64(p.GetVpcs())),
+		"public_ips":   types.Int64Value(int64(p.GetPublicIps())),
+		"hosted_zones": framework.PresentInt64(p.HostedZones),
+		"record_sets":  framework.PresentInt64(p.RecordSets),
 	})
 }
 
@@ -139,12 +168,14 @@ func projectQuota_UsageToProto(o types.Object) *v1beta1.QuotaUsage {
 
 func projectQuotaToProto(m *projectQuotaModel) *v1beta1.ProjectQuota {
 	return &v1beta1.ProjectQuota{
-		Name:         m.Name.ValueString(),
-		MaxInstances: framework.Int64Ptr(m.MaxInstances),
-		MaxVcpu:      framework.Int64Ptr(m.MaxVcpu),
-		MaxVolumeGib: framework.Int64Ptr(m.MaxVolumeGib),
-		MaxVpcs:      framework.Int64Ptr(m.MaxVpcs),
-		MaxPublicIps: framework.Int64Ptr(m.MaxPublicIps),
+		Name:           m.Name.ValueString(),
+		MaxInstances:   framework.Int64Ptr(m.MaxInstances),
+		MaxVcpu:        framework.Int64Ptr(m.MaxVcpu),
+		MaxVolumeGib:   framework.Int64Ptr(m.MaxVolumeGib),
+		MaxVpcs:        framework.Int64Ptr(m.MaxVpcs),
+		MaxPublicIps:   framework.Int64Ptr(m.MaxPublicIps),
+		MaxHostedZones: framework.Int64Ptr(m.MaxHostedZones),
+		MaxRecordSets:  framework.Int64Ptr(m.MaxRecordSets),
 	}
 }
 
@@ -161,6 +192,8 @@ func projectQuotaFromProto(p *v1beta1.ProjectQuota, m *projectQuotaModel) error 
 	m.MaxVolumeGib = framework.PresentInt64(p.MaxVolumeGib)
 	m.MaxVpcs = framework.PresentInt64(p.MaxVpcs)
 	m.MaxPublicIps = framework.PresentInt64(p.MaxPublicIps)
+	m.MaxHostedZones = framework.PresentInt64(p.MaxHostedZones)
+	m.MaxRecordSets = framework.PresentInt64(p.MaxRecordSets)
 	m.Usage = framework.Object(p.GetUsage(), types.ObjectNull(projectQuota_UsageAttrTypes()), projectQuota_UsageAttrTypes(), projectQuota_UsageFromProto)
 	return nil
 }
@@ -190,6 +223,12 @@ func projectQuotaResource() framework.ResourceSpec[projectQuotaModel, *v1beta1.P
 			if !plan.MaxPublicIps.Equal(state.MaxPublicIps) {
 				mask = append(mask, "max_public_ips")
 			}
+			if !plan.MaxHostedZones.Equal(state.MaxHostedZones) {
+				mask = append(mask, "max_hosted_zones")
+			}
+			if !plan.MaxRecordSets.Equal(state.MaxRecordSets) {
+				mask = append(mask, "max_record_sets")
+			}
 			return mask
 		},
 		CreateSync: func(ctx context.Context, client *core.Client, plan *projectQuotaModel) (*v1beta1.ProjectQuota, error) {
@@ -210,6 +249,12 @@ func projectQuotaResource() framework.ResourceSpec[projectQuotaModel, *v1beta1.P
 			}
 			if framework.IsSet(plan.MaxPublicIps) {
 				mask = append(mask, "max_public_ips")
+			}
+			if framework.IsSet(plan.MaxHostedZones) {
+				mask = append(mask, "max_hosted_zones")
+			}
+			if framework.IsSet(plan.MaxRecordSets) {
+				mask = append(mask, "max_record_sets")
 			}
 			if len(mask) == 0 {
 				return v1beta1.NewProjectClient(client).GetProjectQuota(ctx, &v1beta1.GetProjectQuotaRequest{Name: resource.Name})
@@ -233,6 +278,12 @@ func projectQuotaResource() framework.ResourceSpec[projectQuotaModel, *v1beta1.P
 			if !config.MaxPublicIps.IsNull() {
 				fields = append(fields, "max_public_ips")
 			}
+			if !config.MaxHostedZones.IsNull() {
+				fields = append(fields, "max_hosted_zones")
+			}
+			if !config.MaxRecordSets.IsNull() {
+				fields = append(fields, "max_record_sets")
+			}
 			return fields
 		},
 		Release: func(plan, config *projectQuotaModel, owned []string) {
@@ -250,6 +301,12 @@ func projectQuotaResource() framework.ResourceSpec[projectQuotaModel, *v1beta1.P
 			}
 			if config.MaxPublicIps.IsNull() && slices.Contains(owned, "max_public_ips") {
 				plan.MaxPublicIps = types.Int64Unknown()
+			}
+			if config.MaxHostedZones.IsNull() && slices.Contains(owned, "max_hosted_zones") {
+				plan.MaxHostedZones = types.Int64Unknown()
+			}
+			if config.MaxRecordSets.IsNull() && slices.Contains(owned, "max_record_sets") {
+				plan.MaxRecordSets = types.Int64Unknown()
 			}
 		},
 		Clear: func(ctx context.Context, client *core.Client, name string, fields []string) error {

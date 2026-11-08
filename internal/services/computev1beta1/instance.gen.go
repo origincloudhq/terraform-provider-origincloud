@@ -42,6 +42,7 @@ type instanceModel struct {
 	Creator            types.String `tfsdk:"creator"`
 	Tags               types.Map    `tfsdk:"tags"`
 	InterfaceAddresses types.List   `tfsdk:"interface_addresses"`
+	ServiceAccount     types.String `tfsdk:"service_account"`
 }
 
 func instanceSchema() schema.Schema {
@@ -207,6 +208,10 @@ func instanceSchema() schema.Schema {
 					},
 				},
 			},
+			"service_account": schema.StringAttribute{
+				MarkdownDescription: "The service account the instance runs as, `organizations/{organization}/serviceAccounts/{service_account}`: a `WORKLOAD` service account of the instance's organization that isn't deleted. Launching with one, or updating the instance to one, needs `iam.service_account.act_as` on the organization as well; an update that leaves it empty removes it, and a terminated instance's can't change. Empty for an instance that runs as none.",
+				Optional:            true,
+			},
 		},
 	}
 }
@@ -317,6 +322,7 @@ func instanceToProto(m *instanceModel) *v1beta1.Instance {
 		BootVolume:        instance_BootVolumeToProto(m.BootVolume),
 		NetworkInterfaces: framework.Elements(m.NetworkInterfaces, func(e attr.Value) string { return e.(types.String).ValueString() }),
 		Tags:              framework.StringMapToProto(m.Tags),
+		ServiceAccount:    m.ServiceAccount.ValueString(),
 	}
 }
 
@@ -344,6 +350,7 @@ func instanceFromProto(p *v1beta1.Instance, m *instanceModel) error {
 	m.Creator = types.StringValue(p.GetCreator())
 	m.Tags = framework.Optional(m.Tags, framework.StringMap(p.GetTags()), len(p.GetTags()) == 0)
 	m.InterfaceAddresses = framework.MessageList(instance_InterfaceAddressesAttrTypes(), p.GetInterfaceAddresses(), types.ListNull(types.ObjectType{AttrTypes: instance_InterfaceAddressesAttrTypes()}), instance_InterfaceAddressesFromProto)
+	m.ServiceAccount = framework.Optional(m.ServiceAccount, types.StringValue(p.GetServiceAccount()), p.GetServiceAccount() == "")
 	return nil
 }
 
@@ -362,6 +369,9 @@ func instanceResource() framework.ResourceSpec[instanceModel, *v1beta1.Instance]
 			}
 			if !plan.Tags.Equal(state.Tags) {
 				mask = append(mask, "tags")
+			}
+			if !plan.ServiceAccount.Equal(state.ServiceAccount) {
+				mask = append(mask, "service_account")
 			}
 			return mask
 		},
@@ -411,6 +421,7 @@ type instanceItemModel struct {
 	Creator            types.String `tfsdk:"creator"`
 	Tags               types.Map    `tfsdk:"tags"`
 	InterfaceAddresses types.List   `tfsdk:"interface_addresses"`
+	ServiceAccount     types.String `tfsdk:"service_account"`
 }
 
 func instanceItem_BootVolumeAttrTypes() map[string]attr.Type {
@@ -522,6 +533,7 @@ func instanceItemFromProto(p *v1beta1.Instance, m *instanceItemModel) error {
 	m.Creator = types.StringValue(p.GetCreator())
 	m.Tags = framework.StringMap(p.GetTags())
 	m.InterfaceAddresses = framework.MessageList(instanceItem_InterfaceAddressesAttrTypes(), p.GetInterfaceAddresses(), types.ListNull(types.ObjectType{AttrTypes: instanceItem_InterfaceAddressesAttrTypes()}), instanceItem_InterfaceAddressesFromProto)
+	m.ServiceAccount = types.StringValue(p.GetServiceAccount())
 	return nil
 }
 
@@ -674,6 +686,10 @@ func instanceListSchema() schema1.Schema {
 									},
 								},
 							},
+						},
+						"service_account": schema1.StringAttribute{
+							MarkdownDescription: "The service account the instance runs as, `organizations/{organization}/serviceAccounts/{service_account}`: a `WORKLOAD` service account of the instance's organization that isn't deleted. Launching with one, or updating the instance to one, needs `iam.service_account.act_as` on the organization as well; an update that leaves it empty removes it, and a terminated instance's can't change. Empty for an instance that runs as none.",
+							Computed:            true,
 						},
 					},
 				},

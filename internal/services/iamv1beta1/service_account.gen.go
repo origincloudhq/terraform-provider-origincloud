@@ -9,6 +9,7 @@ import (
 	schema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	planmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	stringplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	validator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	types "github.com/hashicorp/terraform-plugin-framework/types"
 	framework "github.com/origincloudhq/terraform-provider-origincloud/internal/framework"
 	core "go.origincloud.eu/sdk/core"
@@ -28,6 +29,7 @@ type serviceAccountModel struct {
 	Creator      types.String `tfsdk:"creator"`
 	CreateTime   types.String `tfsdk:"create_time"`
 	DeleteTime   types.String `tfsdk:"delete_time"`
+	Type         types.String `tfsdk:"type"`
 }
 
 func serviceAccountSchema() schema.Schema {
@@ -59,11 +61,11 @@ func serviceAccountSchema() schema.Schema {
 				Computed:            true,
 			},
 			"client_id": schema.StringAttribute{
-				MarkdownDescription: "The OAuth 2.0 client id it authenticates with.",
+				MarkdownDescription: "The OAuth 2.0 client id it authenticates with; empty for a `WORKLOAD` service account.",
 				Computed:            true,
 			},
 			"client_secret": schema.StringAttribute{
-				MarkdownDescription: "The OAuth 2.0 client secret it authenticates with. Set only in the response that created the service account, and empty everywhere else: it can't be read again.",
+				MarkdownDescription: "The OAuth 2.0 client secret it authenticates with. Set only in the response that created an `EXTERNAL` service account, and empty everywhere else: it can't be read again.",
 				Computed:            true,
 				Sensitive:           true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
@@ -84,6 +86,13 @@ func serviceAccountSchema() schema.Schema {
 				MarkdownDescription: "When the service account was deleted; unset while it is active. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.",
 				Computed:            true,
 			},
+			"type": schema.StringAttribute{
+				MarkdownDescription: "How the service account authenticates; `EXTERNAL` when the create leaves it unset. One of `EXTERNAL`, `WORKLOAD`. Changing it replaces the service account.",
+				Optional:            true,
+				Computed:            true,
+				Validators:          []validator.String{framework.OneOf("EXTERNAL", "WORKLOAD")},
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()},
+			},
 		},
 	}
 }
@@ -92,6 +101,7 @@ func serviceAccountToProto(m *serviceAccountModel) *v1beta1.ServiceAccount {
 	return &v1beta1.ServiceAccount{
 		Name:        m.Name.ValueString(),
 		DisplayName: m.DisplayName.ValueString(),
+		Type:        v1beta1.ServiceAccount_Type(v1beta1.ServiceAccount_Type_value[m.Type.ValueString()]),
 	}
 }
 
@@ -111,6 +121,7 @@ func serviceAccountFromProto(p *v1beta1.ServiceAccount, m *serviceAccountModel) 
 	m.Creator = types.StringValue(p.GetCreator())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
 	m.DeleteTime = framework.Timestamp(p.GetDeleteTime(), types.StringNull())
+	m.Type = types.StringValue(p.GetType().String())
 	return nil
 }
 
@@ -154,6 +165,7 @@ type serviceAccountItemModel struct {
 	Creator     types.String `tfsdk:"creator"`
 	CreateTime  types.String `tfsdk:"create_time"`
 	DeleteTime  types.String `tfsdk:"delete_time"`
+	Type        types.String `tfsdk:"type"`
 }
 
 func serviceAccountItemFromProto(p *v1beta1.ServiceAccount, m *serviceAccountItemModel) error {
@@ -165,6 +177,7 @@ func serviceAccountItemFromProto(p *v1beta1.ServiceAccount, m *serviceAccountIte
 	m.Creator = types.StringValue(p.GetCreator())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
 	m.DeleteTime = framework.Timestamp(p.GetDeleteTime(), types.StringNull())
+	m.Type = types.StringValue(p.GetType().String())
 	return nil
 }
 
@@ -200,7 +213,7 @@ func serviceAccountListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"client_id": schema1.StringAttribute{
-							MarkdownDescription: "The OAuth 2.0 client id it authenticates with.",
+							MarkdownDescription: "The OAuth 2.0 client id it authenticates with; empty for a `WORKLOAD` service account.",
 							Computed:            true,
 						},
 						"state": schema1.StringAttribute{
@@ -217,6 +230,10 @@ func serviceAccountListSchema() schema1.Schema {
 						},
 						"delete_time": schema1.StringAttribute{
 							MarkdownDescription: "When the service account was deleted; unset while it is active. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.",
+							Computed:            true,
+						},
+						"type": schema1.StringAttribute{
+							MarkdownDescription: "How the service account authenticates; `EXTERNAL` when the create leaves it unset. One of `EXTERNAL`, `WORKLOAD`.",
 							Computed:            true,
 						},
 					},

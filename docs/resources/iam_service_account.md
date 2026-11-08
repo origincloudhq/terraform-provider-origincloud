@@ -20,10 +20,14 @@ A credential of an organization for software.
 - `display_name` (String) A name of your own, shown in the console; at most 100 characters. Changing it replaces the service account.
 - `organization` (String) The organization the service account is in. Changing it replaces the service account.
 
+### Optional
+
+- `type` (String) How the service account authenticates; `EXTERNAL` when the create leaves it unset. One of `EXTERNAL`, `WORKLOAD`. Changing it replaces the service account.
+
 ### Read-Only
 
-- `client_id` (String) The OAuth 2.0 client id it authenticates with.
-- `client_secret` (String, Sensitive) The OAuth 2.0 client secret it authenticates with. Set only in the response that created the service account, and empty everywhere else: it can't be read again.
+- `client_id` (String) The OAuth 2.0 client id it authenticates with; empty for a `WORKLOAD` service account.
+- `client_secret` (String, Sensitive) The OAuth 2.0 client secret it authenticates with. Set only in the response that created an `EXTERNAL` service account, and empty everywhere else: it can't be read again.
 - `create_time` (String) When the service account was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
 - `creator` (String) Who created the service account, written as a role binding's member is.
 - `delete_time` (String) When the service account was deleted; unset while it is active. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
