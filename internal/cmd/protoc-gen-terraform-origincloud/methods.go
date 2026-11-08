@@ -42,6 +42,8 @@ var methodsNotManaged = []notManaged{
 	{"origincloud.billing.v1beta1.PriceListService.GetPriceList", "the prices in effect now, which no configuration sets or refers to"},
 	{"origincloud.compute.v1beta1.InstanceService.StartInstance", "a change of an instance's power state, an action rather than configuration"},
 	{"origincloud.compute.v1beta1.InstanceService.StopInstance", "a change of an instance's power state, an action rather than configuration"},
+	{"origincloud.dns.v1beta1.HostedZoneService.VerifyHostedZone", "checks a public zone's challenge now, which the platform also checks on its own; the TXT record it checks is created after the zone, often with another provider"},
+	{"origincloud.dns.v1beta1.RecordSetService.BatchChangeRecordSets", "several record sets' changes at once, which each origincloud_dns_record_set makes on its own"},
 	{"origincloud.iam.v1beta1.PermissionService.TestIamPermissions", "a check of the caller's own permissions, not state"},
 	{"origincloud.network.v1beta1.DnsPolicyService.SetDefaultDnsPolicy", "moves the project's default to another policy, which has no clear to pair it with"},
 	{"origincloud.observability.v1beta1.MetricService.QueryTimeSeries", "a query over a moving window of time series, not state: its answer changes at every plan"},

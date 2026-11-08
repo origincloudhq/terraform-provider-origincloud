@@ -7,6 +7,7 @@ import (
 	resource "github.com/hashicorp/terraform-plugin-framework/resource"
 	billingv1beta1 "github.com/origincloudhq/terraform-provider-origincloud/internal/services/billingv1beta1"
 	computev1beta1 "github.com/origincloudhq/terraform-provider-origincloud/internal/services/computev1beta1"
+	dnsv1beta1 "github.com/origincloudhq/terraform-provider-origincloud/internal/services/dnsv1beta1"
 	iamv1beta1 "github.com/origincloudhq/terraform-provider-origincloud/internal/services/iamv1beta1"
 	locationv1beta1 "github.com/origincloudhq/terraform-provider-origincloud/internal/services/locationv1beta1"
 	networkv1beta1 "github.com/origincloudhq/terraform-provider-origincloud/internal/services/networkv1beta1"
@@ -20,6 +21,7 @@ func serviceResources() []func() resource.Resource {
 	var all []func() resource.Resource
 	all = append(all, billingv1beta1.Resources()...)
 	all = append(all, computev1beta1.Resources()...)
+	all = append(all, dnsv1beta1.Resources()...)
 	all = append(all, iamv1beta1.Resources()...)
 	all = append(all, locationv1beta1.Resources()...)
 	all = append(all, networkv1beta1.Resources()...)
@@ -34,6 +36,7 @@ func serviceDataSources() []func() datasource.DataSource {
 	var all []func() datasource.DataSource
 	all = append(all, billingv1beta1.DataSources()...)
 	all = append(all, computev1beta1.DataSources()...)
+	all = append(all, dnsv1beta1.DataSources()...)
 	all = append(all, iamv1beta1.DataSources()...)
 	all = append(all, locationv1beta1.DataSources()...)
 	all = append(all, networkv1beta1.DataSources()...)

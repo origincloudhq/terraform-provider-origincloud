@@ -28,7 +28,7 @@ Lists an organization's service accounts, oldest first. Deleted ones are listed 
 
 Read-Only:
 
-- `client_id` (String) The OAuth 2.0 client id it authenticates with.
+- `client_id` (String) The OAuth 2.0 client id it authenticates with; empty for a `WORKLOAD` service account.
 - `create_time` (String) When the service account was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
 - `creator` (String) Who created the service account, written as a role binding's member is.
 - `delete_time` (String) When the service account was deleted; unset while it is active. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
@@ -36,3 +36,4 @@ Read-Only:
 - `member` (String) The member a role binding names it by, `serviceAccount:{service_account}`.
 - `name` (String) The service account's resource name.
 - `state` (String) Where the service account is in its lifecycle. One of `ACTIVE`, `DELETED`.
+- `type` (String) How the service account authenticates; `EXTERNAL` when the create leaves it unset. One of `EXTERNAL`, `WORKLOAD`.

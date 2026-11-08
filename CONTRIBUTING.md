@@ -260,7 +260,9 @@ ORIGINCLOUD_LIVE_ZONE=projects/<project>/zones/<zone> \
 ```
 
 The live tests only read, except `TestLivePVS`, which creates and destroys
-volumes and snapshots in the zone's project. Their credentials need
+volumes and snapshots in the zone's project, and `TestLiveDNS`, which
+creates and destroys hosted zones, a record set, a VPC and a private zone's
+attachment to it. Their credentials need
 `roles/owner` on that project, and `roles/viewer` and `roles/billing.viewer`
 on its organization, to list its projects, billing accounts and support cases.
 

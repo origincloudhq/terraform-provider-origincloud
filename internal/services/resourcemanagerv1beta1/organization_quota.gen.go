@@ -15,13 +15,15 @@ import (
 
 // organizationQuotaModel is origincloud_resourcemanager_organization_quota's state.
 type organizationQuotaModel struct {
-	Name         types.String `tfsdk:"name"`
-	MaxInstances types.Int64  `tfsdk:"max_instances"`
-	MaxVcpu      types.Int64  `tfsdk:"max_vcpu"`
-	MaxVolumeGib types.Int64  `tfsdk:"max_volume_gib"`
-	MaxVpcs      types.Int64  `tfsdk:"max_vpcs"`
-	MaxPublicIps types.Int64  `tfsdk:"max_public_ips"`
-	Usage        types.Object `tfsdk:"usage"`
+	Name           types.String `tfsdk:"name"`
+	MaxInstances   types.Int64  `tfsdk:"max_instances"`
+	MaxVcpu        types.Int64  `tfsdk:"max_vcpu"`
+	MaxVolumeGib   types.Int64  `tfsdk:"max_volume_gib"`
+	MaxVpcs        types.Int64  `tfsdk:"max_vpcs"`
+	MaxPublicIps   types.Int64  `tfsdk:"max_public_ips"`
+	MaxHostedZones types.Int64  `tfsdk:"max_hosted_zones"`
+	MaxRecordSets  types.Int64  `tfsdk:"max_record_sets"`
+	Usage          types.Object `tfsdk:"usage"`
 }
 
 func organizationQuotaSchema() schema.Schema {
@@ -52,6 +54,14 @@ func organizationQuotaSchema() schema.Schema {
 				MarkdownDescription: "The most floating IPs.",
 				Computed:            true,
 			},
+			"max_hosted_zones": schema.Int64Attribute{
+				MarkdownDescription: "The most DNS hosted zones, including those not yet verified.",
+				Computed:            true,
+			},
+			"max_record_sets": schema.Int64Attribute{
+				MarkdownDescription: "The most DNS record sets, summed over every hosted zone.",
+				Computed:            true,
+			},
 			"usage": schema.SingleNestedAttribute{
 				MarkdownDescription: "How much of each limit the organization's projects use together.",
 				Computed:            true,
@@ -76,6 +86,14 @@ func organizationQuotaSchema() schema.Schema {
 						MarkdownDescription: "Floating IPs.",
 						Computed:            true,
 					},
+					"hosted_zones": schema.Int64Attribute{
+						MarkdownDescription: "DNS hosted zones, including those not yet verified; unset while they can't be counted, the other figures answered all the same.",
+						Computed:            true,
+					},
+					"record_sets": schema.Int64Attribute{
+						MarkdownDescription: "DNS record sets; unset while they can't be counted, the other figures answered all the same.",
+						Computed:            true,
+					},
 				},
 			},
 		},
@@ -84,21 +102,28 @@ func organizationQuotaSchema() schema.Schema {
 
 func organizationQuota_UsageAttrTypes() map[string]attr.Type {
 	return map[string]attr.Type{
-		"instances":  types.Int64Type,
-		"vcpu":       types.Int64Type,
-		"volume_gib": types.Int64Type,
-		"vpcs":       types.Int64Type,
-		"public_ips": types.Int64Type,
+		"instances":    types.Int64Type,
+		"vcpu":         types.Int64Type,
+		"volume_gib":   types.Int64Type,
+		"vpcs":         types.Int64Type,
+		"public_ips":   types.Int64Type,
+		"hosted_zones": types.Int64Type,
+		"record_sets":  types.Int64Type,
 	}
 }
 
 func organizationQuota_UsageFromProto(p *v1beta1.QuotaUsage, prior types.Object) types.Object {
+	if p == nil {
+		p = &v1beta1.QuotaUsage{}
+	}
 	return types.ObjectValueMust(organizationQuota_UsageAttrTypes(), map[string]attr.Value{
-		"instances":  types.Int64Value(int64(p.GetInstances())),
-		"vcpu":       types.Int64Value(int64(p.GetVcpu())),
-		"volume_gib": types.Int64Value(int64(p.GetVolumeGib())),
-		"vpcs":       types.Int64Value(int64(p.GetVpcs())),
-		"public_ips": types.Int64Value(int64(p.GetPublicIps())),
+		"instances":    types.Int64Value(int64(p.GetInstances())),
+		"vcpu":         types.Int64Value(int64(p.GetVcpu())),
+		"volume_gib":   types.Int64Value(int64(p.GetVolumeGib())),
+		"vpcs":         types.Int64Value(int64(p.GetVpcs())),
+		"public_ips":   types.Int64Value(int64(p.GetPublicIps())),
+		"hosted_zones": framework.PresentInt64(p.HostedZones),
+		"record_sets":  framework.PresentInt64(p.RecordSets),
 	})
 }
 
@@ -116,6 +141,8 @@ func organizationQuotaFromProto(p *v1beta1.OrganizationQuota, m *organizationQuo
 	m.MaxVolumeGib = types.Int64Value(int64(p.GetMaxVolumeGib()))
 	m.MaxVpcs = types.Int64Value(int64(p.GetMaxVpcs()))
 	m.MaxPublicIps = types.Int64Value(int64(p.GetMaxPublicIps()))
+	m.MaxHostedZones = types.Int64Value(int64(p.GetMaxHostedZones()))
+	m.MaxRecordSets = types.Int64Value(int64(p.GetMaxRecordSets()))
 	m.Usage = framework.Object(p.GetUsage(), types.ObjectNull(organizationQuota_UsageAttrTypes()), organizationQuota_UsageAttrTypes(), organizationQuota_UsageFromProto)
 	return nil
 }

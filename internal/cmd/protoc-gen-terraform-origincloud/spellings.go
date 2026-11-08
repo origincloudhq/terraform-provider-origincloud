@@ -35,6 +35,18 @@ type spelling struct {
 
 var spellings = []spelling{
 	{
+		resource:  "origincloud.dns.v1beta1.HostedZone",
+		field:     "dns_name",
+		framework: "DomainSpelling",
+		doc:       "Changing it replaces the hosted zone, unless it is the same name in another case.",
+	},
+	{
+		resource:  "origincloud.dns.v1beta1.RecordSet",
+		field:     "dns_name",
+		framework: "DomainSpelling",
+		doc:       "Changing it replaces the record set, unless it is the same name in another case.",
+	},
+	{
 		resource:  "origincloud.iam.v1beta1.RoleBinding",
 		field:     "member",
 		framework: "MemberSpelling",

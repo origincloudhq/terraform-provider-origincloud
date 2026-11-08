@@ -29,6 +29,7 @@ A virtual machine in one zone.
 - `image` (String) The image the boot volume is created from, in the instance's zone: one of the project's own, `projects/{project}/zones/{zone}/images/{image}`, or a public one, `zones/{zone}/images/{image}`. Set exactly one of `image` and `image_family`; launched from a family, this is the public image the family resolved to. Changing it replaces the instance.
 - `image_family` (String) The image family to launch the current public image of, `imageFamilies/{image_family}`. Set exactly one of `image` and `image_family`. Empty when the instance was launched from an image. Changing it replaces the instance.
 - `login_user` (String) The account to log in as: a user created at first boot that holds the key pair. A POSIX user name of at most 32 lowercase letters, digits, underscores and hyphens, starting with a letter or an underscore, and not `root`. The image's `default_user` when left empty. Changing it replaces the instance.
+- `service_account` (String) The service account the instance runs as, `organizations/{organization}/serviceAccounts/{service_account}`: a `WORKLOAD` service account of the instance's organization that isn't deleted. Launching with one, or updating the instance to one, needs `iam.service_account.act_as` on the organization as well; an update that leaves it empty removes it, and a terminated instance's can't change. Empty for an instance that runs as none.
 - `tags` (Map of String) Labels of your own, at most 50. The `origin:name` tag is the name the console shows.
 
 ### Read-Only

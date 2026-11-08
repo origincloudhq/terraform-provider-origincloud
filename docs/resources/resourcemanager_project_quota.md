@@ -24,8 +24,10 @@ Every project has its project quota, which exists with it: creating this resourc
 
 ### Optional
 
+- `max_hosted_zones` (Number) The most DNS hosted zones, including those not yet verified; unset means no budget. Left out, Terraform doesn't manage it, and it keeps its current value; removed from the configuration once set, it is unset. See the field's description for what unset means.
 - `max_instances` (Number) The most instances that aren't terminated; unset means no budget. Each budget is zero or more, and no more than the organization's limit for the same kind. Left out, Terraform doesn't manage it, and it keeps its current value; removed from the configuration once set, it is unset. See the field's description for what unset means.
 - `max_public_ips` (Number) The most floating IPs; unset means no budget. Left out, Terraform doesn't manage it, and it keeps its current value; removed from the configuration once set, it is unset. See the field's description for what unset means.
+- `max_record_sets` (Number) The most DNS record sets, summed over the project's hosted zones; unset means no budget. Left out, Terraform doesn't manage it, and it keeps its current value; removed from the configuration once set, it is unset. See the field's description for what unset means.
 - `max_vcpu` (Number) The most vCPUs, summed over the instances that aren't terminated; unset means no budget. Left out, Terraform doesn't manage it, and it keeps its current value; removed from the configuration once set, it is unset. See the field's description for what unset means.
 - `max_volume_gib` (Number) The most GiB of volumes that aren't deleted; unset means no budget. Left out, Terraform doesn't manage it, and it keeps its current value; removed from the configuration once set, it is unset. See the field's description for what unset means.
 - `max_vpcs` (Number) The most VPCs; unset means no budget. Left out, Terraform doesn't manage it, and it keeps its current value; removed from the configuration once set, it is unset. See the field's description for what unset means.
@@ -41,8 +43,10 @@ Every project has its project quota, which exists with it: creating this resourc
 
 Read-Only:
 
+- `hosted_zones` (Number) DNS hosted zones, including those not yet verified; unset while they can't be counted, the other figures answered all the same.
 - `instances` (Number) Instances that aren't terminated.
 - `public_ips` (Number) Floating IPs.
+- `record_sets` (Number) DNS record sets; unset while they can't be counted, the other figures answered all the same.
 - `vcpu` (Number) vCPUs of the instances that aren't terminated.
 - `volume_gib` (Number) GiB of volumes that aren't deleted.
 - `vpcs` (Number) VPCs.
