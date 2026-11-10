@@ -11,6 +11,7 @@ import (
 // Resources returns the constructors of the package's resources.
 func Resources() []func() resource.Resource {
 	return []func() resource.Resource{
+		framework.NewResource(federatedCredentialResource()),
 		framework.NewResource(roleBindingResource()),
 		framework.NewResource(serviceAccountResource()),
 	}
@@ -21,6 +22,7 @@ func DataSources() []func() datasource.DataSource {
 	return []func() datasource.DataSource{
 		framework.NewDataSource(auditLogEntryDataSource()),
 		framework.NewListDataSource(auditLogEntryListDataSource()),
+		framework.NewListDataSource(federatedCredentialListDataSource()),
 		framework.NewDataSource(permissionDataSource()),
 		framework.NewListDataSource(permissionListDataSource()),
 		framework.NewDataSource(roleDataSource()),
