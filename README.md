@@ -75,12 +75,14 @@ data sources are generated from the API definitions in
 | Data source | `origincloud_network_dns_policy_associations` | A VPC's DNS policy association |
 | Resource | `origincloud_iam_service_account` | A credential of an organization for software, and its client secret |
 | Resource | `origincloud_iam_role_binding` | One role granted to one member, organization-wide or in one project |
+| Resource | `origincloud_iam_federated_credential` | A `WORKLOAD` service account's trust in a CI provider's OIDC tokens |
 | Data source | `origincloud_iam_role` | A predefined set of permissions |
 | Data source | `origincloud_iam_roles` | Every predefined role |
 | Data source | `origincloud_iam_permission` | One action the platform checks |
 | Data source | `origincloud_iam_permissions` | Every permission |
 | Data source | `origincloud_iam_role_bindings` | An organization's role bindings, or your own in every organization |
 | Data source | `origincloud_iam_service_accounts` | An organization's service accounts |
+| Data source | `origincloud_iam_federated_credentials` | A service account's federated credentials |
 | Data source | `origincloud_iam_user` | You, as the platform knows you |
 | Data source | `origincloud_iam_audit_log_entry` | One recorded change to who may do what |
 | Data source | `origincloud_iam_audit_log_entries` | An organization's audit log, most recent first |

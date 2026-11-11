@@ -71,11 +71,15 @@ type iamBinding struct {
 // current verified address, as userId:{user} when it has none, and as
 // deleted:user:{user} once the account is gone, which changeEmail,
 // unverify and deleteUser bring about, as a user would outside Terraform.
-// A service account's client secret is in its create's response only. A
+// A service account's client secret is in its create's response only, and
+// a WORKLOAD service account has none, nor a client id. A
 // create repeated with the same request id is refused with 409 CONFLICT,
 // naming the account in its ErrorInfo metadata, as the secret went out
 // with the first answer only; loseCreateAnswer drops that first answer, as
-// a connection that breaks off after the server acted does.
+// a connection that breaks off after the server acted does. A federated
+// credential is created only on an active WORKLOAD service account, with an
+// https issuer and a condition on an identity that never changes, as the
+// API checks; its delete leaves it DELETED.
 type fakeIAM struct {
 	*httptest.Server
 
@@ -84,6 +88,7 @@ type fakeIAM struct {
 	users           map[string]*iamUser
 	bindings        map[string]*iamBinding
 	serviceAccounts map[string]*iamv1beta1.ServiceAccount
+	federated       map[string]*iamv1beta1.FederatedCredential
 	auditLog        []*iamv1beta1.AuditLogEntry
 	// secrets are the client secrets generated, by service account.
 	secrets map[string]string
@@ -110,6 +115,7 @@ func newFakeIAM(t *testing.T) *fakeIAM {
 			"organizations/acme/roleBindings/rb-0": {name: "organizations/acme/roleBindings/rb-0", role: "roles/owner", creator: "platform", user: iamCaller},
 		},
 		serviceAccounts: map[string]*iamv1beta1.ServiceAccount{},
+		federated:       map[string]*iamv1beta1.FederatedCredential{},
 		secrets:         map[string]string{},
 		created:         map[string]string{},
 	}
@@ -191,6 +197,16 @@ func (f *fakeIAM) serve(w http.ResponseWriter, r *http.Request) {
 		f.createServiceAccount(w, s[1], requestID, body)
 	case len(s) == 4 && s[0] == "organizations" && s[2] == "serviceAccounts":
 		f.serviceAccount(w, r, path)
+	case len(s) == 5 && s[0] == "organizations" && s[2] == "serviceAccounts" && s[4] == "federatedCredentials" && r.Method == http.MethodGet:
+		show := r.URL.Query().Get("showDeleted") == "true"
+		items, next := page(f.federated, path+"/", r, func(c *iamv1beta1.FederatedCredential) bool {
+			return show || c.GetState() != iamv1beta1.FederatedCredential_DELETED
+		})
+		writeMessage(w, &iamv1beta1.ListFederatedCredentialsResponse{FederatedCredentials: items, NextPageToken: next})
+	case len(s) == 5 && s[0] == "organizations" && s[2] == "serviceAccounts" && s[4] == "federatedCredentials" && r.Method == http.MethodPost:
+		f.createFederatedCredential(w, strings.Join(s[:4], "/"), requestID, body)
+	case len(s) == 6 && s[0] == "organizations" && s[2] == "serviceAccounts" && s[4] == "federatedCredentials":
+		f.federatedCredential(w, r, path)
 	case len(s) == 3 && s[0] == "organizations" && s[2] == "auditLogEntries" && r.Method == http.MethodGet:
 		f.listAuditLog(w, r, path+"/")
 	case len(s) == 4 && s[0] == "organizations" && s[2] == "auditLogEntries" && r.Method == http.MethodGet:
@@ -366,7 +382,12 @@ func (f *fakeIAM) createServiceAccount(w http.ResponseWriter, organization, requ
 	id := fmt.Sprintf("sa-%d", f.next)
 	a.Name = "organizations/" + organization + "/serviceAccounts/" + id
 	a.Member = "serviceAccount:" + id
-	a.ClientId = "client-" + id
+	if a.GetType() == iamv1beta1.ServiceAccount_TYPE_UNSPECIFIED {
+		a.Type = iamv1beta1.ServiceAccount_EXTERNAL
+	}
+	if a.GetType() == iamv1beta1.ServiceAccount_EXTERNAL {
+		a.ClientId = "client-" + id
+	}
 	a.State = iamv1beta1.ServiceAccount_ACTIVE
 	a.Creator = "user:me@example.com"
 	a.CreateTime = timestamppb.New(time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))
@@ -374,8 +395,10 @@ func (f *fakeIAM) createServiceAccount(w http.ResponseWriter, organization, requ
 	f.created[requestID] = a.Name
 	f.audit(organization, "", "iam.service_account.create", a.Member, map[string]string{"display_name": a.GetDisplayName()})
 	created := proto.Clone(a).(*iamv1beta1.ServiceAccount)
-	created.ClientSecret = "secret-" + id
-	f.secrets[a.Name] = created.ClientSecret
+	if a.GetType() == iamv1beta1.ServiceAccount_EXTERNAL {
+		created.ClientSecret = "secret-" + id
+		f.secrets[a.Name] = created.ClientSecret
+	}
 	if f.loseCreateAnswer {
 		f.loseCreateAnswer = false
 		conn, _, err := w.(http.Hijacker).Hijack()
@@ -434,6 +457,96 @@ func (f *fakeIAM) serviceAccount(w http.ResponseWriter, r *http.Request, name st
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "INVALID_ARGUMENT", r.Method+" "+name+" isn't served")
 	}
+}
+
+// federatedImmutableClaims are the claims a federated credential's
+// conditions must name one of, by issuer: identities that never change. Any
+// other issuer's is sub.
+var federatedImmutableClaims = map[string][]string{
+	"https://token.actions.githubusercontent.com": {"repository_id", "repository_owner_id"},
+	"https://gitlab.com":                          {"project_id", "namespace_id"},
+}
+
+func (f *fakeIAM) createFederatedCredential(w http.ResponseWriter, account, requestID string, body []byte) {
+	if name, ok := f.created[requestID]; ok && requestID != "" {
+		writeMessage(w, f.federated[name])
+		return
+	}
+	a, ok := f.serviceAccounts[account]
+	if !ok || a.GetState() != iamv1beta1.ServiceAccount_ACTIVE || a.GetType() != iamv1beta1.ServiceAccount_WORKLOAD {
+		writeError(w, http.StatusBadRequest, "FAILED_PRECONDITION", account+" isn't an active WORKLOAD service account")
+		return
+	}
+	c := new(iamv1beta1.FederatedCredential)
+	if err := protojson.Unmarshal(body, c); err != nil || c.GetDisplayName() == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "a federated credential needs a display name")
+		return
+	}
+	if !strings.HasPrefix(c.GetIssuer(), "https://") {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "the issuer must be an https URL, not "+c.GetIssuer())
+		return
+	}
+	immutable, ok := federatedImmutableClaims[c.GetIssuer()]
+	if !ok {
+		immutable = []string{"sub"}
+	}
+	named := false
+	for claim, value := range c.GetConditions() {
+		if strings.Contains(value, "*") {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "the condition "+claim+" contains *, which isn't a pattern")
+			return
+		}
+		named = named || slices.Contains(immutable, claim)
+	}
+	if !named {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "the conditions must name one of "+strings.Join(immutable, ", ")+" for the issuer "+c.GetIssuer())
+		return
+	}
+	if c.GetAudience() == "" {
+		c.Audience = "https://sts.origincloudapis.eu"
+	}
+	f.next++
+	c.Name = fmt.Sprintf("%s/federatedCredentials/fc-%d", account, f.next)
+	c.State = iamv1beta1.FederatedCredential_ACTIVE
+	c.Creator = "user:me@example.com"
+	c.CreateTime = timestamppb.New(time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))
+	f.federated[c.Name] = c
+	f.created[requestID] = c.Name
+	writeMessage(w, c)
+}
+
+func (f *fakeIAM) federatedCredential(w http.ResponseWriter, r *http.Request, name string) {
+	c, ok := f.federated[name]
+	if !ok {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", name+" doesn't exist")
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		writeMessage(w, c)
+	case http.MethodDelete:
+		f.retireFederatedCredential(c)
+		writeMessage(w, &emptypb.Empty{})
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "INVALID_ARGUMENT", r.Method+" "+name+" isn't served")
+	}
+}
+
+// retireFederatedCredential leaves c DELETED; deleting a deleted one
+// changes nothing.
+func (f *fakeIAM) retireFederatedCredential(c *iamv1beta1.FederatedCredential) {
+	if c.GetState() != iamv1beta1.FederatedCredential_DELETED {
+		c.State = iamv1beta1.FederatedCredential_DELETED
+		c.DeleteTime = timestamppb.New(time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC))
+	}
+}
+
+// deleteFederatedCredential deletes the federated credential name outside
+// Terraform.
+func (f *fakeIAM) deleteFederatedCredential(name string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.retireFederatedCredential(f.federated[name])
 }
 
 // audit records a change in the organization's audit log.

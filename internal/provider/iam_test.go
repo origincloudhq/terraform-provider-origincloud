@@ -24,6 +24,8 @@ const (
 	ciServiceAccount = "origincloud_iam_service_account.ci"
 	ciBinding        = "origincloud_iam_role_binding.ci"
 	anaBinding       = "origincloud_iam_role_binding.ana"
+	deployAccount    = "origincloud_iam_service_account.deploy"
+	githubCredential = "origincloud_iam_federated_credential.github"
 )
 
 // requestID is the form of the request ids the SDK sends: a version 4
@@ -447,6 +449,221 @@ resource "origincloud_iam_role_binding" "ana" {
 						return nil
 					},
 				),
+			},
+		},
+	})
+}
+
+// federatedConfig returns a configuration of the provider calling fake,
+// with a WORKLOAD service account and a federated credential on it that
+// trusts GitHub Actions' tokens of one repository's main branch; credential
+// is the credential's attributes after its service account.
+func federatedConfig(fake *fakeIAM, credential string) string {
+	return iamProvider(fake) + fmt.Sprintf(`
+resource "origincloud_iam_service_account" "deploy" {
+  organization = "acme"
+  display_name = "Deploy"
+  type         = "WORKLOAD"
+}
+
+resource "origincloud_iam_federated_credential" "github" {
+  organization    = "acme"
+  service_account = basename(origincloud_iam_service_account.deploy.name)
+  %s
+}
+`, credential)
+}
+
+const githubActions = `display_name = "GitHub Actions"
+  issuer       = "https://token.actions.githubusercontent.com"
+  conditions   = { repository_id = "123456", ref = "refs/heads/main" }`
+
+func TestFederatedCredentialsAreCreatedImportedReplacedAndDestroyed(t *testing.T) {
+	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
+	fake := newFakeIAM(t)
+	created := federatedConfig(fake, githubActions)
+	// replaces checks that config plans to replace the credential only.
+	replaces := func(config string) resource.TestStep {
+		return resource.TestStep{
+			Config:             config,
+			PlanOnly:           true,
+			ExpectNonEmptyPlan: true,
+			ConfigPlanChecks: resource.ConfigPlanChecks{PostApplyPreRefresh: []plancheck.PlanCheck{
+				plancheck.ExpectResourceAction(githubCredential, plancheck.ResourceActionReplace),
+				plancheck.ExpectResourceAction(deployAccount, plancheck.ResourceActionNoop),
+			}},
+		}
+	}
+	var first string
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			// Created; the audience left out is the API's default, which
+			// the plan after it keeps. A WORKLOAD service account has no
+			// client id or secret.
+			{
+				Config: created,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(deployAccount, "type", "WORKLOAD"),
+					resource.TestCheckResourceAttr(deployAccount, "client_id", ""),
+					resource.TestMatchResourceAttr(githubCredential, "name", regexp.MustCompile(`^organizations/acme/serviceAccounts/sa-[0-9]+/federatedCredentials/fc-[0-9]+$`)),
+					resource.TestCheckResourceAttrPair(githubCredential, "id", githubCredential, "name"),
+					resource.TestCheckResourceAttr(githubCredential, "organization", "acme"),
+					resource.TestMatchResourceAttr(githubCredential, "service_account", regexp.MustCompile(`^sa-[0-9]+$`)),
+					resource.TestCheckResourceAttr(githubCredential, "audience", "https://sts.origincloudapis.eu"),
+					resource.TestCheckResourceAttr(githubCredential, "conditions.%", "2"),
+					resource.TestCheckResourceAttr(githubCredential, "conditions.repository_id", "123456"),
+					resource.TestCheckResourceAttr(githubCredential, "state", "ACTIVE"),
+					resource.TestCheckResourceAttr(githubCredential, "creator", "user:me@example.com"),
+					resource.TestCheckResourceAttr(githubCredential, "create_time", "2026-11-01T12:00:00Z"),
+					resource.TestCheckNoResourceAttr(githubCredential, "delete_time"),
+					func(s *terraform.State) error {
+						first = s.RootModule().Resources[githubCredential].Primary.ID
+						return nil
+					},
+				),
+			},
+			// The default audience configured is no change.
+			{
+				Config: federatedConfig(fake, githubActions+`
+  audience     = "https://sts.origincloudapis.eu"`),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectEmptyPlan(),
+				}},
+			},
+			{
+				Config:            created,
+				ResourceName:      githubCredential,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+			{
+				Config:        created,
+				ResourceName:  githubCredential,
+				ImportState:   true,
+				ImportStateId: "fc-1",
+				ExpectError:   regexp.MustCompile(`"fc-1" isn't a name of the form\s+organizations/\{organization\}/serviceAccounts/\{service_account\}/federatedCredentials/\{federated_credential\}`),
+			},
+			// A credential is never updated: any change replaces it.
+			replaces(federatedConfig(fake, strings.Replace(githubActions, `"GitHub Actions"`, `"GitHub"`, 1))),
+			replaces(federatedConfig(fake, githubActions+`
+  audience     = "https://example.com"`)),
+			replaces(federatedConfig(fake, `display_name = "GitHub Actions"
+  issuer       = "https://token.actions.example.com"
+  conditions   = { sub = "repo:acme/app:ref:refs/heads/main" }`)),
+			{
+				Config: federatedConfig(fake, strings.Replace(githubActions, `"refs/heads/main"`, `"refs/heads/release"`, 1)),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(githubCredential, plancheck.ResourceActionDestroyBeforeCreate),
+					plancheck.ExpectResourceAction(deployAccount, plancheck.ResourceActionNoop),
+				}},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(githubCredential, "conditions.ref", "refs/heads/release"),
+					func(s *terraform.State) error {
+						if name := s.RootModule().Resources[githubCredential].Primary.ID; name == first {
+							return fmt.Errorf("%s wasn't replaced", name)
+						}
+						fake.mu.Lock()
+						defer fake.mu.Unlock()
+						if state := fake.federated[first].GetState(); state != iamv1beta1.FederatedCredential_DELETED {
+							return fmt.Errorf("the replaced %s is %s", first, state)
+						}
+						return nil
+					},
+				),
+			},
+			// Deleted outside Terraform, it is DELETED: it leaves the
+			// state at the refresh, and the apply creates it again.
+			{
+				PreConfig: func() {
+					fake.mu.Lock()
+					var name string
+					for n, c := range fake.federated {
+						if c.GetState() == iamv1beta1.FederatedCredential_ACTIVE {
+							name = n
+						}
+					}
+					fake.mu.Unlock()
+					fake.deleteFederatedCredential(name)
+				},
+				Config: created,
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(githubCredential, plancheck.ResourceActionCreate),
+				}},
+				Check: resource.TestCheckResourceAttr(githubCredential, "state", "ACTIVE"),
+			},
+			// The list leaves the deleted ones out.
+			{
+				Config: created + `
+data "origincloud_iam_federated_credentials" "deploy" {
+  organization    = "acme"
+  service_account = origincloud_iam_federated_credential.github.service_account
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("data.origincloud_iam_federated_credentials.deploy", "federated_credentials.#", "1"),
+					resource.TestCheckResourceAttrPair("data.origincloud_iam_federated_credentials.deploy", "federated_credentials.0.name", githubCredential, "name"),
+				),
+			},
+		},
+		CheckDestroy: func(*terraform.State) error {
+			fake.mu.Lock()
+			defer fake.mu.Unlock()
+			for name, c := range fake.federated {
+				if c.GetState() != iamv1beta1.FederatedCredential_DELETED {
+					return fmt.Errorf("%s is %s", name, c.GetState())
+				}
+			}
+			var credentialCalls []string
+			for _, call := range fake.calls {
+				if strings.Contains(call, "/federatedCredentials") {
+					credentialCalls = append(credentialCalls, strings.Fields(call)[0])
+				}
+			}
+			// Created, replaced, created again after the delete outside
+			// Terraform, and destroyed; never updated.
+			if want := []string{"POST", "DELETE", "POST", "POST", "DELETE"}; !slices.Equal(credentialCalls, want) {
+				return fmt.Errorf("the federated credential calls were %v, not %v", credentialCalls, want)
+			}
+			return nil
+		},
+	})
+}
+
+// The API's refusals of a federated credential fail the apply with its
+// message.
+func TestAFederatedCredentialTheAPIRefusesFailsTheApply(t *testing.T) {
+	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
+	fake := newFakeIAM(t)
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			// No condition on an identity that never changes.
+			{
+				Config: federatedConfig(fake, `display_name = "GitHub Actions"
+  issuer       = "https://token.actions.githubusercontent.com"
+  conditions   = { ref = "refs/heads/main" }`),
+				ExpectError: regexp.MustCompile(`(?s)INVALID_ARGUMENT:\s+the\s+conditions\s+must\s+name\s+one\s+of\s+repository_id,\s+repository_owner_id`),
+			},
+			// An EXTERNAL service account has its secret instead.
+			{
+				Config: iamProvider(fake) + `
+resource "origincloud_iam_service_account" "ci" {
+  organization = "acme"
+  display_name = "CI"
+}
+
+resource "origincloud_iam_federated_credential" "gitlab" {
+  organization    = "acme"
+  service_account = basename(origincloud_iam_service_account.ci.name)
+  display_name    = "GitLab CI"
+  issuer          = "https://gitlab.com"
+  conditions      = { project_id = "42" }
+}
+`,
+				ExpectError: regexp.MustCompile(`(?s)FAILED_PRECONDITION:.*isn't\s+an\s+active\s+WORKLOAD\s+service\s+account`),
 			},
 		},
 	})
