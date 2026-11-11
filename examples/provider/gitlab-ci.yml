@@ -1,0 +1,16 @@
+# .gitlab-ci.yml
+apply:
+  image:
+    name: hashicorp/terraform:1.16.2
+    entrypoint: [""]
+  # GitLab sets ORIGINCLOUD_OIDC_TOKEN to the job's OIDC token, issued for
+  # the security token service, which the provider exchanges for the
+  # service account's access tokens.
+  id_tokens:
+    ORIGINCLOUD_OIDC_TOKEN:
+      aud: https://sts.origincloudapis.eu
+  script:
+    - terraform init
+    - terraform apply -auto-approve
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

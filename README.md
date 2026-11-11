@@ -162,8 +162,23 @@ Credentials come from the environment, the first of:
 1. `ORIGINCLOUD_ACCESS_TOKEN`: an access token, sent as it is.
 2. `ORIGINCLOUD_CLIENT_ID` and `ORIGINCLOUD_CLIENT_SECRET`: a service account's
    credential, exchanged for access tokens as they expire. This is what
-   automation should use.
-3. The session the `origin` CLI stored at its last login (`origin id login`).
+   automation outside CI should use.
+3. A CI job's OIDC token, exchanged at the security token service
+   (`https://sts.origincloudapis.eu`) for a `WORKLOAD` service account's
+   access tokens, so that no secret is stored in the CI system: the token in
+   the file `ORIGINCLOUD_OIDC_TOKEN_FILE` names, or else the token
+   `ORIGINCLOUD_OIDC_TOKEN` holds, as GitLab CI's `id_tokens` set it, or
+   else, in a GitHub Actions job with `permissions: id-token: write`, the
+   job's. The service account needs a federated credential that trusts the
+   CI provider, such as an `origincloud_iam_federated_credential`.
+   `ORIGINCLOUD_OIDC_DISABLED=true` leaves this step out. The provider's
+   [documentation](docs/index.md#authentication-from-ci) has GitHub Actions
+   and GitLab CI examples, and
+   [docs.origincloud.eu](https://docs.origincloud.eu/docs/iam/workload-identity-federation/)
+   how to set up the federated credential.
+4. The session the `origin` CLI stored at its last login (`origin id login`).
+5. On an instance that runs as a service account, the instance's metadata
+   service.
 
 | Argument | |
 |---|---|

@@ -41,7 +41,9 @@ func (p *originCloud) Schema(_ context.Context, _ provider.SchemaRequest, resp *
 		MarkdownDescription: "Manages Origin Cloud resources.\n\n" +
 			"Credentials come from the environment, the first of: `ORIGINCLOUD_ACCESS_TOKEN`, an access token; " +
 			"`ORIGINCLOUD_CLIENT_ID` and `ORIGINCLOUD_CLIENT_SECRET`, a service account; " +
-			"the session the `origin` CLI stored at its last `origin id login`.",
+			"a CI job's OIDC token, exchanged at the security token service for a `WORKLOAD` service account's access tokens; " +
+			"the session the `origin` CLI stored at its last `origin id login`; " +
+			"on an instance that runs as a service account, the instance's metadata service.",
 		Attributes: map[string]schema.Attribute{
 			"region": schema.StringAttribute{
 				MarkdownDescription: "The region whose front door the provider calls, such as `eu-central1`. " +
