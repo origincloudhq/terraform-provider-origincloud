@@ -75,12 +75,14 @@ data sources are generated from the API definitions in
 | Data source | `origincloud_network_dns_policy_associations` | A VPC's DNS policy association |
 | Resource | `origincloud_iam_service_account` | A credential of an organization for software, and its client secret |
 | Resource | `origincloud_iam_role_binding` | One role granted to one member, organization-wide or in one project |
+| Resource | `origincloud_iam_federated_credential` | A `WORKLOAD` service account's trust in a CI provider's OIDC tokens |
 | Data source | `origincloud_iam_role` | A predefined set of permissions |
 | Data source | `origincloud_iam_roles` | Every predefined role |
 | Data source | `origincloud_iam_permission` | One action the platform checks |
 | Data source | `origincloud_iam_permissions` | Every permission |
 | Data source | `origincloud_iam_role_bindings` | An organization's role bindings, or your own in every organization |
 | Data source | `origincloud_iam_service_accounts` | An organization's service accounts |
+| Data source | `origincloud_iam_federated_credentials` | A service account's federated credentials |
 | Data source | `origincloud_iam_user` | You, as the platform knows you |
 | Data source | `origincloud_iam_audit_log_entry` | One recorded change to who may do what |
 | Data source | `origincloud_iam_audit_log_entries` | An organization's audit log, most recent first |
@@ -162,8 +164,23 @@ Credentials come from the environment, the first of:
 1. `ORIGINCLOUD_ACCESS_TOKEN`: an access token, sent as it is.
 2. `ORIGINCLOUD_CLIENT_ID` and `ORIGINCLOUD_CLIENT_SECRET`: a service account's
    credential, exchanged for access tokens as they expire. This is what
-   automation should use.
-3. The session the `origin` CLI stored at its last login (`origin id login`).
+   automation outside CI should use.
+3. A CI job's OIDC token, exchanged at the security token service
+   (`https://sts.origincloudapis.eu`) for a `WORKLOAD` service account's
+   access tokens, so that no secret is stored in the CI system: the token in
+   the file `ORIGINCLOUD_OIDC_TOKEN_FILE` names, or else the token
+   `ORIGINCLOUD_OIDC_TOKEN` holds, as GitLab CI's `id_tokens` set it, or
+   else, in a GitHub Actions job with `permissions: id-token: write`, the
+   job's. The service account needs a federated credential that trusts the
+   CI provider, such as an `origincloud_iam_federated_credential`.
+   `ORIGINCLOUD_OIDC_DISABLED=true` leaves this step out. The provider's
+   [documentation](docs/index.md#authentication-from-ci) has GitHub Actions
+   and GitLab CI examples, and
+   [docs.origincloud.eu](https://docs.origincloud.eu/docs/iam/workload-identity-federation/)
+   how to set up the federated credential.
+4. The session the `origin` CLI stored at its last login (`origin id login`).
+5. On an instance that runs as a service account, the instance's metadata
+   service.
 
 | Argument | |
 |---|---|
