@@ -17,12 +17,12 @@ The DNS policy a VPC's resolver relays through.
 
 ### Required
 
-- `dns_policy` (String) The DNS policy the VPC relays through, in the VPC's project and region. Changing it replaces the dns policy association.
+- `dns_policy` (String) The full name of the DNS policy the VPC relays through, in the VPC's project and region. Changing it replaces the dns policy association.
 - `project` (String) The project the dns policy association is in. Changing it replaces the dns policy association.
 - `region` (String) The region the dns policy association is in. Changing it replaces the dns policy association.
 - `vpc` (String) The vpc the dns policy association is in. Changing it replaces the dns policy association.
 
 ### Read-Only
 
-- `id` (String) The dns policy association's resource name, the same as `name`.
+- `id` (String) The dns policy association's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/vpcs/{vpc}/dnsPolicyAssociations/{dns_policy_association}`: what an argument that refers to the dns policy association takes. `name` is the relative name, without the host.
 - `name` (String) The association's resource name. Its last segment is the DNS policy's id.

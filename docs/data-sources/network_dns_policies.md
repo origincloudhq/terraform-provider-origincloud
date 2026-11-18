@@ -30,10 +30,10 @@ Lists the DNS policies in a region, oldest first, the project's default included
 Read-Only:
 
 - `create_time` (String) When the DNS policy was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `creator` (String) The principal that created the DNS policy, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.
+- `creator` (String) The principal that created the DNS policy, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.
+- `id` (String) The dns policy's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/dnsPolicies/{dns_policy}`: what an argument that refers to the dns policy takes. `name` is the relative name, without the host.
 - `name` (String) The policy's resource name.
 - `project_default` (Boolean) Whether this is the project's default policy in its region, which a VPC without a DNS policy association relays through. Change it with `SetDefaultDnsPolicy`.
 - `relay_enabled` (Boolean) Whether the resolver relays names it can't answer itself to `upstream_servers`. Off, it answers only the platform's own names.
 - `tags` (Map of String) Labels of your own, at most 50. The `origin:name` tag is the name the console shows.
 - `upstream_servers` (List of String) The resolvers to relay to, at most 5 IPv4 or IPv6 addresses, tried in order. At least one while `relay_enabled` is on.
-- `urn` (String) The policy's URN, the identifier access policies and the audit log use.

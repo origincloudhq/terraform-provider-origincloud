@@ -25,8 +25,8 @@ Lists the organizations the caller holds a role in, oldest first.
 Read-Only:
 
 - `create_time` (String) When the organization was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `creator` (String) The principal that created the organization, such as `user:<id>` or `service_account:<id>`.
+- `creator` (String) The principal that created the organization, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.
 - `display_name` (String) The name the console shows, typically the company's name. Not empty.
+- `id` (String) The organization's full resource name, `//resourcemanager.origincloudapis.eu/organizations/{organization}`: what an argument that refers to the organization takes. `name` is the relative name, without the host.
 - `name` (String) The organization's resource name, `organizations/{organization}`.
 - `state` (String) Whether the organization may create resources. Decided by the platform, never by the organization's members. One of `PENDING_REVIEW`, `ACTIVE`, `REJECTED`.
-- `urn` (String) The organization's URN, the identifier access policies and the audit log use.

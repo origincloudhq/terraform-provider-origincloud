@@ -15,6 +15,7 @@ import (
 
 // organizationQuotaModel is origincloud_resourcemanager_organization_quota's state.
 type organizationQuotaModel struct {
+	ID             types.String `tfsdk:"id"`
 	Name           types.String `tfsdk:"name"`
 	MaxInstances   types.Int64  `tfsdk:"max_instances"`
 	MaxVcpu        types.Int64  `tfsdk:"max_vcpu"`
@@ -30,6 +31,10 @@ func organizationQuotaSchema() schema.Schema {
 	return schema.Schema{
 		MarkdownDescription: "An organization's quota: the most of each kind of resource its projects may hold together, and how much of it they use. Creating a resource past a limit is refused.",
 		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				MarkdownDescription: "The organization quota's full resource name, `//resourcemanager.origincloudapis.eu/organizations/{organization}/quota`: what an argument that refers to the organization quota takes. `name` is the relative name, without the host.",
+				Computed:            true,
+			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "The quota's resource name, `organizations/{organization}/quota`.",
 				Required:            true,
@@ -135,6 +140,11 @@ func organizationQuota_UsageToProto(o types.Object) *v1beta1.QuotaUsage {
 }
 
 func organizationQuotaFromProto(p *v1beta1.OrganizationQuota, m *organizationQuotaModel) error {
+	id, err := framework.FullName("resourcemanager", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
 	m.MaxInstances = types.Int64Value(int64(p.GetMaxInstances()))
 	m.MaxVcpu = types.Int64Value(int64(p.GetMaxVcpu()))

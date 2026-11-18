@@ -9,6 +9,7 @@ import (
 	schema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	planmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	stringplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	validator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	types "github.com/hashicorp/terraform-plugin-framework/types"
 	framework "github.com/origincloudhq/terraform-provider-origincloud/internal/framework"
 	core "go.origincloud.eu/sdk/core"
@@ -30,7 +31,7 @@ func dnsPolicyAssociationSchema() schema.Schema {
 		MarkdownDescription: "The DNS policy a VPC's resolver relays through.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The dns policy association's resource name, the same as `name`.",
+				MarkdownDescription: "The dns policy association's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/vpcs/{vpc}/dnsPolicyAssociations/{dns_policy_association}`: what an argument that refers to the dns policy association takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -55,8 +56,9 @@ func dnsPolicyAssociationSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"dns_policy": schema.StringAttribute{
-				MarkdownDescription: "The DNS policy the VPC relays through, in the VPC's project and region. Changing it replaces the dns policy association.",
+				MarkdownDescription: "The full name of the DNS policy the VPC relays through, in the VPC's project and region. Changing it replaces the dns policy association.",
 				Required:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 		},
@@ -75,7 +77,11 @@ func dnsPolicyAssociationFromProto(p *v1beta1.DnsPolicyAssociation, m *dnsPolicy
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Region = types.StringValue(values[1])
 	m.Vpc = types.StringValue(values[2])
@@ -86,12 +92,14 @@ func dnsPolicyAssociationFromProto(p *v1beta1.DnsPolicyAssociation, m *dnsPolicy
 
 func dnsPolicyAssociationResource() framework.ResourceSpec[dnsPolicyAssociationModel, *v1beta1.DnsPolicyAssociation] {
 	return framework.ResourceSpec[dnsPolicyAssociationModel, *v1beta1.DnsPolicyAssociation]{
-		TypeName:  "_network_dns_policy_association",
-		Pattern:   "projects/{project}/regions/{region}/vpcs/{vpc}/dnsPolicyAssociations/{dns_policy_association}",
-		Schema:    dnsPolicyAssociationSchema(),
-		Name:      func(m *dnsPolicyAssociationModel) string { return m.Name.ValueString() },
-		ToProto:   dnsPolicyAssociationToProto,
-		FromProto: dnsPolicyAssociationFromProto,
+		TypeName:   "_network_dns_policy_association",
+		Pattern:    "projects/{project}/regions/{region}/vpcs/{vpc}/dnsPolicyAssociations/{dns_policy_association}",
+		Service:    "network",
+		References: map[string]string{"dns_policy": "network"},
+		Schema:     dnsPolicyAssociationSchema(),
+		Name:       func(m *dnsPolicyAssociationModel) string { return m.Name.ValueString() },
+		ToProto:    dnsPolicyAssociationToProto,
+		FromProto:  dnsPolicyAssociationFromProto,
 		UpdateMask: func(plan, state *dnsPolicyAssociationModel) []string {
 			var mask []string
 			return mask
@@ -118,11 +126,17 @@ func dnsPolicyAssociationResource() framework.ResourceSpec[dnsPolicyAssociationM
 
 // dnsPolicyAssociationItemModel is an item of origincloud_network_dns_policy_associations.
 type dnsPolicyAssociationItemModel struct {
+	ID        types.String `tfsdk:"id"`
 	Name      types.String `tfsdk:"name"`
 	DnsPolicy types.String `tfsdk:"dns_policy"`
 }
 
 func dnsPolicyAssociationItemFromProto(p *v1beta1.DnsPolicyAssociation, m *dnsPolicyAssociationItemModel) error {
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
 	m.DnsPolicy = types.StringValue(p.GetDnsPolicy())
 	return nil
@@ -157,12 +171,16 @@ func dnsPolicyAssociationListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The dns policy association's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/vpcs/{vpc}/dnsPolicyAssociations/{dns_policy_association}`: what an argument that refers to the dns policy association takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "The association's resource name. Its last segment is the DNS policy's id.",
 							Computed:            true,
 						},
 						"dns_policy": schema1.StringAttribute{
-							MarkdownDescription: "The DNS policy the VPC relays through, in the VPC's project and region.",
+							MarkdownDescription: "The full name of the DNS policy the VPC relays through, in the VPC's project and region.",
 							Computed:            true,
 						},
 					},

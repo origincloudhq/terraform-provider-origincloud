@@ -23,7 +23,6 @@ type internetGatewayModel struct {
 	Project    types.String `tfsdk:"project"`
 	Region     types.String `tfsdk:"region"`
 	Name       types.String `tfsdk:"name"`
-	Urn        types.String `tfsdk:"urn"`
 	Vpc        types.String `tfsdk:"vpc"`
 	CreateTime types.String `tfsdk:"create_time"`
 	Creator    types.String `tfsdk:"creator"`
@@ -35,7 +34,7 @@ func internetGatewaySchema() schema.Schema {
 		MarkdownDescription: "A VPC's way to and from the internet.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The internet gateway's resource name, the same as `name`.",
+				MarkdownDescription: "The internet gateway's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/internetGateways/{internet_gateway}`: what an argument that refers to the internet gateway takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -54,13 +53,10 @@ func internetGatewaySchema() schema.Schema {
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The gateway's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
-			},
 			"vpc": schema.StringAttribute{
-				MarkdownDescription: "The VPC the gateway connects, in the same project and region. Changing it replaces the internet gateway.",
+				MarkdownDescription: "The full name of the VPC the gateway connects, in the same project and region. Changing it replaces the internet gateway.",
 				Required:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"create_time": schema.StringAttribute{
@@ -68,7 +64,7 @@ func internetGatewaySchema() schema.Schema {
 				Computed:            true,
 			},
 			"creator": schema.StringAttribute{
-				MarkdownDescription: "The principal that created the internet gateway, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.",
+				MarkdownDescription: "The principal that created the internet gateway, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 				Computed:            true,
 			},
 			"tags": schema.MapAttribute{
@@ -94,11 +90,14 @@ func internetGatewayFromProto(p *v1beta1.InternetGateway, m *internetGatewayMode
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Region = types.StringValue(values[1])
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Vpc = types.StringValue(p.GetVpc())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
 	m.Creator = types.StringValue(p.GetCreator())
@@ -108,12 +107,14 @@ func internetGatewayFromProto(p *v1beta1.InternetGateway, m *internetGatewayMode
 
 func internetGatewayResource() framework.ResourceSpec[internetGatewayModel, *v1beta1.InternetGateway] {
 	return framework.ResourceSpec[internetGatewayModel, *v1beta1.InternetGateway]{
-		TypeName:  "_network_internet_gateway",
-		Pattern:   "projects/{project}/regions/{region}/internetGateways/{internet_gateway}",
-		Schema:    internetGatewaySchema(),
-		Name:      func(m *internetGatewayModel) string { return m.Name.ValueString() },
-		ToProto:   internetGatewayToProto,
-		FromProto: internetGatewayFromProto,
+		TypeName:   "_network_internet_gateway",
+		Pattern:    "projects/{project}/regions/{region}/internetGateways/{internet_gateway}",
+		Service:    "network",
+		References: map[string]string{"vpc": "network"},
+		Schema:     internetGatewaySchema(),
+		Name:       func(m *internetGatewayModel) string { return m.Name.ValueString() },
+		ToProto:    internetGatewayToProto,
+		FromProto:  internetGatewayFromProto,
 		UpdateMask: func(plan, state *internetGatewayModel) []string {
 			var mask []string
 			if !plan.Tags.Equal(state.Tags) {
@@ -150,8 +151,8 @@ func internetGatewayResource() framework.ResourceSpec[internetGatewayModel, *v1b
 
 // internetGatewayItemModel is an item of origincloud_network_internet_gateways.
 type internetGatewayItemModel struct {
+	ID         types.String `tfsdk:"id"`
 	Name       types.String `tfsdk:"name"`
-	Urn        types.String `tfsdk:"urn"`
 	Vpc        types.String `tfsdk:"vpc"`
 	CreateTime types.String `tfsdk:"create_time"`
 	Creator    types.String `tfsdk:"creator"`
@@ -159,8 +160,12 @@ type internetGatewayItemModel struct {
 }
 
 func internetGatewayItemFromProto(p *v1beta1.InternetGateway, m *internetGatewayItemModel) error {
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Vpc = types.StringValue(p.GetVpc())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
 	m.Creator = types.StringValue(p.GetCreator())
@@ -192,16 +197,16 @@ func internetGatewayListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The internet gateway's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/internetGateways/{internet_gateway}`: what an argument that refers to the internet gateway takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "The gateway's resource name.",
 							Computed:            true,
 						},
-						"urn": schema1.StringAttribute{
-							MarkdownDescription: "The gateway's URN, the identifier access policies and the audit log use.",
-							Computed:            true,
-						},
 						"vpc": schema1.StringAttribute{
-							MarkdownDescription: "The VPC the gateway connects, in the same project and region.",
+							MarkdownDescription: "The full name of the VPC the gateway connects, in the same project and region.",
 							Computed:            true,
 						},
 						"create_time": schema1.StringAttribute{
@@ -209,7 +214,7 @@ func internetGatewayListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"creator": schema1.StringAttribute{
-							MarkdownDescription: "The principal that created the internet gateway, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.",
+							MarkdownDescription: "The principal that created the internet gateway, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 							Computed:            true,
 						},
 						"tags": schema1.MapAttribute{

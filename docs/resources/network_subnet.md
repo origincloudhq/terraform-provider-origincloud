@@ -18,7 +18,7 @@ The part of a VPC in one zone, with its own address ranges.
 ### Required
 
 - `project` (String) The project the subnet is in. Changing it replaces the subnet.
-- `vpc` (String) The VPC the subnet is part of, in the same project and in the zone's region. For now a VPC lives in one zone of its region: a subnet in another zone is refused with `FAILED_PRECONDITION`. Changing it replaces the subnet.
+- `vpc` (String) The full name of the VPC the subnet is part of, in the same project and in the zone's region. For now a VPC lives in one zone of its region: a subnet in another zone is refused with `FAILED_PRECONDITION`. Changing it replaces the subnet.
 - `zone` (String) The zone the subnet is in. Changing it replaces the subnet.
 
 ### Optional
@@ -28,11 +28,11 @@ The part of a VPC in one zone, with its own address ranges.
 
 ### Read-Only
 
-- `acl` (String) The ACL that filters traffic in and out of the subnet, as the subnet's ACL association (an `AclAssociation`) sets it. Empty while it has none: nothing is filtered at the subnet's edge, and its interfaces' security groups still apply.
+- `acl` (String) The full name of the ACL that filters traffic in and out of the subnet, as the subnet's ACL association (an `AclAssociation`) sets it. Empty while it has none: nothing is filtered at the subnet's edge, and its interfaces' security groups still apply.
 - `available_ipv4_address_count` (Number) How many IPv4 addresses in the subnet are free for interfaces.
 - `create_time` (String) When the subnet was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `creator` (String) The principal that created the subnet, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.
-- `id` (String) The subnet's resource name, the same as `name`.
+- `creator` (String) The principal that created the subnet, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.
+- `id` (String) The subnet's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/subnets/{subnet}`: what an argument that refers to the subnet takes. `name` is the relative name, without the host.
 - `ipv4_cidr_block` (String) The subnet's IPv4 range.
 - `ipv4_dns_servers` (List of String) The DNS servers instances in the subnet use over IPv4.
 - `ipv4_gateway` (String) The IPv4 address of the subnet's router.
@@ -40,5 +40,4 @@ The part of a VPC in one zone, with its own address ranges.
 - `ipv6_dns_servers` (List of String) The DNS servers instances in the subnet use over IPv6.
 - `ipv6_gateway` (String) The IPv6 address of the subnet's router.
 - `name` (String) The subnet's resource name.
-- `route_table` (String) The route table that decides where the subnet's traffic goes, as the subnet's route table association (a `RouteTableAssociation`) sets it. A subnet reaches, and is reached from, the internet for an address family only if its own route table has that family's default route (a `Route` with that family's default destination). Empty while it has none: a subnet with no route table has no route out of its VPC and isn't reachable from the internet, even when the VPC has an internet gateway.
-- `urn` (String) The subnet's URN, the identifier access policies and the audit log use.
+- `route_table` (String) The full name of the route table that decides where the subnet's traffic goes, as the subnet's route table association (a `RouteTableAssociation`) sets it. A subnet reaches, and is reached from, the internet for an address family only if its own route table has that family's default route (a `Route` with that family's default destination). Empty while it has none: a subnet with no route table has no route out of its VPC and isn't reachable from the internet, even when the VPC has an internet gateway.

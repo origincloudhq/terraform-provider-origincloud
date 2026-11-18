@@ -17,7 +17,7 @@ resource "origincloud_pvs_volume" "data" {
   project       = "my-project-123"
   zone          = "eu-central1-az1"
   size_gib      = 20
-  storage_class = "storageClasses/gp1"
+  storage_class = "//pvs.origincloudapis.eu/storageClasses/gp1"
   tags          = { "origin:name" = "data" }
 }
 ```
@@ -33,15 +33,15 @@ resource "origincloud_pvs_volume" "data" {
 
 ### Optional
 
-- `source_snapshot` (String) The snapshot the volume was created from, in the same project and zone; empty for an empty volume. The volume is at least the snapshot's size. Changing it replaces the volume.
-- `storage_class` (String) The storage class, `storageClasses/{storage_class}`. The default class when left empty. Changing it replaces the volume.
+- `source_snapshot` (String) The full name of the snapshot the volume was created from, in the same project and zone; empty for an empty volume. The volume is at least the snapshot's size. Changing it replaces the volume.
+- `storage_class` (String) The storage class by its full name, `//pvs.origincloudapis.eu/storageClasses/{storage_class}`. The default class when left empty. Changing it replaces the volume.
 - `tags` (Map of String) Labels of your own, at most 50. The `origin:name` tag is the name the console shows.
 
 ### Read-Only
 
 - `attachment` (String) When `state` is `IN_USE`, the id of the volume attachment holding it.
-- `creator` (String) The principal that created the volume, such as `user:<id>` or `service_account:<id>`.
-- `id` (String) The volume's resource name, the same as `name`.
+- `creator` (String) The principal that created the volume, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform created it.
+- `id` (String) The volume's full resource name, `//pvs.origincloudapis.eu/projects/{project}/zones/{zone}/volumes/{volume}`: what an argument that refers to the volume takes. `name` is the relative name, without the host.
 - `iops` (Number) The most I/O operations per second the volume serves, reads and writes combined: a ceiling, not a guaranteed rate. 0 when it isn't limited.
 - `name` (String) The volume's resource name.
 - `pending_size_gib` (Number) The size a resize under way is heading for; 0 when none is. `size_gib` changes once the resize is confirmed.
@@ -51,7 +51,6 @@ resource "origincloud_pvs_volume" "data" {
 - `state` (String) Where the volume is in its lifecycle. One of `CREATING`, `AVAILABLE`, `IN_USE`, `DELETING`, `DELETED`, `ERROR`.
 - `state_reason` (String) Why the volume is in `ERROR`; empty otherwise.
 - `throughput_mibps` (Number) The most MiB per second the volume transfers, reads and writes combined: a ceiling, not a guaranteed rate. 0 when it isn't limited.
-- `urn` (String) The volume's URN, the identifier access policies and the audit log use.
 
 ## Import
 
@@ -60,6 +59,6 @@ Import is supported using the following syntax:
 The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
-# A volume is imported by its resource name.
-terraform import origincloud_pvs_volume.data projects/my-project-123/zones/eu-central1-az1/volumes/vol-1a2b3c
+# A volume is imported by its full resource name, or its relative one.
+terraform import origincloud_pvs_volume.data //pvs.origincloudapis.eu/projects/my-project-123/zones/eu-central1-az1/volumes/vol-1a2b3c
 ```

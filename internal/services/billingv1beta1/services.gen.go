@@ -20,8 +20,14 @@ func Resources() []func() resource.Resource {
 // DataSources returns the constructors of the package's data sources.
 func DataSources() []func() datasource.DataSource {
 	return []func() datasource.DataSource{
+		framework.NewDataSource(legalDocumentDataSource()),
+		framework.NewListDataSource(legalDocumentListDataSource()),
+		framework.NewDataSource(legalDocumentVersionDataSource()),
+		framework.NewListDataSource(legalDocumentVersionListDataSource()),
 		framework.NewListDataSource(billingAccountListDataSource()),
 		framework.NewDataSource(billingCountryDataSource()),
 		framework.NewListDataSource(billingCountryListDataSource()),
+		framework.NewDataSource(legalAcceptanceDataSource()),
+		framework.NewListDataSource(legalAcceptanceListDataSource()),
 	}
 }

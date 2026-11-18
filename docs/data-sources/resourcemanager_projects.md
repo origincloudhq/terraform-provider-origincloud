@@ -17,7 +17,7 @@ Lists an organization's projects, oldest first.
 
 ### Required
 
-- `organization` (String) The organization whose projects to list, `organizations/{organization}`.
+- `organization` (String) The full name of the organization whose projects to list, `//resourcemanager.origincloudapis.eu/organizations/{organization}`.
 
 ### Read-Only
 
@@ -29,8 +29,8 @@ Lists an organization's projects, oldest first.
 Read-Only:
 
 - `create_time` (String) When the project was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `creator` (String) The principal that created the project, such as `user:<id>` or `service_account:<id>`.
+- `creator` (String) The principal that created the project, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.
 - `display_name` (String) The name the console shows. Not empty.
+- `id` (String) The project's full resource name, `//resourcemanager.origincloudapis.eu/projects/{project}`: what an argument that refers to the project takes. `name` is the relative name, without the host.
 - `name` (String) The project's resource name, `projects/{project}`. The id, chosen when the project is created, is unique across the platform and never used again, not even after the project is deleted.
-- `organization` (String) The organization the project belongs to, `organizations/{organization}`.
-- `urn` (String) The project's URN, the identifier access policies and the audit log use.
+- `organization` (String) The full name of the organization the project belongs to, `//resourcemanager.origincloudapis.eu/organizations/{organization}`.

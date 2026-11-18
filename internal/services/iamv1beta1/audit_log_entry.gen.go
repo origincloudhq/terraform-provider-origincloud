@@ -14,6 +14,7 @@ import (
 
 // auditLogEntryModel is origincloud_iam_audit_log_entry's state.
 type auditLogEntryModel struct {
+	ID        types.String `tfsdk:"id"`
 	Name      types.String `tfsdk:"name"`
 	Project   types.String `tfsdk:"project"`
 	Actor     types.String `tfsdk:"actor"`
@@ -28,16 +29,20 @@ func auditLogEntrySchema() schema.Schema {
 	return schema.Schema{
 		MarkdownDescription: "One recorded change.",
 		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				MarkdownDescription: "The audit log entry's full resource name, `//iam.origincloudapis.eu/organizations/{organization}/auditLogEntries/{audit_log_entry}`: what an argument that refers to the audit log entry takes. `name` is the relative name, without the host.",
+				Computed:            true,
+			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "The entry's resource name.",
 				Required:            true,
 			},
 			"project": schema.StringAttribute{
-				MarkdownDescription: "The project the change was limited to, `projects/{project}`; empty for a change to the whole organization.",
+				MarkdownDescription: "The full name of the project the change was limited to, `//resourcemanager.origincloudapis.eu/projects/{project}`; empty for a change to the whole organization.",
 				Computed:            true,
 			},
 			"actor": schema.StringAttribute{
-				MarkdownDescription: "Who made the change, as it was when the change was made: `user:{email}` with the verified address the account had then, `userId:{user}` when none was recorded, `serviceAccount:{service_account}`, or `platform` for a change the platform made itself. A later change of address doesn't change it.",
+				MarkdownDescription: "The full name of who made the change: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, `//iam.origincloudapis.eu/serviceAgents/{service_agent}` for a platform service agent, or `//iam.origincloudapis.eu/services/{service}` for a change the platform made itself.",
 				Computed:            true,
 			},
 			"action": schema.StringAttribute{
@@ -45,11 +50,11 @@ func auditLogEntrySchema() schema.Schema {
 				Computed:            true,
 			},
 			"target": schema.StringAttribute{
-				MarkdownDescription: "What it was done to, written as `actor` is, or the email address invited; empty when the action has no target.",
+				MarkdownDescription: "The full name of what it was done to, such as a member's, or the email address invited; empty when the action has no target.",
 				Computed:            true,
 			},
 			"outcome": schema.StringAttribute{
-				MarkdownDescription: "Whether the change was made. One of `SUCCEEDED`, `DENIED`.",
+				MarkdownDescription: "Whether the change was made. One of `SUCCEEDED`, `DENIED`, `FAILED`.",
 				Computed:            true,
 			},
 			"occur_time": schema.StringAttribute{
@@ -66,6 +71,11 @@ func auditLogEntrySchema() schema.Schema {
 }
 
 func auditLogEntryFromProto(p *v1beta1.AuditLogEntry, m *auditLogEntryModel) error {
+	id, err := framework.FullName("iam", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
 	m.Project = types.StringValue(p.GetProject())
 	m.Actor = types.StringValue(p.GetActor())
@@ -108,16 +118,20 @@ func auditLogEntryListSchema() schema.Schema {
 				Computed:            true,
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
+						"id": schema.StringAttribute{
+							MarkdownDescription: "The audit log entry's full resource name, `//iam.origincloudapis.eu/organizations/{organization}/auditLogEntries/{audit_log_entry}`: what an argument that refers to the audit log entry takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema.StringAttribute{
 							MarkdownDescription: "The entry's resource name.",
 							Computed:            true,
 						},
 						"project": schema.StringAttribute{
-							MarkdownDescription: "The project the change was limited to, `projects/{project}`; empty for a change to the whole organization.",
+							MarkdownDescription: "The full name of the project the change was limited to, `//resourcemanager.origincloudapis.eu/projects/{project}`; empty for a change to the whole organization.",
 							Computed:            true,
 						},
 						"actor": schema.StringAttribute{
-							MarkdownDescription: "Who made the change, as it was when the change was made: `user:{email}` with the verified address the account had then, `userId:{user}` when none was recorded, `serviceAccount:{service_account}`, or `platform` for a change the platform made itself. A later change of address doesn't change it.",
+							MarkdownDescription: "The full name of who made the change: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, `//iam.origincloudapis.eu/serviceAgents/{service_agent}` for a platform service agent, or `//iam.origincloudapis.eu/services/{service}` for a change the platform made itself.",
 							Computed:            true,
 						},
 						"action": schema.StringAttribute{
@@ -125,11 +139,11 @@ func auditLogEntryListSchema() schema.Schema {
 							Computed:            true,
 						},
 						"target": schema.StringAttribute{
-							MarkdownDescription: "What it was done to, written as `actor` is, or the email address invited; empty when the action has no target.",
+							MarkdownDescription: "The full name of what it was done to, such as a member's, or the email address invited; empty when the action has no target.",
 							Computed:            true,
 						},
 						"outcome": schema.StringAttribute{
-							MarkdownDescription: "Whether the change was made. One of `SUCCEEDED`, `DENIED`.",
+							MarkdownDescription: "Whether the change was made. One of `SUCCEEDED`, `DENIED`, `FAILED`.",
 							Computed:            true,
 						},
 						"occur_time": schema.StringAttribute{

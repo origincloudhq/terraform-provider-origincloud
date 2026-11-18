@@ -23,7 +23,6 @@ type routeTableModel struct {
 	Project     types.String `tfsdk:"project"`
 	Region      types.String `tfsdk:"region"`
 	Name        types.String `tfsdk:"name"`
-	Urn         types.String `tfsdk:"urn"`
 	Vpc         types.String `tfsdk:"vpc"`
 	Main        types.Bool   `tfsdk:"main"`
 	LocalRoutes types.List   `tfsdk:"local_routes"`
@@ -37,7 +36,7 @@ func routeTableSchema() schema.Schema {
 		MarkdownDescription: "Routes out of a VPC for the subnets associated with the table.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The route table's resource name, the same as `name`.",
+				MarkdownDescription: "The route table's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/routeTables/{route_table}`: what an argument that refers to the route table takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -56,13 +55,10 @@ func routeTableSchema() schema.Schema {
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The route table's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
-			},
 			"vpc": schema.StringAttribute{
-				MarkdownDescription: "The VPC the table routes for, in the same project and region. Changing it replaces the route table.",
+				MarkdownDescription: "The full name of the VPC the table routes for, in the same project and region. Changing it replaces the route table.",
 				Required:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"main": schema.BoolAttribute{
@@ -79,7 +75,7 @@ func routeTableSchema() schema.Schema {
 				Computed:            true,
 			},
 			"creator": schema.StringAttribute{
-				MarkdownDescription: "The principal that created the route table, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.",
+				MarkdownDescription: "The principal that created the route table, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 				Computed:            true,
 			},
 			"tags": schema.MapAttribute{
@@ -105,11 +101,14 @@ func routeTableFromProto(p *v1beta1.RouteTable, m *routeTableModel) error {
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Region = types.StringValue(values[1])
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Vpc = types.StringValue(p.GetVpc())
 	m.Main = types.BoolValue(p.GetMain())
 	m.LocalRoutes = framework.StringList(p.GetLocalRoutes())
@@ -121,12 +120,14 @@ func routeTableFromProto(p *v1beta1.RouteTable, m *routeTableModel) error {
 
 func routeTableResource() framework.ResourceSpec[routeTableModel, *v1beta1.RouteTable] {
 	return framework.ResourceSpec[routeTableModel, *v1beta1.RouteTable]{
-		TypeName:  "_network_route_table",
-		Pattern:   "projects/{project}/regions/{region}/routeTables/{route_table}",
-		Schema:    routeTableSchema(),
-		Name:      func(m *routeTableModel) string { return m.Name.ValueString() },
-		ToProto:   routeTableToProto,
-		FromProto: routeTableFromProto,
+		TypeName:   "_network_route_table",
+		Pattern:    "projects/{project}/regions/{region}/routeTables/{route_table}",
+		Service:    "network",
+		References: map[string]string{"vpc": "network"},
+		Schema:     routeTableSchema(),
+		Name:       func(m *routeTableModel) string { return m.Name.ValueString() },
+		ToProto:    routeTableToProto,
+		FromProto:  routeTableFromProto,
 		UpdateMask: func(plan, state *routeTableModel) []string {
 			var mask []string
 			if !plan.Tags.Equal(state.Tags) {
@@ -163,8 +164,8 @@ func routeTableResource() framework.ResourceSpec[routeTableModel, *v1beta1.Route
 
 // routeTableItemModel is an item of origincloud_network_route_tables.
 type routeTableItemModel struct {
+	ID          types.String `tfsdk:"id"`
 	Name        types.String `tfsdk:"name"`
-	Urn         types.String `tfsdk:"urn"`
 	Vpc         types.String `tfsdk:"vpc"`
 	Main        types.Bool   `tfsdk:"main"`
 	LocalRoutes types.List   `tfsdk:"local_routes"`
@@ -174,8 +175,12 @@ type routeTableItemModel struct {
 }
 
 func routeTableItemFromProto(p *v1beta1.RouteTable, m *routeTableItemModel) error {
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Vpc = types.StringValue(p.GetVpc())
 	m.Main = types.BoolValue(p.GetMain())
 	m.LocalRoutes = framework.StringList(p.GetLocalRoutes())
@@ -209,16 +214,16 @@ func routeTableListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The route table's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/routeTables/{route_table}`: what an argument that refers to the route table takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "The route table's resource name.",
 							Computed:            true,
 						},
-						"urn": schema1.StringAttribute{
-							MarkdownDescription: "The route table's URN, the identifier access policies and the audit log use.",
-							Computed:            true,
-						},
 						"vpc": schema1.StringAttribute{
-							MarkdownDescription: "The VPC the table routes for, in the same project and region.",
+							MarkdownDescription: "The full name of the VPC the table routes for, in the same project and region.",
 							Computed:            true,
 						},
 						"main": schema1.BoolAttribute{
@@ -235,7 +240,7 @@ func routeTableListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"creator": schema1.StringAttribute{
-							MarkdownDescription: "The principal that created the route table, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.",
+							MarkdownDescription: "The principal that created the route table, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 							Computed:            true,
 						},
 						"tags": schema1.MapAttribute{

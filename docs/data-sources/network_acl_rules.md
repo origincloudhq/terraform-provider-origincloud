@@ -34,6 +34,7 @@ Read-Only:
 - `cidr_block` (String) The far side's range: where entering traffic comes from, or where leaving traffic goes to.
 - `direction` (String) Which traffic the rule applies to. One of `INGRESS`, `EGRESS`.
 - `first_port` (Number) The first port the rule matches, for `TCP` and `UDP`. Each set of ports has one spelling, and the rule reads back in it: `first_port` 0 and `last_port` 0 match every port, a `last_port` of 0 the single port `first_port`, and a `first_port` below `last_port` the range between them. Any other spelling of a set is refused with `INVALID_ARGUMENT` naming the one to use: `first_port` 22 and `last_port` 22 is `first_port` 22 and `last_port` 0, and 0 or 1 to 65535 is 0 and 0.
+- `id` (String) The acl rule's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/acls/{acl}/rules/{rule}`: what an argument that refers to the acl rule takes. `name` is the relative name, without the host.
 - `last_port` (Number) The last port the rule matches, above `first_port`; 0 for the single port `first_port`, or with `first_port` 0 for every port.
 - `name` (String) The rule's resource name.
 - `priority` (Number) The rule's place in its direction, from 1; lower comes first. No two rules of a direction share one.

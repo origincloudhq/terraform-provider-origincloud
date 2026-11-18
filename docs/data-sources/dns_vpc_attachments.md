@@ -30,6 +30,6 @@ Lists a private zone's VPC attachments, oldest first. With `-` for the zone, lis
 Read-Only:
 
 - `create_time` (String) When the zone was attached. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
+- `id` (String) The vpc attachment's full resource name, `//dns.origincloudapis.eu/projects/{project}/hostedZones/{hosted_zone}/vpcAttachments/{vpc_attachment}`: what an argument that refers to the vpc attachment takes. `name` is the relative name, without the host.
 - `name` (String) The attachment's resource name. Its last segment is the VPC's id.
-- `urn` (String) The attachment's URN, the identifier access policies and the audit log use.
-- `vpc` (String) The VPC the zone answers in, in the zone's project.
+- `vpc` (String) The full name of the VPC the zone answers in, in the zone's project.

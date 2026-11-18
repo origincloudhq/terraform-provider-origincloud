@@ -23,7 +23,6 @@ type natGatewayModel struct {
 	Project    types.String `tfsdk:"project"`
 	Zone       types.String `tfsdk:"zone"`
 	Name       types.String `tfsdk:"name"`
-	Urn        types.String `tfsdk:"urn"`
 	Subnet     types.String `tfsdk:"subnet"`
 	FloatingIp types.String `tfsdk:"floating_ip"`
 	Vpc        types.String `tfsdk:"vpc"`
@@ -37,7 +36,7 @@ func natGatewaySchema() schema.Schema {
 		MarkdownDescription: "Shared IPv4 egress through one floating IP.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The nat gateway's resource name, the same as `name`.",
+				MarkdownDescription: "The nat gateway's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/natGateways/{nat_gateway}`: what an argument that refers to the nat gateway takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -56,22 +55,20 @@ func natGatewaySchema() schema.Schema {
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The gateway's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
-			},
 			"subnet": schema.StringAttribute{
-				MarkdownDescription: "The public subnet the gateway lives in, in the same project and zone. Changing it replaces the nat gateway.",
+				MarkdownDescription: "The full name of the public subnet the gateway lives in, in the same project and zone. Changing it replaces the nat gateway.",
 				Required:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"floating_ip": schema.StringAttribute{
-				MarkdownDescription: "The floating IP instances behind the gateway appear as, in the same project and zone. It stays allocated when the gateway is deleted. Changing it replaces the nat gateway.",
+				MarkdownDescription: "The full name of the floating IP instances behind the gateway appear as, in the same project and zone. It stays allocated when the gateway is deleted. Changing it replaces the nat gateway.",
 				Required:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"vpc": schema.StringAttribute{
-				MarkdownDescription: "The subnet's VPC.",
+				MarkdownDescription: "The full name of the subnet's VPC.",
 				Computed:            true,
 			},
 			"create_time": schema.StringAttribute{
@@ -79,7 +76,7 @@ func natGatewaySchema() schema.Schema {
 				Computed:            true,
 			},
 			"creator": schema.StringAttribute{
-				MarkdownDescription: "The principal that created the NAT gateway, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.",
+				MarkdownDescription: "The principal that created the NAT gateway, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 				Computed:            true,
 			},
 			"tags": schema.MapAttribute{
@@ -106,11 +103,14 @@ func natGatewayFromProto(p *v1beta1.NatGateway, m *natGatewayModel) error {
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Zone = types.StringValue(values[1])
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Subnet = types.StringValue(p.GetSubnet())
 	m.FloatingIp = types.StringValue(p.GetFloatingIp())
 	m.Vpc = types.StringValue(p.GetVpc())
@@ -122,12 +122,14 @@ func natGatewayFromProto(p *v1beta1.NatGateway, m *natGatewayModel) error {
 
 func natGatewayResource() framework.ResourceSpec[natGatewayModel, *v1beta1.NatGateway] {
 	return framework.ResourceSpec[natGatewayModel, *v1beta1.NatGateway]{
-		TypeName:  "_network_nat_gateway",
-		Pattern:   "projects/{project}/zones/{zone}/natGateways/{nat_gateway}",
-		Schema:    natGatewaySchema(),
-		Name:      func(m *natGatewayModel) string { return m.Name.ValueString() },
-		ToProto:   natGatewayToProto,
-		FromProto: natGatewayFromProto,
+		TypeName:   "_network_nat_gateway",
+		Pattern:    "projects/{project}/zones/{zone}/natGateways/{nat_gateway}",
+		Service:    "network",
+		References: map[string]string{"subnet": "network", "floating_ip": "network", "vpc": "network"},
+		Schema:     natGatewaySchema(),
+		Name:       func(m *natGatewayModel) string { return m.Name.ValueString() },
+		ToProto:    natGatewayToProto,
+		FromProto:  natGatewayFromProto,
 		UpdateMask: func(plan, state *natGatewayModel) []string {
 			var mask []string
 			if !plan.Tags.Equal(state.Tags) {
@@ -164,8 +166,8 @@ func natGatewayResource() framework.ResourceSpec[natGatewayModel, *v1beta1.NatGa
 
 // natGatewayItemModel is an item of origincloud_network_nat_gateways.
 type natGatewayItemModel struct {
+	ID         types.String `tfsdk:"id"`
 	Name       types.String `tfsdk:"name"`
-	Urn        types.String `tfsdk:"urn"`
 	Subnet     types.String `tfsdk:"subnet"`
 	FloatingIp types.String `tfsdk:"floating_ip"`
 	Vpc        types.String `tfsdk:"vpc"`
@@ -175,8 +177,12 @@ type natGatewayItemModel struct {
 }
 
 func natGatewayItemFromProto(p *v1beta1.NatGateway, m *natGatewayItemModel) error {
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Subnet = types.StringValue(p.GetSubnet())
 	m.FloatingIp = types.StringValue(p.GetFloatingIp())
 	m.Vpc = types.StringValue(p.GetVpc())
@@ -210,24 +216,24 @@ func natGatewayListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The nat gateway's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/natGateways/{nat_gateway}`: what an argument that refers to the nat gateway takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "The gateway's resource name.",
 							Computed:            true,
 						},
-						"urn": schema1.StringAttribute{
-							MarkdownDescription: "The gateway's URN, the identifier access policies and the audit log use.",
-							Computed:            true,
-						},
 						"subnet": schema1.StringAttribute{
-							MarkdownDescription: "The public subnet the gateway lives in, in the same project and zone.",
+							MarkdownDescription: "The full name of the public subnet the gateway lives in, in the same project and zone.",
 							Computed:            true,
 						},
 						"floating_ip": schema1.StringAttribute{
-							MarkdownDescription: "The floating IP instances behind the gateway appear as, in the same project and zone. It stays allocated when the gateway is deleted.",
+							MarkdownDescription: "The full name of the floating IP instances behind the gateway appear as, in the same project and zone. It stays allocated when the gateway is deleted.",
 							Computed:            true,
 						},
 						"vpc": schema1.StringAttribute{
-							MarkdownDescription: "The subnet's VPC.",
+							MarkdownDescription: "The full name of the subnet's VPC.",
 							Computed:            true,
 						},
 						"create_time": schema1.StringAttribute{
@@ -235,7 +241,7 @@ func natGatewayListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"creator": schema1.StringAttribute{
-							MarkdownDescription: "The principal that created the NAT gateway, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.",
+							MarkdownDescription: "The principal that created the NAT gateway, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 							Computed:            true,
 						},
 						"tags": schema1.MapAttribute{

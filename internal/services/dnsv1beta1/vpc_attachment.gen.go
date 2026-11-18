@@ -9,6 +9,7 @@ import (
 	schema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	planmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	stringplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	validator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	types "github.com/hashicorp/terraform-plugin-framework/types"
 	framework "github.com/origincloudhq/terraform-provider-origincloud/internal/framework"
 	core "go.origincloud.eu/sdk/core"
@@ -21,7 +22,6 @@ type vpcAttachmentModel struct {
 	Project    types.String `tfsdk:"project"`
 	HostedZone types.String `tfsdk:"hosted_zone"`
 	Name       types.String `tfsdk:"name"`
-	Urn        types.String `tfsdk:"urn"`
 	Vpc        types.String `tfsdk:"vpc"`
 	CreateTime types.String `tfsdk:"create_time"`
 }
@@ -31,7 +31,7 @@ func vpcAttachmentSchema() schema.Schema {
 		MarkdownDescription: "A VPC a private zone answers in.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The vpc attachment's resource name, the same as `name`.",
+				MarkdownDescription: "The vpc attachment's full resource name, `//dns.origincloudapis.eu/projects/{project}/hostedZones/{hosted_zone}/vpcAttachments/{vpc_attachment}`: what an argument that refers to the vpc attachment takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -50,13 +50,10 @@ func vpcAttachmentSchema() schema.Schema {
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The attachment's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
-			},
 			"vpc": schema.StringAttribute{
-				MarkdownDescription: "The VPC the zone answers in, in the zone's project. Changing it replaces the vpc attachment.",
+				MarkdownDescription: "The full name of the VPC the zone answers in, in the zone's project. Changing it replaces the vpc attachment.",
 				Required:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"create_time": schema.StringAttribute{
@@ -79,11 +76,14 @@ func vpcAttachmentFromProto(p *v1beta1.VpcAttachment, m *vpcAttachmentModel) err
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("dns", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.HostedZone = types.StringValue(values[1])
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Vpc = types.StringValue(p.GetVpc())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
 	return nil
@@ -91,12 +91,14 @@ func vpcAttachmentFromProto(p *v1beta1.VpcAttachment, m *vpcAttachmentModel) err
 
 func vpcAttachmentResource() framework.ResourceSpec[vpcAttachmentModel, *v1beta1.VpcAttachment] {
 	return framework.ResourceSpec[vpcAttachmentModel, *v1beta1.VpcAttachment]{
-		TypeName:  "_dns_vpc_attachment",
-		Pattern:   "projects/{project}/hostedZones/{hosted_zone}/vpcAttachments/{vpc_attachment}",
-		Schema:    vpcAttachmentSchema(),
-		Name:      func(m *vpcAttachmentModel) string { return m.Name.ValueString() },
-		ToProto:   vpcAttachmentToProto,
-		FromProto: vpcAttachmentFromProto,
+		TypeName:   "_dns_vpc_attachment",
+		Pattern:    "projects/{project}/hostedZones/{hosted_zone}/vpcAttachments/{vpc_attachment}",
+		Service:    "dns",
+		References: map[string]string{"vpc": "network"},
+		Schema:     vpcAttachmentSchema(),
+		Name:       func(m *vpcAttachmentModel) string { return m.Name.ValueString() },
+		ToProto:    vpcAttachmentToProto,
+		FromProto:  vpcAttachmentFromProto,
 		UpdateMask: func(plan, state *vpcAttachmentModel) []string {
 			var mask []string
 			return mask
@@ -119,15 +121,19 @@ func vpcAttachmentResource() framework.ResourceSpec[vpcAttachmentModel, *v1beta1
 
 // vpcAttachmentItemModel is an item of origincloud_dns_vpc_attachments.
 type vpcAttachmentItemModel struct {
+	ID         types.String `tfsdk:"id"`
 	Name       types.String `tfsdk:"name"`
-	Urn        types.String `tfsdk:"urn"`
 	Vpc        types.String `tfsdk:"vpc"`
 	CreateTime types.String `tfsdk:"create_time"`
 }
 
 func vpcAttachmentItemFromProto(p *v1beta1.VpcAttachment, m *vpcAttachmentItemModel) error {
+	id, err := framework.FullName("dns", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Vpc = types.StringValue(p.GetVpc())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
 	return nil
@@ -157,16 +163,16 @@ func vpcAttachmentListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The vpc attachment's full resource name, `//dns.origincloudapis.eu/projects/{project}/hostedZones/{hosted_zone}/vpcAttachments/{vpc_attachment}`: what an argument that refers to the vpc attachment takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "The attachment's resource name. Its last segment is the VPC's id.",
 							Computed:            true,
 						},
-						"urn": schema1.StringAttribute{
-							MarkdownDescription: "The attachment's URN, the identifier access policies and the audit log use.",
-							Computed:            true,
-						},
 						"vpc": schema1.StringAttribute{
-							MarkdownDescription: "The VPC the zone answers in, in the zone's project.",
+							MarkdownDescription: "The full name of the VPC the zone answers in, in the zone's project.",
 							Computed:            true,
 						},
 						"create_time": schema1.StringAttribute{

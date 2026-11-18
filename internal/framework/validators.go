@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"go.origincloud.eu/sdk/core"
 )
 
 // OneOf validates that a string attribute an enum field is sent as names
@@ -43,6 +44,9 @@ type ElementCheck struct {
 	OneOf []string
 	// Int32 checks that a number element fits the int32 field it is sent as.
 	Int32 bool
+	// FullNames checks that a string element is a full resource name, as a
+	// list of references is.
+	FullNames bool
 }
 
 var (
@@ -58,6 +62,9 @@ func (v ElementCheck) Description(context.Context) string {
 	}
 	if v.Int32 {
 		d += fmt.Sprintf(" and must be between %d and %d", math.MinInt32, math.MaxInt32)
+	}
+	if v.FullNames {
+		d += " and must be full resource names"
 	}
 	return d
 }
@@ -99,6 +106,11 @@ func (v ElementCheck) check(ctx context.Context, p path.Path, e attr.Value, diag
 	default:
 		if s, ok := e.(types.String); ok && len(v.OneOf) > 0 && !slices.Contains(v.OneOf, s.ValueString()) {
 			diags.AddAttributeError(p, "Invalid element", fmt.Sprintf("%s, got %q", v.Description(ctx), s.ValueString()))
+		}
+		if s, ok := e.(types.String); ok && v.FullNames {
+			if _, err := core.ParseFullName(s.ValueString()); err != nil {
+				diags.AddAttributeError(p, "Not a full resource name", fmt.Sprintf("%s, got %q: %s", v.Description(ctx), s.ValueString(), err))
+			}
 		}
 		if n, ok := e.(types.Int64); ok && v.Int32 && (n.ValueInt64() < math.MinInt32 || n.ValueInt64() > math.MaxInt32) {
 			diags.AddAttributeError(p, "Element out of range", fmt.Sprintf("%s, got %d", v.Description(ctx), n.ValueInt64()))

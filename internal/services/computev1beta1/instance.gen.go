@@ -27,7 +27,6 @@ type instanceModel struct {
 	Project            types.String `tfsdk:"project"`
 	Zone               types.String `tfsdk:"zone"`
 	Name               types.String `tfsdk:"name"`
-	Urn                types.String `tfsdk:"urn"`
 	InstanceType       types.String `tfsdk:"instance_type"`
 	Image              types.String `tfsdk:"image"`
 	ImageFamily        types.String `tfsdk:"image_family"`
@@ -50,7 +49,7 @@ func instanceSchema() schema.Schema {
 		MarkdownDescription: "A virtual machine in one zone.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The instance's resource name, the same as `name`.",
+				MarkdownDescription: "The instance's full resource name, `//compute.origincloudapis.eu/projects/{project}/zones/{zone}/instances/{instance}`: what an argument that refers to the instance takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -69,29 +68,29 @@ func instanceSchema() schema.Schema {
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The instance's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
-			},
 			"instance_type": schema.StringAttribute{
-				MarkdownDescription: "The instance type, `instanceTypes/{instance_type}`, such as `instanceTypes/gp1.core.2`: one whose `available` is true. Changing it needs the instance `STOPPED`.",
+				MarkdownDescription: "The instance type by its full name, `//compute.origincloudapis.eu/instanceTypes/{instance_type}`, such as `//compute.origincloudapis.eu/instanceTypes/gp1.core.2`: one whose `available` is true. Changing it needs the instance `STOPPED`.",
 				Required:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 			},
 			"image": schema.StringAttribute{
-				MarkdownDescription: "The image the boot volume is created from, in the instance's zone: one of the project's own, `projects/{project}/zones/{zone}/images/{image}`, or a public one, `zones/{zone}/images/{image}`. Set exactly one of `image` and `image_family`; launched from a family, this is the public image the family resolved to. Changing it replaces the instance.",
+				MarkdownDescription: "The full name of the image the boot volume is created from, in the instance's zone: one of the project's own, `//compute.origincloudapis.eu/projects/{project}/zones/{zone}/images/{image}`, or a public one, `//compute.origincloudapis.eu/zones/{zone}/images/{image}`. Set exactly one of `image` and `image_family`; launched from a family, this is the public image the family resolved to. Changing it replaces the instance.",
 				Optional:            true,
 				Computed:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()},
 			},
 			"image_family": schema.StringAttribute{
-				MarkdownDescription: "The image family to launch the current public image of, `imageFamilies/{image_family}`. Set exactly one of `image` and `image_family`. Empty when the instance was launched from an image. Changing it replaces the instance.",
+				MarkdownDescription: "The full name of the image family to launch the current public image of, `//compute.origincloudapis.eu/imageFamilies/{image_family}`. Set exactly one of `image` and `image_family`. Empty when the instance was launched from an image. Changing it replaces the instance.",
 				Optional:            true,
 				Computed:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()},
 			},
 			"key_pair": schema.StringAttribute{
-				MarkdownDescription: "The key pair whose public key is installed for `login_user`, in the instance's project. Changing it replaces the instance.",
+				MarkdownDescription: "The full name of the key pair whose public key is installed for `login_user`, in the instance's project. Changing it replaces the instance.",
 				Required:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"login_user": schema.StringAttribute{
@@ -115,21 +114,22 @@ func instanceSchema() schema.Schema {
 						Validators:          []validator.Int64{framework.Int32()},
 					},
 					"storage_class": schema.StringAttribute{
-						MarkdownDescription: "The storage class, `storageClasses/{storage_class}` of the persistent volume service; the default class when left empty.",
+						MarkdownDescription: "The storage class by its full name, `//pvs.origincloudapis.eu/storageClasses/{storage_class}`; the default class when left empty.",
 						Optional:            true,
 						Computed:            true,
+						Validators:          []validator.String{framework.FullNameReference()},
 					},
 					"volume": schema.StringAttribute{
-						MarkdownDescription: "The volume, in the instance's project and zone.",
+						MarkdownDescription: "The volume's full name, in the instance's project and zone.",
 						Computed:            true,
 					},
 				},
 			},
 			"network_interfaces": schema.ListAttribute{
-				MarkdownDescription: "The network interfaces, in device order, the boot interface first; exactly one today. Each is an existing interface in the instance's project and zone that nothing else holds, created with the network service: its subnet and security groups are the instance's. Terminating the instance releases it, and it stays. An instance launched before interfaces were named at launch shows the interface created for it, which is deleted with the instance. Changing it replaces the instance.",
+				MarkdownDescription: "The network interfaces' full names, in device order, the boot interface first; exactly one today. Each is an existing interface in the instance's project and zone that nothing else holds, created with the network service: its subnet and security groups are the instance's. Terminating the instance releases it, and it stays. An instance launched before interfaces were named at launch shows the interface created for it, which is deleted with the instance. Changing it replaces the instance.",
 				Required:            true,
 				ElementType:         types.StringType,
-				Validators:          []validator.List{framework.ElementCheck{}},
+				Validators:          []validator.List{framework.ElementCheck{FullNames: true}},
 				PlanModifiers:       []planmodifier.List{listplanmodifier.RequiresReplace()},
 			},
 			"state": schema.StringAttribute{
@@ -179,7 +179,7 @@ func instanceSchema() schema.Schema {
 				Computed:            true,
 			},
 			"creator": schema.StringAttribute{
-				MarkdownDescription: "The principal that launched the instance, such as `user:<id>` or `service_account:<id>`.",
+				MarkdownDescription: "The principal that launched the instance, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 				Computed:            true,
 			},
 			"tags": schema.MapAttribute{
@@ -194,7 +194,7 @@ func instanceSchema() schema.Schema {
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
 						"network_interface": schema.StringAttribute{
-							MarkdownDescription: "The network interface.",
+							MarkdownDescription: "The network interface's full name.",
 							Computed:            true,
 						},
 						"ipv4_address": schema.StringAttribute{
@@ -209,8 +209,9 @@ func instanceSchema() schema.Schema {
 				},
 			},
 			"service_account": schema.StringAttribute{
-				MarkdownDescription: "The service account the instance runs as, `organizations/{organization}/serviceAccounts/{service_account}`: a `WORKLOAD` service account of the instance's organization that isn't deleted. Launching with one, or updating the instance to one, needs `iam.service_account.act_as` on the organization as well; an update that leaves it empty removes it, and a terminated instance's can't change. Empty for an instance that runs as none.",
+				MarkdownDescription: "The full name of the service account the instance runs as, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`: a `WORKLOAD` service account of the instance's organization that isn't deleted. Launching with one, or updating the instance to one, needs `iam.service_account.act_as` on the organization as well; an update that leaves it empty removes it, and a terminated instance's can't change. Empty for an instance that runs as none.",
 				Optional:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 			},
 		},
 	}
@@ -331,11 +332,14 @@ func instanceFromProto(p *v1beta1.Instance, m *instanceModel) error {
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("compute", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Zone = types.StringValue(values[1])
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.InstanceType = types.StringValue(p.GetInstanceType())
 	m.Image = types.StringValue(p.GetImage())
 	m.ImageFamily = types.StringValue(p.GetImageFamily())
@@ -356,12 +360,14 @@ func instanceFromProto(p *v1beta1.Instance, m *instanceModel) error {
 
 func instanceResource() framework.ResourceSpec[instanceModel, *v1beta1.Instance] {
 	return framework.ResourceSpec[instanceModel, *v1beta1.Instance]{
-		TypeName:  "_compute_instance",
-		Pattern:   "projects/{project}/zones/{zone}/instances/{instance}",
-		Schema:    instanceSchema(),
-		Name:      func(m *instanceModel) string { return m.Name.ValueString() },
-		ToProto:   instanceToProto,
-		FromProto: instanceFromProto,
+		TypeName:   "_compute_instance",
+		Pattern:    "projects/{project}/zones/{zone}/instances/{instance}",
+		Service:    "compute",
+		References: map[string]string{"instance_type": "compute", "image": "compute", "image_family": "compute", "key_pair": "compute", "service_account": "iam"},
+		Schema:     instanceSchema(),
+		Name:       func(m *instanceModel) string { return m.Name.ValueString() },
+		ToProto:    instanceToProto,
+		FromProto:  instanceFromProto,
 		UpdateMask: func(plan, state *instanceModel) []string {
 			var mask []string
 			if !plan.InstanceType.Equal(state.InstanceType) {
@@ -405,8 +411,8 @@ func instanceResource() framework.ResourceSpec[instanceModel, *v1beta1.Instance]
 
 // instanceItemModel is an item of origincloud_compute_instances.
 type instanceItemModel struct {
+	ID                 types.String `tfsdk:"id"`
 	Name               types.String `tfsdk:"name"`
-	Urn                types.String `tfsdk:"urn"`
 	InstanceType       types.String `tfsdk:"instance_type"`
 	Image              types.String `tfsdk:"image"`
 	ImageFamily        types.String `tfsdk:"image_family"`
@@ -517,8 +523,12 @@ func instanceItem_InterfaceAddressesToProto(o types.Object) *v1beta1.InterfaceAd
 }
 
 func instanceItemFromProto(p *v1beta1.Instance, m *instanceItemModel) error {
+	id, err := framework.FullName("compute", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.InstanceType = types.StringValue(p.GetInstanceType())
 	m.Image = types.StringValue(p.GetImage())
 	m.ImageFamily = types.StringValue(p.GetImageFamily())
@@ -561,28 +571,28 @@ func instanceListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The instance's full resource name, `//compute.origincloudapis.eu/projects/{project}/zones/{zone}/instances/{instance}`: what an argument that refers to the instance takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "The instance's resource name.",
 							Computed:            true,
 						},
-						"urn": schema1.StringAttribute{
-							MarkdownDescription: "The instance's URN, the identifier access policies and the audit log use.",
-							Computed:            true,
-						},
 						"instance_type": schema1.StringAttribute{
-							MarkdownDescription: "The instance type, `instanceTypes/{instance_type}`, such as `instanceTypes/gp1.core.2`: one whose `available` is true. Changing it needs the instance `STOPPED`.",
+							MarkdownDescription: "The instance type by its full name, `//compute.origincloudapis.eu/instanceTypes/{instance_type}`, such as `//compute.origincloudapis.eu/instanceTypes/gp1.core.2`: one whose `available` is true. Changing it needs the instance `STOPPED`.",
 							Computed:            true,
 						},
 						"image": schema1.StringAttribute{
-							MarkdownDescription: "The image the boot volume is created from, in the instance's zone: one of the project's own, `projects/{project}/zones/{zone}/images/{image}`, or a public one, `zones/{zone}/images/{image}`. Set exactly one of `image` and `image_family`; launched from a family, this is the public image the family resolved to.",
+							MarkdownDescription: "The full name of the image the boot volume is created from, in the instance's zone: one of the project's own, `//compute.origincloudapis.eu/projects/{project}/zones/{zone}/images/{image}`, or a public one, `//compute.origincloudapis.eu/zones/{zone}/images/{image}`. Set exactly one of `image` and `image_family`; launched from a family, this is the public image the family resolved to.",
 							Computed:            true,
 						},
 						"image_family": schema1.StringAttribute{
-							MarkdownDescription: "The image family to launch the current public image of, `imageFamilies/{image_family}`. Set exactly one of `image` and `image_family`. Empty when the instance was launched from an image.",
+							MarkdownDescription: "The full name of the image family to launch the current public image of, `//compute.origincloudapis.eu/imageFamilies/{image_family}`. Set exactly one of `image` and `image_family`. Empty when the instance was launched from an image.",
 							Computed:            true,
 						},
 						"key_pair": schema1.StringAttribute{
-							MarkdownDescription: "The key pair whose public key is installed for `login_user`, in the instance's project.",
+							MarkdownDescription: "The full name of the key pair whose public key is installed for `login_user`, in the instance's project.",
 							Computed:            true,
 						},
 						"login_user": schema1.StringAttribute{
@@ -598,17 +608,17 @@ func instanceListSchema() schema1.Schema {
 									Computed:            true,
 								},
 								"storage_class": schema1.StringAttribute{
-									MarkdownDescription: "The storage class, `storageClasses/{storage_class}` of the persistent volume service; the default class when left empty.",
+									MarkdownDescription: "The storage class by its full name, `//pvs.origincloudapis.eu/storageClasses/{storage_class}`; the default class when left empty.",
 									Computed:            true,
 								},
 								"volume": schema1.StringAttribute{
-									MarkdownDescription: "The volume, in the instance's project and zone.",
+									MarkdownDescription: "The volume's full name, in the instance's project and zone.",
 									Computed:            true,
 								},
 							},
 						},
 						"network_interfaces": schema1.ListAttribute{
-							MarkdownDescription: "The network interfaces, in device order, the boot interface first; exactly one today. Each is an existing interface in the instance's project and zone that nothing else holds, created with the network service: its subnet and security groups are the instance's. Terminating the instance releases it, and it stays. An instance launched before interfaces were named at launch shows the interface created for it, which is deleted with the instance.",
+							MarkdownDescription: "The network interfaces' full names, in device order, the boot interface first; exactly one today. Each is an existing interface in the instance's project and zone that nothing else holds, created with the network service: its subnet and security groups are the instance's. Terminating the instance releases it, and it stays. An instance launched before interfaces were named at launch shows the interface created for it, which is deleted with the instance.",
 							Computed:            true,
 							ElementType:         types.StringType,
 						},
@@ -659,7 +669,7 @@ func instanceListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"creator": schema1.StringAttribute{
-							MarkdownDescription: "The principal that launched the instance, such as `user:<id>` or `service_account:<id>`.",
+							MarkdownDescription: "The principal that launched the instance, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 							Computed:            true,
 						},
 						"tags": schema1.MapAttribute{
@@ -673,7 +683,7 @@ func instanceListSchema() schema1.Schema {
 							NestedObject: schema1.NestedAttributeObject{
 								Attributes: map[string]schema1.Attribute{
 									"network_interface": schema1.StringAttribute{
-										MarkdownDescription: "The network interface.",
+										MarkdownDescription: "The network interface's full name.",
 										Computed:            true,
 									},
 									"ipv4_address": schema1.StringAttribute{
@@ -688,7 +698,7 @@ func instanceListSchema() schema1.Schema {
 							},
 						},
 						"service_account": schema1.StringAttribute{
-							MarkdownDescription: "The service account the instance runs as, `organizations/{organization}/serviceAccounts/{service_account}`: a `WORKLOAD` service account of the instance's organization that isn't deleted. Launching with one, or updating the instance to one, needs `iam.service_account.act_as` on the organization as well; an update that leaves it empty removes it, and a terminated instance's can't change. Empty for an instance that runs as none.",
+							MarkdownDescription: "The full name of the service account the instance runs as, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`: a `WORKLOAD` service account of the instance's organization that isn't deleted. Launching with one, or updating the instance to one, needs `iam.service_account.act_as` on the organization as well; an update that leaves it empty removes it, and a terminated instance's can't change. Empty for an instance that runs as none.",
 							Computed:            true,
 						},
 					},

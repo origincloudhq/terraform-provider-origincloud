@@ -42,7 +42,8 @@ output "detached" {
 Read-Only:
 
 - `attachment` (String) When `state` is `IN_USE`, the id of the volume attachment holding it.
-- `creator` (String) The principal that created the volume, such as `user:<id>` or `service_account:<id>`.
+- `creator` (String) The principal that created the volume, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform created it.
+- `id` (String) The volume's full resource name, `//pvs.origincloudapis.eu/projects/{project}/zones/{zone}/volumes/{volume}`: what an argument that refers to the volume takes. `name` is the relative name, without the host.
 - `iops` (Number) The most I/O operations per second the volume serves, reads and writes combined: a ceiling, not a guaranteed rate. 0 when it isn't limited.
 - `name` (String) The volume's resource name.
 - `pending_size_gib` (Number) The size a resize under way is heading for; 0 when none is. `size_gib` changes once the resize is confirmed.
@@ -50,10 +51,9 @@ Read-Only:
 - `resize_state` (String) Where the last resize is. One of `RESIZE_COMPLETED`, `RESIZING`, `RESIZE_FAILED`.
 - `retention_note` (String) Why the volume is still here after the instance it was created with was terminated; empty in every other case. Most often a snapshot of it exists, and a snapshot depends on its volume's data.
 - `size_gib` (Number) The size in GiB, at least 1. Growing it resizes the volume; it never shrinks.
-- `source_snapshot` (String) The snapshot the volume was created from, in the same project and zone; empty for an empty volume. The volume is at least the snapshot's size.
+- `source_snapshot` (String) The full name of the snapshot the volume was created from, in the same project and zone; empty for an empty volume. The volume is at least the snapshot's size.
 - `state` (String) Where the volume is in its lifecycle. One of `CREATING`, `AVAILABLE`, `IN_USE`, `DELETING`, `DELETED`, `ERROR`.
 - `state_reason` (String) Why the volume is in `ERROR`; empty otherwise.
-- `storage_class` (String) The storage class, `storageClasses/{storage_class}`. The default class when left empty.
+- `storage_class` (String) The storage class by its full name, `//pvs.origincloudapis.eu/storageClasses/{storage_class}`. The default class when left empty.
 - `tags` (Map of String) Labels of your own, at most 50. The `origin:name` tag is the name the console shows.
 - `throughput_mibps` (Number) The most MiB per second the volume transfers, reads and writes combined: a ceiling, not a guaranteed rate. 0 when it isn't limited.
-- `urn` (String) The volume's URN, the identifier access policies and the audit log use.

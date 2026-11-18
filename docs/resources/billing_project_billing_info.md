@@ -20,10 +20,10 @@ Every project has its project billing info, which exists with it: creating this 
 
 ### Required
 
-- `billing_account` (String) The billing account that pays for the project's usage, one of its organization's.
+- `billing_account` (String) The full name of the billing account that pays for the project's usage, one of its organization's: `//billing.origincloudapis.eu/organizations/{organization}/billingAccounts/{billing_account}`.
 - `project` (String) The project the project billing info is in. Changing it replaces the project billing info.
 
 ### Read-Only
 
-- `id` (String) The project billing info's resource name, the same as `name`.
+- `id` (String) The project billing info's full resource name, `//billing.origincloudapis.eu/projects/{project}/billingInfo`: what an argument that refers to the project billing info takes. `name` is the relative name, without the host.
 - `name` (String) The billing info's resource name, `projects/{project}/billingInfo`.

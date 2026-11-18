@@ -9,6 +9,7 @@ import (
 	schema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	planmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	stringplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	validator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	types "github.com/hashicorp/terraform-plugin-framework/types"
 	framework "github.com/origincloudhq/terraform-provider-origincloud/internal/framework"
 	core "go.origincloud.eu/sdk/core"
@@ -21,7 +22,6 @@ type projectModel struct {
 	ID           types.String `tfsdk:"id"`
 	ProjectId    types.String `tfsdk:"project_id"`
 	Name         types.String `tfsdk:"name"`
-	Urn          types.String `tfsdk:"urn"`
 	Organization types.String `tfsdk:"organization"`
 	DisplayName  types.String `tfsdk:"display_name"`
 	CreateTime   types.String `tfsdk:"create_time"`
@@ -33,7 +33,7 @@ func projectSchema() schema.Schema {
 		MarkdownDescription: "A project: the namespace an organization's resources are created in.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The project's resource name, the same as `name`.",
+				MarkdownDescription: "The project's full resource name, `//resourcemanager.origincloudapis.eu/projects/{project}`: what an argument that refers to the project takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -47,13 +47,10 @@ func projectSchema() schema.Schema {
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The project's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
-			},
 			"organization": schema.StringAttribute{
-				MarkdownDescription: "The organization the project belongs to, `organizations/{organization}`. Changing it replaces the project.",
+				MarkdownDescription: "The full name of the organization the project belongs to, `//resourcemanager.origincloudapis.eu/organizations/{organization}`. Changing it replaces the project.",
 				Required:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"display_name": schema.StringAttribute{
@@ -65,7 +62,7 @@ func projectSchema() schema.Schema {
 				Computed:            true,
 			},
 			"creator": schema.StringAttribute{
-				MarkdownDescription: "The principal that created the project, such as `user:<id>` or `service_account:<id>`.",
+				MarkdownDescription: "The principal that created the project, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 				Computed:            true,
 			},
 		},
@@ -85,10 +82,13 @@ func projectFromProto(p *v1beta1.Project, m *projectModel) error {
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("resourcemanager", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.ProjectId = types.StringValue(values[0])
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Organization = types.StringValue(p.GetOrganization())
 	m.DisplayName = types.StringValue(p.GetDisplayName())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
@@ -100,6 +100,8 @@ func projectResource() framework.ResourceSpec[projectModel, *v1beta1.Project] {
 	return framework.ResourceSpec[projectModel, *v1beta1.Project]{
 		TypeName:    "_resourcemanager_project",
 		Pattern:     "projects/{project}",
+		Service:     "resourcemanager",
+		References:  map[string]string{"organization": "resourcemanager"},
 		ClientID:    func(m *projectModel) types.String { return m.ProjectId },
 		IDAttribute: "project_id",
 		Singular:    "project",
@@ -142,8 +144,8 @@ func projectResource() framework.ResourceSpec[projectModel, *v1beta1.Project] {
 
 // projectItemModel is an item of origincloud_resourcemanager_projects.
 type projectItemModel struct {
+	ID           types.String `tfsdk:"id"`
 	Name         types.String `tfsdk:"name"`
-	Urn          types.String `tfsdk:"urn"`
 	Organization types.String `tfsdk:"organization"`
 	DisplayName  types.String `tfsdk:"display_name"`
 	CreateTime   types.String `tfsdk:"create_time"`
@@ -151,8 +153,12 @@ type projectItemModel struct {
 }
 
 func projectItemFromProto(p *v1beta1.Project, m *projectItemModel) error {
+	id, err := framework.FullName("resourcemanager", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Organization = types.StringValue(p.GetOrganization())
 	m.DisplayName = types.StringValue(p.GetDisplayName())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
@@ -171,24 +177,25 @@ func projectListSchema() schema1.Schema {
 		MarkdownDescription: "Lists an organization's projects, oldest first.",
 		Attributes: map[string]schema1.Attribute{
 			"organization": schema1.StringAttribute{
-				MarkdownDescription: "The organization whose projects to list, `organizations/{organization}`.",
+				MarkdownDescription: "The full name of the organization whose projects to list, `//resourcemanager.origincloudapis.eu/organizations/{organization}`.",
 				Required:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 			},
 			"projects": schema1.ListNestedAttribute{
 				MarkdownDescription: "The projects listed, from every page.",
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The project's full resource name, `//resourcemanager.origincloudapis.eu/projects/{project}`: what an argument that refers to the project takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "The project's resource name, `projects/{project}`. The id, chosen when the project is created, is unique across the platform and never used again, not even after the project is deleted.",
 							Computed:            true,
 						},
-						"urn": schema1.StringAttribute{
-							MarkdownDescription: "The project's URN, the identifier access policies and the audit log use.",
-							Computed:            true,
-						},
 						"organization": schema1.StringAttribute{
-							MarkdownDescription: "The organization the project belongs to, `organizations/{organization}`.",
+							MarkdownDescription: "The full name of the organization the project belongs to, `//resourcemanager.origincloudapis.eu/organizations/{organization}`.",
 							Computed:            true,
 						},
 						"display_name": schema1.StringAttribute{
@@ -200,7 +207,7 @@ func projectListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"creator": schema1.StringAttribute{
-							MarkdownDescription: "The principal that created the project, such as `user:<id>` or `service_account:<id>`.",
+							MarkdownDescription: "The principal that created the project, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 							Computed:            true,
 						},
 					},

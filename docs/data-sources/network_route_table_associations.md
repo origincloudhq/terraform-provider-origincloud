@@ -30,5 +30,6 @@ Lists a subnet's route table associations: none or one.
 
 Read-Only:
 
+- `id` (String) The route table association's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/subnets/{subnet}/routeTableAssociations/{route_table_association}`: what an argument that refers to the route table association takes. `name` is the relative name, without the host.
 - `name` (String) The association's resource name. Its last segment is the route table's id.
-- `route_table` (String) The route table the subnet uses, in the subnet's VPC.
+- `route_table` (String) The full name of the route table the subnet uses, in the subnet's VPC.

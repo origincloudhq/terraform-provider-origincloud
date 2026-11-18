@@ -47,7 +47,7 @@ resource "origincloud_pvs_volume" "data" {
 resource "origincloud_pvs_snapshot" "data" {
   project       = "p-1"
   zone          = "eu-central1-az1"
-  source_volume = origincloud_pvs_volume.data.name
+  source_volume = origincloud_pvs_volume.data.id
   %s
 }
 `, fake.URL, volume, snapshot)
@@ -68,11 +68,11 @@ func TestVolumesAndSnapshotsAreCreatedUpdatedReplacedAndImported(t *testing.T) {
   tags = { env = "test" }`, `tags = { kept = "yes" }`),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestMatchResourceAttr("origincloud_pvs_volume.data", "name", volumeName),
-					resource.TestCheckResourceAttrPair("origincloud_pvs_volume.data", "id", "origincloud_pvs_volume.data", "name"),
-					resource.TestCheckResourceAttr("origincloud_pvs_volume.data", "storage_class", "storageClasses/gp1"),
+					checkFullName("origincloud_pvs_volume.data"),
+					resource.TestCheckResourceAttr("origincloud_pvs_volume.data", "storage_class", "//pvs.origincloudapis.eu/storageClasses/gp1"),
 					resource.TestCheckResourceAttr("origincloud_pvs_volume.data", "state", "AVAILABLE"),
 					resource.TestCheckResourceAttr("origincloud_pvs_volume.data", "tags.env", "test"),
-					resource.TestCheckResourceAttrPair("origincloud_pvs_snapshot.data", "source_volume", "origincloud_pvs_volume.data", "name"),
+					resource.TestCheckResourceAttrPair("origincloud_pvs_snapshot.data", "source_volume", "origincloud_pvs_volume.data", "id"),
 					resource.TestCheckResourceAttr("origincloud_pvs_snapshot.data", "state", "COMPLETED"),
 					resource.TestCheckResourceAttr("origincloud_pvs_snapshot.data", "source_size_gib", "1"),
 					resource.TestCheckResourceAttr("data.origincloud_pvs_storage_class.throughput", "media", "HDD"),
@@ -96,12 +96,12 @@ func TestVolumesAndSnapshotsAreCreatedUpdatedReplacedAndImported(t *testing.T) {
 			// snapshot of it.
 			{
 				Config: pvsConfig(fake, `size_gib = 2
-  storage_class = data.origincloud_pvs_storage_class.throughput.name`, `tags = { kept = "no" }`),
+  storage_class = data.origincloud_pvs_storage_class.throughput.id`, `tags = { kept = "no" }`),
 				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
 					plancheck.ExpectResourceAction("origincloud_pvs_volume.data", plancheck.ResourceActionReplace),
 					plancheck.ExpectResourceAction("origincloud_pvs_snapshot.data", plancheck.ResourceActionReplace),
 				}},
-				Check: resource.TestCheckResourceAttr("origincloud_pvs_volume.data", "storage_class", "storageClasses/st1"),
+				Check: resource.TestCheckResourceAttr("origincloud_pvs_volume.data", "storage_class", "//pvs.origincloudapis.eu/storageClasses/st1"),
 			},
 			// Adopted by name.
 			{
@@ -198,7 +198,7 @@ resource "origincloud_pvs_volume" "data" {
 resource "origincloud_pvs_snapshot" "data" {
   project       = "p-1"
   zone          = "eu-central1-az1"
-  source_volume = origincloud_pvs_volume.data.name
+  source_volume = origincloud_pvs_volume.data.id
   %s
 }
 `, fake.URL, snapshot)
@@ -208,7 +208,7 @@ resource "origincloud_pvs_volume" "copy" {
   project         = "p-1"
   zone            = "eu-central1-az1"
   size_gib        = 1
-  source_snapshot = origincloud_pvs_snapshot.data.name
+  source_snapshot = origincloud_pvs_snapshot.data.id
 }
 `
 	}
@@ -230,7 +230,7 @@ func TestASnapshotIsProtectedUnprotectedAndUnprotectedBeforeDeletion(t *testing.
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("origincloud_pvs_snapshot.data", "protected", "true"),
 					resource.TestCheckResourceAttr("origincloud_pvs_snapshot.data", "protection_state", "PROTECTED"),
-					resource.TestCheckResourceAttrPair("origincloud_pvs_volume.copy", "source_snapshot", "origincloud_pvs_snapshot.data", "name"),
+					resource.TestCheckResourceAttrPair("origincloud_pvs_volume.copy", "source_snapshot", "origincloud_pvs_snapshot.data", "id"),
 				),
 			},
 			// Another change leaves a protected snapshot as it is, without
@@ -349,7 +349,7 @@ resource "origincloud_pvs_volume" "second" {
 resource "origincloud_pvs_snapshot" "first" {
   project       = "p-1"
   zone          = "eu-central1-az1"
-  source_volume = origincloud_pvs_volume.first.name
+  source_volume = origincloud_pvs_volume.first.id
 }
 `, fake.URL)
 	lists := resources + `
@@ -386,7 +386,7 @@ data "origincloud_pvs_storage_classes" "all" {}
 					resource.TestCheckResourceAttr("data.origincloud_pvs_volumes.az1", "volumes.1.tags.env", "test"),
 					resource.TestCheckResourceAttr("data.origincloud_pvs_volumes.az1", "volumes.0.state", "AVAILABLE"),
 					resource.TestCheckResourceAttr("data.origincloud_pvs_snapshots.az1", "snapshots.#", "1"),
-					resource.TestCheckResourceAttrPair("data.origincloud_pvs_snapshots.az1", "snapshots.0.source_volume", "origincloud_pvs_volume.first", "name"),
+					resource.TestCheckResourceAttrPair("data.origincloud_pvs_snapshots.az1", "snapshots.0.source_volume", "origincloud_pvs_volume.first", "id"),
 					resource.TestCheckResourceAttr("data.origincloud_pvs_storage_classes.all", "storage_classes.#", "2"),
 					resource.TestCheckResourceAttr("data.origincloud_pvs_storage_classes.all", "storage_classes.0.name", "storageClasses/gp1"),
 					resource.TestCheckResourceAttr("data.origincloud_pvs_storage_classes.all", "storage_classes.1.media", "HDD"),
@@ -398,4 +398,39 @@ data "origincloud_pvs_storage_classes" "all" {}
 			},
 		},
 	})
+}
+
+// checkFullName checks that a resource's id is its full resource name:
+// its name on the host of its service, which its type name starts with.
+func checkFullName(address string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		r, ok := s.RootModule().Resources[address]
+		if !ok {
+			return fmt.Errorf("no %s in the state", address)
+		}
+		service, _, _ := strings.Cut(strings.TrimPrefix(r.Type, "origincloud_"), "_")
+		want := "//" + service + ".origincloudapis.eu/" + r.Primary.Attributes["name"]
+		if got := r.Primary.Attributes["id"]; got != want {
+			return fmt.Errorf("%s's id is %q, not its full name %q", address, got, want)
+		}
+		return nil
+	}
+}
+
+// relativeName returns the relative name of a full resource name, as the
+// API compares the references in a request body; any other string is
+// returned as it is.
+func relativeName(name string) string {
+	if rest, ok := strings.CutPrefix(name, "//"); ok {
+		if _, relative, ok := strings.Cut(rest, "/"); ok {
+			return relative
+		}
+	}
+	return name
+}
+
+// full returns the full resource name of the relative name of a resource
+// of service, which the API answers references with.
+func full(service, relative string) string {
+	return "//" + service + ".origincloudapis.eu/" + relative
 }

@@ -140,7 +140,6 @@ func (f *fakeDNS) createZone(w http.ResponseWriter, collection string, body []by
 	}
 	f.next++
 	zone.Name = fmt.Sprintf("%s/hz-%d", collection, f.next)
-	zone.Urn = "urn:origincloud:dns:hosted-zone/" + zone.Name
 	zone.Creator = "user:test"
 	zone.CreateTime = timestamppb.New(time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))
 	switch zone.GetVisibility() {
@@ -190,7 +189,7 @@ func checkRecordSet(zone *dnsv1beta1.HostedZone, rs *dnsv1beta1.RecordSet) strin
 		switch {
 		case rs.GetType() != dnsv1beta1.RecordSet_A:
 			return "an alias is of type A"
-		case !strings.HasPrefix(alias.GetFloatingIp(), project+"/"):
+		case !strings.HasPrefix(relativeName(alias.GetFloatingIp()), project+"/"):
 			return alias.GetFloatingIp() + " isn't a floating IP of the zone's project"
 		}
 	}
@@ -232,7 +231,6 @@ func (f *fakeDNS) createRecordSet(w http.ResponseWriter, collection string, body
 	}
 	f.next++
 	rs.Name = fmt.Sprintf("%s/recordSets/rrset-%d", parent, f.next)
-	rs.Urn = "urn:origincloud:dns:record-set/" + rs.Name
 	rs.CreateTime = timestamppb.New(time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))
 	rs.UpdateTime = rs.CreateTime
 	f.recordSets[rs.Name] = rs
@@ -282,7 +280,7 @@ func (f *fakeDNS) createAttachment(w http.ResponseWriter, collection string, bod
 	case zone.GetVisibility() == dnsv1beta1.HostedZone_PUBLIC:
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "a public zone can't be attached to a VPC")
 		return
-	case !strings.HasPrefix(attachment.GetVpc(), project+"/"):
+	case !strings.HasPrefix(relativeName(attachment.GetVpc()), project+"/"):
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", attachment.GetVpc()+" isn't a VPC of the zone's project")
 		return
 	}
@@ -291,7 +289,6 @@ func (f *fakeDNS) createAttachment(w http.ResponseWriter, collection string, bod
 		writeError(w, http.StatusConflict, "CONFLICT", "the zone is attached to "+attachment.GetVpc())
 		return
 	}
-	attachment.Urn = "urn:origincloud:dns:vpc-attachment/" + attachment.Name
 	attachment.CreateTime = timestamppb.New(time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))
 	f.attachments[attachment.Name] = attachment
 	writeMessage(w, attachment)

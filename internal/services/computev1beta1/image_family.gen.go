@@ -14,6 +14,7 @@ import (
 
 // imageFamilyModel is origincloud_compute_image_family's state.
 type imageFamilyModel struct {
+	ID             types.String `tfsdk:"id"`
 	Name           types.String `tfsdk:"name"`
 	DisplayName    types.String `tfsdk:"display_name"`
 	Description    types.String `tfsdk:"description"`
@@ -28,6 +29,10 @@ func imageFamilySchema() schema.Schema {
 	return schema.Schema{
 		MarkdownDescription: "A stable name for the current public image of an operating system release.",
 		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				MarkdownDescription: "The image family's full resource name, `//compute.origincloudapis.eu/imageFamilies/{image_family}`: what an argument that refers to the image family takes. `name` is the relative name, without the host.",
+				Computed:            true,
+			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "The family's resource name, `imageFamilies/ubuntu-24-04-minimal`. Never renamed, and never reused for another release.",
 				Required:            true,
@@ -65,6 +70,11 @@ func imageFamilySchema() schema.Schema {
 }
 
 func imageFamilyFromProto(p *v1beta1.ImageFamily, m *imageFamilyModel) error {
+	id, err := framework.FullName("compute", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
 	m.DisplayName = types.StringValue(p.GetDisplayName())
 	m.Description = types.StringValue(p.GetDescription())
@@ -102,6 +112,10 @@ func imageFamilyListSchema() schema.Schema {
 				Computed:            true,
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
+						"id": schema.StringAttribute{
+							MarkdownDescription: "The image family's full resource name, `//compute.origincloudapis.eu/imageFamilies/{image_family}`: what an argument that refers to the image family takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema.StringAttribute{
 							MarkdownDescription: "The family's resource name, `imageFamilies/ubuntu-24-04-minimal`. Never renamed, and never reused for another release.",
 							Computed:            true,

@@ -14,6 +14,7 @@ import (
 
 // instanceTypeModel is origincloud_compute_instance_type's state.
 type instanceTypeModel struct {
+	ID                        types.String `tfsdk:"id"`
 	Name                      types.String `tfsdk:"name"`
 	DisplayName               types.String `tfsdk:"display_name"`
 	Kind                      types.String `tfsdk:"kind"`
@@ -29,6 +30,10 @@ func instanceTypeSchema() schema.Schema {
 	return schema.Schema{
 		MarkdownDescription: "A size an instance is launched as.",
 		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				MarkdownDescription: "The instance type's full resource name, `//compute.origincloudapis.eu/instanceTypes/{instance_type}`: what an argument that refers to the instance type takes. `name` is the relative name, without the host.",
+				Computed:            true,
+			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "The type's resource name, `instanceTypes/gp1.core.2`.",
 				Required:            true,
@@ -70,6 +75,11 @@ func instanceTypeSchema() schema.Schema {
 }
 
 func instanceTypeFromProto(p *v1beta1.InstanceType, m *instanceTypeModel) error {
+	id, err := framework.FullName("compute", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
 	m.DisplayName = types.StringValue(p.GetDisplayName())
 	m.Kind = types.StringValue(p.GetKind())
@@ -108,6 +118,10 @@ func instanceTypeListSchema() schema.Schema {
 				Computed:            true,
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
+						"id": schema.StringAttribute{
+							MarkdownDescription: "The instance type's full resource name, `//compute.origincloudapis.eu/instanceTypes/{instance_type}`: what an argument that refers to the instance type takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema.StringAttribute{
 							MarkdownDescription: "The type's resource name, `instanceTypes/gp1.core.2`.",
 							Computed:            true,

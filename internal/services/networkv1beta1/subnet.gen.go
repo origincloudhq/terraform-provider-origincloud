@@ -23,7 +23,6 @@ type subnetModel struct {
 	Project                   types.String `tfsdk:"project"`
 	Zone                      types.String `tfsdk:"zone"`
 	Name                      types.String `tfsdk:"name"`
-	Urn                       types.String `tfsdk:"urn"`
 	Vpc                       types.String `tfsdk:"vpc"`
 	RouteTable                types.String `tfsdk:"route_table"`
 	Acl                       types.String `tfsdk:"acl"`
@@ -45,7 +44,7 @@ func subnetSchema() schema.Schema {
 		MarkdownDescription: "The part of a VPC in one zone, with its own address ranges.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The subnet's resource name, the same as `name`.",
+				MarkdownDescription: "The subnet's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/subnets/{subnet}`: what an argument that refers to the subnet takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -64,21 +63,18 @@ func subnetSchema() schema.Schema {
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The subnet's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
-			},
 			"vpc": schema.StringAttribute{
-				MarkdownDescription: "The VPC the subnet is part of, in the same project and in the zone's region. For now a VPC lives in one zone of its region: a subnet in another zone is refused with `FAILED_PRECONDITION`. Changing it replaces the subnet.",
+				MarkdownDescription: "The full name of the VPC the subnet is part of, in the same project and in the zone's region. For now a VPC lives in one zone of its region: a subnet in another zone is refused with `FAILED_PRECONDITION`. Changing it replaces the subnet.",
 				Required:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"route_table": schema.StringAttribute{
-				MarkdownDescription: "The route table that decides where the subnet's traffic goes, as the subnet's route table association (a `RouteTableAssociation`) sets it. A subnet reaches, and is reached from, the internet for an address family only if its own route table has that family's default route (a `Route` with that family's default destination). Empty while it has none: a subnet with no route table has no route out of its VPC and isn't reachable from the internet, even when the VPC has an internet gateway.",
+				MarkdownDescription: "The full name of the route table that decides where the subnet's traffic goes, as the subnet's route table association (a `RouteTableAssociation`) sets it. A subnet reaches, and is reached from, the internet for an address family only if its own route table has that family's default route (a `Route` with that family's default destination). Empty while it has none: a subnet with no route table has no route out of its VPC and isn't reachable from the internet, even when the VPC has an internet gateway.",
 				Computed:            true,
 			},
 			"acl": schema.StringAttribute{
-				MarkdownDescription: "The ACL that filters traffic in and out of the subnet, as the subnet's ACL association (an `AclAssociation`) sets it. Empty while it has none: nothing is filtered at the subnet's edge, and its interfaces' security groups still apply.",
+				MarkdownDescription: "The full name of the ACL that filters traffic in and out of the subnet, as the subnet's ACL association (an `AclAssociation`) sets it. Empty while it has none: nothing is filtered at the subnet's edge, and its interfaces' security groups still apply.",
 				Computed:            true,
 			},
 			"auto_assign_public_ip": schema.BoolAttribute{
@@ -120,7 +116,7 @@ func subnetSchema() schema.Schema {
 				Computed:            true,
 			},
 			"creator": schema.StringAttribute{
-				MarkdownDescription: "The principal that created the subnet, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.",
+				MarkdownDescription: "The principal that created the subnet, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 				Computed:            true,
 			},
 			"tags": schema.MapAttribute{
@@ -147,11 +143,14 @@ func subnetFromProto(p *v1beta1.Subnet, m *subnetModel) error {
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Zone = types.StringValue(values[1])
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Vpc = types.StringValue(p.GetVpc())
 	m.RouteTable = types.StringValue(p.GetRouteTable())
 	m.Acl = types.StringValue(p.GetAcl())
@@ -171,12 +170,14 @@ func subnetFromProto(p *v1beta1.Subnet, m *subnetModel) error {
 
 func subnetResource() framework.ResourceSpec[subnetModel, *v1beta1.Subnet] {
 	return framework.ResourceSpec[subnetModel, *v1beta1.Subnet]{
-		TypeName:  "_network_subnet",
-		Pattern:   "projects/{project}/zones/{zone}/subnets/{subnet}",
-		Schema:    subnetSchema(),
-		Name:      func(m *subnetModel) string { return m.Name.ValueString() },
-		ToProto:   subnetToProto,
-		FromProto: subnetFromProto,
+		TypeName:   "_network_subnet",
+		Pattern:    "projects/{project}/zones/{zone}/subnets/{subnet}",
+		Service:    "network",
+		References: map[string]string{"vpc": "network", "route_table": "network", "acl": "network"},
+		Schema:     subnetSchema(),
+		Name:       func(m *subnetModel) string { return m.Name.ValueString() },
+		ToProto:    subnetToProto,
+		FromProto:  subnetFromProto,
 		UpdateMask: func(plan, state *subnetModel) []string {
 			var mask []string
 			if !plan.AutoAssignPublicIp.Equal(state.AutoAssignPublicIp) {
@@ -216,8 +217,8 @@ func subnetResource() framework.ResourceSpec[subnetModel, *v1beta1.Subnet] {
 
 // subnetItemModel is an item of origincloud_network_subnets.
 type subnetItemModel struct {
+	ID                        types.String `tfsdk:"id"`
 	Name                      types.String `tfsdk:"name"`
-	Urn                       types.String `tfsdk:"urn"`
 	Vpc                       types.String `tfsdk:"vpc"`
 	RouteTable                types.String `tfsdk:"route_table"`
 	Acl                       types.String `tfsdk:"acl"`
@@ -235,8 +236,12 @@ type subnetItemModel struct {
 }
 
 func subnetItemFromProto(p *v1beta1.Subnet, m *subnetItemModel) error {
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Vpc = types.StringValue(p.GetVpc())
 	m.RouteTable = types.StringValue(p.GetRouteTable())
 	m.Acl = types.StringValue(p.GetAcl())
@@ -278,24 +283,24 @@ func subnetListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The subnet's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/subnets/{subnet}`: what an argument that refers to the subnet takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "The subnet's resource name.",
 							Computed:            true,
 						},
-						"urn": schema1.StringAttribute{
-							MarkdownDescription: "The subnet's URN, the identifier access policies and the audit log use.",
-							Computed:            true,
-						},
 						"vpc": schema1.StringAttribute{
-							MarkdownDescription: "The VPC the subnet is part of, in the same project and in the zone's region. For now a VPC lives in one zone of its region: a subnet in another zone is refused with `FAILED_PRECONDITION`.",
+							MarkdownDescription: "The full name of the VPC the subnet is part of, in the same project and in the zone's region. For now a VPC lives in one zone of its region: a subnet in another zone is refused with `FAILED_PRECONDITION`.",
 							Computed:            true,
 						},
 						"route_table": schema1.StringAttribute{
-							MarkdownDescription: "The route table that decides where the subnet's traffic goes, as the subnet's route table association (a `RouteTableAssociation`) sets it. A subnet reaches, and is reached from, the internet for an address family only if its own route table has that family's default route (a `Route` with that family's default destination). Empty while it has none: a subnet with no route table has no route out of its VPC and isn't reachable from the internet, even when the VPC has an internet gateway.",
+							MarkdownDescription: "The full name of the route table that decides where the subnet's traffic goes, as the subnet's route table association (a `RouteTableAssociation`) sets it. A subnet reaches, and is reached from, the internet for an address family only if its own route table has that family's default route (a `Route` with that family's default destination). Empty while it has none: a subnet with no route table has no route out of its VPC and isn't reachable from the internet, even when the VPC has an internet gateway.",
 							Computed:            true,
 						},
 						"acl": schema1.StringAttribute{
-							MarkdownDescription: "The ACL that filters traffic in and out of the subnet, as the subnet's ACL association (an `AclAssociation`) sets it. Empty while it has none: nothing is filtered at the subnet's edge, and its interfaces' security groups still apply.",
+							MarkdownDescription: "The full name of the ACL that filters traffic in and out of the subnet, as the subnet's ACL association (an `AclAssociation`) sets it. Empty while it has none: nothing is filtered at the subnet's edge, and its interfaces' security groups still apply.",
 							Computed:            true,
 						},
 						"auto_assign_public_ip": schema1.BoolAttribute{
@@ -337,7 +342,7 @@ func subnetListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"creator": schema1.StringAttribute{
-							MarkdownDescription: "The principal that created the subnet, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.",
+							MarkdownDescription: "The principal that created the subnet, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 							Computed:            true,
 						},
 						"tags": schema1.MapAttribute{

@@ -25,7 +25,7 @@ const (
 	spfRecords  = "origincloud_dns_record_set.spf"
 	corpVPC     = "origincloud_dns_vpc_attachment.corp"
 	// The VPC the private zone is attached to.
-	vpc1 = "projects/p-1/regions/eu-central1/vpcs/vpc-1"
+	vpc1 = "//network.origincloudapis.eu/projects/p-1/regions/eu-central1/vpcs/vpc-1"
 )
 
 // dnsConfig returns a configuration of the provider calling fake, with a
@@ -82,7 +82,7 @@ func TestHostedZonesRecordSetsAndVPCAttachmentsAreManaged(t *testing.T) {
   ttl      = %q
   basic    = { values = [%s] }`, dnsName, ttl, values)
 	}
-	fip := `alias = { floating_ip = "projects/p-1/zones/eu-central1-az1/floatingIps/fip-1" }`
+	fip := `alias = { floating_ip = "//network.origincloudapis.eu/projects/p-1/zones/eu-central1-az1/floatingIps/fip-1" }`
 	apex := func(kind string) string {
 		return `type = "A"
   ttl  = "300s"
@@ -122,7 +122,7 @@ data "origincloud_dns_vpc_attachments" "private" {
 				Config: dnsConfig(fake, zone, www("www.example.com", "60s", `"192.0.2.10", "192.0.2.11"`), apex(fip), vpc1, lists),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestMatchResourceAttr(publicZone, "name", zoneName),
-					resource.TestCheckResourceAttrPair(publicZone, "id", publicZone, "name"),
+					checkFullName(publicZone),
 					resource.TestCheckResourceAttr(publicZone, "dns_name", "Example.com"),
 					resource.TestCheckResourceAttr(publicZone, "state", "PENDING_VERIFICATION"),
 					resource.TestCheckResourceAttr(publicZone, "name_servers.#", "2"),
@@ -141,7 +141,7 @@ data "origincloud_dns_vpc_attachments" "private" {
 					resource.TestCheckTypeSetElemAttr(wwwRecords, "basic.values.*", "192.0.2.11"),
 					resource.TestCheckNoResourceAttr(wwwRecords, "alias.floating_ip"),
 					resource.TestCheckResourceAttr(apexRecords, "dns_name", "Example.com"),
-					resource.TestCheckResourceAttr(apexRecords, "alias.floating_ip", "projects/p-1/zones/eu-central1-az1/floatingIps/fip-1"),
+					resource.TestCheckResourceAttr(apexRecords, "alias.floating_ip", "//network.origincloudapis.eu/projects/p-1/zones/eu-central1-az1/floatingIps/fip-1"),
 					resource.TestCheckNoResourceAttr(apexRecords, "basic.values.#"),
 					resource.TestCheckResourceAttr(corpVPC, "vpc", vpc1),
 					resource.TestMatchResourceAttr(corpVPC, "name", regexp.MustCompile(`^projects/p-1/hostedZones/hz-[0-9]+/vpcAttachments/vpc-1$`)),
@@ -221,11 +221,11 @@ data "origincloud_dns_vpc_attachments" "private" {
 			// What the API refuses reaches the user: an alias to another
 			// project's floating IP, and a VPC of another project.
 			{
-				Config:      dnsConfig(fake, `dns_name = "example.com"`, www("www.example.com", "60s", `"192.0.2.10"`), apex(`alias = { floating_ip = "projects/p-2/zones/eu-central1-az1/floatingIps/fip-9" }`), vpc1, ""),
+				Config:      dnsConfig(fake, `dns_name = "example.com"`, www("www.example.com", "60s", `"192.0.2.10"`), apex(`alias = { floating_ip = "//network.origincloudapis.eu/projects/p-2/zones/eu-central1-az1/floatingIps/fip-9" }`), vpc1, ""),
 				ExpectError: regexp.MustCompile(`isn't a floating IP of\s+the zone's project`),
 			},
 			{
-				Config:      dnsConfig(fake, `dns_name = "example.com"`, www("www.example.com", "60s", `"192.0.2.10"`), apex(`basic = { values = ["192.0.2.20"] }`), "projects/p-2/regions/eu-central1/vpcs/vpc-9", ""),
+				Config:      dnsConfig(fake, `dns_name = "example.com"`, www("www.example.com", "60s", `"192.0.2.10"`), apex(`basic = { values = ["192.0.2.20"] }`), "//network.origincloudapis.eu/projects/p-2/regions/eu-central1/vpcs/vpc-9", ""),
 				ExpectError: regexp.MustCompile(`isn't a VPC of the zone's\s+project`),
 			},
 			// Back to a configuration the API accepts.

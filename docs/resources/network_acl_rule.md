@@ -33,5 +33,5 @@ An ACL rule: accepts or drops the traffic it matches in one direction.
 
 ### Read-Only
 
-- `id` (String) The acl rule's resource name, the same as `name`.
+- `id` (String) The acl rule's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/acls/{acl}/rules/{rule}`: what an argument that refers to the acl rule takes. `name` is the relative name, without the host.
 - `name` (String) The rule's resource name.

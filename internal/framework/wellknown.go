@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"google.golang.org/genproto/googleapis/type/date"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -50,6 +52,16 @@ func wellKnown[P interface {
 	return types.StringValue(s)
 }
 
+// Date returns a google.type.Date field as a string attribute, as
+// 2026-11-01. A date without a year, month or day, a recurring or partial
+// one, is null.
+func Date(p *date.Date, prior types.String) types.String {
+	if p == nil || p.GetYear() == 0 || p.GetMonth() == 0 || p.GetDay() == 0 {
+		return types.StringNull()
+	}
+	return types.StringValue(fmt.Sprintf("%04d-%02d-%02d", p.GetYear(), p.GetMonth(), p.GetDay()))
+}
+
 // TimestampToProto returns a string attribute as a timestamp field; nil
 // when it is null, unknown or invalid.
 func TimestampToProto(v types.String) *timestamppb.Timestamp {
@@ -60,6 +72,19 @@ func TimestampToProto(v types.String) *timestamppb.Timestamp {
 // when it is null, unknown or invalid.
 func DurationToProto(v types.String) *durationpb.Duration {
 	return parseWellKnown(v, &durationpb.Duration{})
+}
+
+// DateToProto returns a string attribute as a date field; nil when it is
+// null, unknown or invalid.
+func DateToProto(v types.String) *date.Date {
+	if v.IsNull() || v.IsUnknown() {
+		return nil
+	}
+	t, err := time.Parse(time.DateOnly, v.ValueString())
+	if err != nil {
+		return nil
+	}
+	return &date.Date{Year: int32(t.Year()), Month: int32(t.Month()), Day: int32(t.Day())}
 }
 
 func parseWellKnown[P proto.Message](v types.String, p P) P {
@@ -77,6 +102,12 @@ func parseWellKnown[P proto.Message](v types.String, p P) P {
 // timestamp, as a timestamp field takes it.
 func TimestampFormat() validator.String {
 	return formatValidator{"an RFC 3339 timestamp, such as 2026-11-01T12:00:00Z", func(v types.String) bool { return TimestampToProto(v) != nil }}
+}
+
+// DateFormat validates that a string attribute is a calendar date, as a
+// date field takes it.
+func DateFormat() validator.String {
+	return formatValidator{"a calendar date, such as 2026-11-01", func(v types.String) bool { return DateToProto(v) != nil }}
 }
 
 // DurationFormat validates that a string attribute is a duration in

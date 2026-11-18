@@ -44,7 +44,7 @@ resource "origincloud_pvs_volume" "data" {
 resource "origincloud_pvs_snapshot" "data" {
   project       = %[1]q
   zone          = %[2]q
-  source_volume = origincloud_pvs_volume.data.name
+  source_volume = origincloud_pvs_volume.data.id
   protected     = %[4]s
 }
 `, values[0], values[1], volume, protected)
@@ -54,7 +54,7 @@ resource "origincloud_pvs_volume" "restored" {
   project         = %[1]q
   zone            = %[2]q
   size_gib        = 1
-  source_snapshot = origincloud_pvs_snapshot.data.name
+  source_snapshot = origincloud_pvs_snapshot.data.id
   tags            = { test = "terraform-provider" }
 }
 `, values[0], values[1])
@@ -92,7 +92,7 @@ resource "origincloud_pvs_volume" "restored" {
 			// on sale.
 			{
 				Config: config(`size_gib = 2
-  storage_class = data.origincloud_pvs_storage_class.throughput.name`, "false", false),
+  storage_class = data.origincloud_pvs_storage_class.throughput.id`, "false", false),
 				PlanOnly:           true,
 				ExpectNonEmptyPlan: true,
 				ConfigPlanChecks: resource.ConfigPlanChecks{PostApplyPreRefresh: []plancheck.PlanCheck{
@@ -350,7 +350,7 @@ resource "origincloud_dns_hosted_zone" "private" {
 resource "origincloud_dns_vpc_attachment" "dns" {
   project     = %[1]q
   hosted_zone = basename(origincloud_dns_hosted_zone.private.name)
-  vpc         = origincloud_network_vpc.dns.name
+  vpc         = origincloud_network_vpc.dns.id
 }
 `, values[0], region, ttl, address)
 	}
@@ -368,7 +368,7 @@ resource "origincloud_dns_vpc_attachment" "dns" {
 					resource.TestCheckResourceAttr("origincloud_dns_record_set.www", "ttl", "60s"),
 					resource.TestCheckResourceAttr("origincloud_dns_record_set.spf", "ttl", "300s"),
 					resource.TestCheckResourceAttr("origincloud_dns_hosted_zone.private", "state", "ACTIVE"),
-					resource.TestCheckResourceAttrPair("origincloud_dns_vpc_attachment.dns", "vpc", "origincloud_network_vpc.dns", "name"),
+					resource.TestCheckResourceAttrPair("origincloud_dns_vpc_attachment.dns", "vpc", "origincloud_network_vpc.dns", "id"),
 				),
 			},
 			{

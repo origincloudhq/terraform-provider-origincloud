@@ -7,6 +7,7 @@ import (
 
 	"google.golang.org/genproto/googleapis/api/annotations"
 	"google.golang.org/protobuf/compiler/protogen"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
@@ -115,14 +116,19 @@ type scope struct {
 	seen []protoreflect.FullName
 }
 
+// apiDomain is the domain every service's global host is under.
+const apiDomain = "origincloudapis.eu"
+
 func attributes(t resourceType, forResource bool, prefix string) ([]attribute, error) {
 	singular := words(t.singular)
 	var attrs []attribute
+	// The full resource name, //{service}.origincloudapis.eu/{name}, is how
+	// anything refers to the resource; name stays the relative one.
+	attrs = append(attrs, attribute{
+		name: "id", goName: "ID", kind: "String", computed: true, keep: forResource,
+		doc: fmt.Sprintf("The %s's full resource name, `//%s.%s/%s`: what an argument that refers to the %s takes. `name` is the relative name, without the host.", singular, t.shortcode, apiDomain, t.pattern, singular),
+	})
 	if forResource {
-		attrs = append(attrs, attribute{
-			name: "id", goName: "ID", kind: "String", computed: true, keep: true,
-			doc: fmt.Sprintf("The %s's resource name, the same as `name`.", singular),
-		})
 		for i, v := range t.parentVariables() {
 			attrs = append(attrs, attribute{
 				name: v, goName: camel(v), kind: "String", required: true, replace: true, nameValue: i,
@@ -430,16 +436,18 @@ func nestedAttributes(s scope, a *attribute, m *protogen.Message) error {
 	return nil
 }
 
-// The google.protobuf messages that are strings in their JSON form, and the
+// The google.protobuf and google.type messages that are strings in their JSON form, and the
 // form, for the attributes' descriptions.
 var (
 	wellKnownTypes = map[protoreflect.FullName]string{
 		"google.protobuf.Timestamp": "Timestamp",
 		"google.protobuf.Duration":  "Duration",
+		"google.type.Date":          "Date",
 	}
 	wellKnownFormats = map[string]string{
 		"Timestamp": "An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.",
 		"Duration":  "A duration in seconds, such as `90s` or `1.5s`.",
+		"Date":      "A calendar date, such as `2026-11-01`.",
 	}
 )
 
@@ -563,8 +571,13 @@ func attributeValidators(c conv, a attribute, attrs []attribute) []string {
 		validators = append(validators, c.framework("OneOf")+"("+quoted(enumNames(a.enum))+")")
 	case a.kind == "String" && a.wellKnown != "" && settable:
 		validators = append(validators, c.framework(a.wellKnown+"Format")+"()")
+	case a.kind == "String" && settable && isReference(a):
+		validators = append(validators, c.framework("FullNameReference")+"()")
 	case settable && a.collection():
 		var options []string
+		if a.kind != "Map" && a.elem == "String" && a.enum == nil && isReference(a) {
+			options = append(options, "FullNames: true")
+		}
 		if a.enum != nil {
 			options = append(options, "OneOf: []string{"+quoted(enumNames(a.enum))+"}")
 		}
@@ -648,7 +661,11 @@ func generateConversions(g *protogen.GeneratedFile, t resourceType, name, model,
 		}
 		if a.field == nil {
 			if a.name == "id" {
-				g.P("m.ID = ", c.types("StringValue"), "(p.GetName())")
+				g.P("id, err := ", c.framework("FullName"), "(", fmt.Sprintf("%q", t.shortcode), ", p.GetName())")
+				g.P("if err != nil {")
+				g.P("return err")
+				g.P("}")
+				g.P("m.ID = id")
 			} else {
 				g.P("m.", a.goName, " = ", c.types("StringValue"), "(values[", a.nameValue, "])")
 			}
@@ -1005,4 +1022,29 @@ func (c conv) scalarTo(a attribute, v string) string {
 	default:
 		return v + ".Value" + a.kind + "()"
 	}
+}
+
+// isReference says that a is a string attribute that refers to another
+// resource, whatever its type: its value is a full resource name.
+func isReference(a attribute) bool {
+	if a.field == nil || a.enum != nil || a.wellKnown != "" || a.field.Desc.Kind() != protoreflect.StringKind {
+		return false
+	}
+	ref, _ := proto.GetExtension(a.field.Desc.Options(), annotations.E_ResourceReference).(*annotations.ResourceReference)
+	return ref.GetType() != ""
+}
+
+// referenceService returns the service a reference's resource type is
+// on, such as "pvs" for pvs.origincloudapis.eu/Volume; "" for one that may
+// refer to any type, or isn't one.
+func referenceService(a attribute) string {
+	if !isReference(a) {
+		return ""
+	}
+	ref, _ := proto.GetExtension(a.field.Desc.Options(), annotations.E_ResourceReference).(*annotations.ResourceReference)
+	service, _, found := strings.Cut(ref.GetType(), ".")
+	if !found || !strings.Contains(ref.GetType(), "/") {
+		return ""
+	}
+	return service
 }

@@ -9,6 +9,7 @@ import (
 	schema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	planmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	stringplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	validator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	types "github.com/hashicorp/terraform-plugin-framework/types"
 	framework "github.com/origincloudhq/terraform-provider-origincloud/internal/framework"
 	core "go.origincloud.eu/sdk/core"
@@ -30,7 +31,7 @@ func aclAssociationSchema() schema.Schema {
 		MarkdownDescription: "The ACL that filters a subnet's traffic at its edge.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The acl association's resource name, the same as `name`.",
+				MarkdownDescription: "The acl association's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/subnets/{subnet}/aclAssociations/{acl_association}`: what an argument that refers to the acl association takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -55,8 +56,9 @@ func aclAssociationSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"acl": schema.StringAttribute{
-				MarkdownDescription: "The ACL that filters the subnet's traffic, in the subnet's VPC. Changing it replaces the acl association.",
+				MarkdownDescription: "The full name of the ACL that filters the subnet's traffic, in the subnet's VPC. Changing it replaces the acl association.",
 				Required:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 		},
@@ -75,7 +77,11 @@ func aclAssociationFromProto(p *v1beta1.AclAssociation, m *aclAssociationModel) 
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Zone = types.StringValue(values[1])
 	m.Subnet = types.StringValue(values[2])
@@ -86,12 +92,14 @@ func aclAssociationFromProto(p *v1beta1.AclAssociation, m *aclAssociationModel) 
 
 func aclAssociationResource() framework.ResourceSpec[aclAssociationModel, *v1beta1.AclAssociation] {
 	return framework.ResourceSpec[aclAssociationModel, *v1beta1.AclAssociation]{
-		TypeName:  "_network_acl_association",
-		Pattern:   "projects/{project}/zones/{zone}/subnets/{subnet}/aclAssociations/{acl_association}",
-		Schema:    aclAssociationSchema(),
-		Name:      func(m *aclAssociationModel) string { return m.Name.ValueString() },
-		ToProto:   aclAssociationToProto,
-		FromProto: aclAssociationFromProto,
+		TypeName:   "_network_acl_association",
+		Pattern:    "projects/{project}/zones/{zone}/subnets/{subnet}/aclAssociations/{acl_association}",
+		Service:    "network",
+		References: map[string]string{"acl": "network"},
+		Schema:     aclAssociationSchema(),
+		Name:       func(m *aclAssociationModel) string { return m.Name.ValueString() },
+		ToProto:    aclAssociationToProto,
+		FromProto:  aclAssociationFromProto,
 		UpdateMask: func(plan, state *aclAssociationModel) []string {
 			var mask []string
 			return mask
@@ -118,11 +126,17 @@ func aclAssociationResource() framework.ResourceSpec[aclAssociationModel, *v1bet
 
 // aclAssociationItemModel is an item of origincloud_network_acl_associations.
 type aclAssociationItemModel struct {
+	ID   types.String `tfsdk:"id"`
 	Name types.String `tfsdk:"name"`
 	Acl  types.String `tfsdk:"acl"`
 }
 
 func aclAssociationItemFromProto(p *v1beta1.AclAssociation, m *aclAssociationItemModel) error {
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
 	m.Acl = types.StringValue(p.GetAcl())
 	return nil
@@ -157,12 +171,16 @@ func aclAssociationListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The acl association's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/subnets/{subnet}/aclAssociations/{acl_association}`: what an argument that refers to the acl association takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "The association's resource name. Its last segment is the ACL's id.",
 							Computed:            true,
 						},
 						"acl": schema1.StringAttribute{
-							MarkdownDescription: "The ACL that filters the subnet's traffic, in the subnet's VPC.",
+							MarkdownDescription: "The full name of the ACL that filters the subnet's traffic, in the subnet's VPC.",
 							Computed:            true,
 						},
 					},

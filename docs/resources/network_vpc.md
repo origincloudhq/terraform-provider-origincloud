@@ -29,12 +29,11 @@ A private network in one region.
 
 - `available_subnet_count` (Number) How many more subnets the VPC's address space holds.
 - `create_time` (String) When the VPC was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `creator` (String) The principal that created the VPC, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.
-- `dns_policy` (String) The DNS policy the VPC's resolver relays through, as the VPC's DNS policy association (a `DnsPolicyAssociation`) sets it. Empty while it has none: the VPC then relays through the project's default DNS policy in its region.
-- `id` (String) The vpc's resource name, the same as `name`.
-- `internet_gateway` (String) The VPC's internet gateway; empty while it has none.
+- `creator` (String) The principal that created the VPC, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.
+- `dns_policy` (String) The full name of the DNS policy the VPC's resolver relays through, as the VPC's DNS policy association (a `DnsPolicyAssociation`) sets it. Empty while it has none: the VPC then relays through the project's default DNS policy in its region.
+- `id` (String) The vpc's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/vpcs/{vpc}`: what an argument that refers to the vpc takes. `name` is the relative name, without the host.
+- `internet_gateway` (String) The full name of the VPC's internet gateway; empty while it has none.
 - `ipv6_cidr_block` (String) The IPv6 range the platform assigned, a `/56`. Each subnet gets a `/72` of it.
 - `name` (String) The VPC's resource name.
 - `project_default` (Boolean) Whether this is the project's default VPC. Unlike a VPC you create, the platform creates it with defaults: an internet gateway, and a security group, an ACL and a main route table marked as created with the VPC (`vpc_default` on the group and the ACL, `main` on the route table).
 - `subnet_ipv4_prefix_length` (Number) The prefix length of every subnet's IPv4 range.
-- `urn` (String) The VPC's URN, the identifier access policies and the audit log use.

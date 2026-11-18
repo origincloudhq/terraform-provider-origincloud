@@ -14,8 +14,8 @@ import (
 
 // caseModel is origincloud_support_case's state.
 type caseModel struct {
+	ID           types.String `tfsdk:"id"`
 	Name         types.String `tfsdk:"name"`
-	Urn          types.String `tfsdk:"urn"`
 	Project      types.String `tfsdk:"project"`
 	Subject      types.String `tfsdk:"subject"`
 	Description  types.String `tfsdk:"description"`
@@ -30,16 +30,16 @@ func caseSchema() schema.Schema {
 	return schema.Schema{
 		MarkdownDescription: "A support case: one question or problem, and the conversation about it.",
 		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				MarkdownDescription: "The case's full resource name, `//support.origincloudapis.eu/organizations/{organization}/cases/{case}`: what an argument that refers to the case takes. `name` is the relative name, without the host.",
+				Computed:            true,
+			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "The case's resource name, `organizations/{organization}/cases/{case}`.",
 				Required:            true,
 			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The case's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
-			},
 			"project": schema.StringAttribute{
-				MarkdownDescription: "The project the case is about, `projects/{project}`, one of the organization's. Empty for a case about the organization as a whole.",
+				MarkdownDescription: "The full name of the project the case is about, one of the organization's: `//resourcemanager.origincloudapis.eu/projects/{project}`. Empty for a case about the organization as a whole.",
 				Computed:            true,
 			},
 			"subject": schema.StringAttribute{
@@ -59,7 +59,7 @@ func caseSchema() schema.Schema {
 				Computed:            true,
 			},
 			"creator": schema.StringAttribute{
-				MarkdownDescription: "The principal that opened the case, such as `user:<id>` or `service_account:<id>`.",
+				MarkdownDescription: "The principal that opened the case, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 				Computed:            true,
 			},
 			"create_time": schema.StringAttribute{
@@ -75,8 +75,12 @@ func caseSchema() schema.Schema {
 }
 
 func caseFromProto(p *v1beta1.Case, m *caseModel) error {
+	id, err := framework.FullName("support", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Project = types.StringValue(p.GetProject())
 	m.Subject = types.StringValue(p.GetSubject())
 	m.Description = types.StringValue(p.GetDescription())
@@ -119,16 +123,16 @@ func caseListSchema() schema.Schema {
 				Computed:            true,
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
+						"id": schema.StringAttribute{
+							MarkdownDescription: "The case's full resource name, `//support.origincloudapis.eu/organizations/{organization}/cases/{case}`: what an argument that refers to the case takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema.StringAttribute{
 							MarkdownDescription: "The case's resource name, `organizations/{organization}/cases/{case}`.",
 							Computed:            true,
 						},
-						"urn": schema.StringAttribute{
-							MarkdownDescription: "The case's URN, the identifier access policies and the audit log use.",
-							Computed:            true,
-						},
 						"project": schema.StringAttribute{
-							MarkdownDescription: "The project the case is about, `projects/{project}`, one of the organization's. Empty for a case about the organization as a whole.",
+							MarkdownDescription: "The full name of the project the case is about, one of the organization's: `//resourcemanager.origincloudapis.eu/projects/{project}`. Empty for a case about the organization as a whole.",
 							Computed:            true,
 						},
 						"subject": schema.StringAttribute{
@@ -148,7 +152,7 @@ func caseListSchema() schema.Schema {
 							Computed:            true,
 						},
 						"creator": schema.StringAttribute{
-							MarkdownDescription: "The principal that opened the case, such as `user:<id>` or `service_account:<id>`.",
+							MarkdownDescription: "The principal that opened the case, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 							Computed:            true,
 						},
 						"create_time": schema.StringAttribute{

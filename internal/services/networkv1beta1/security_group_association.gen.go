@@ -9,6 +9,7 @@ import (
 	schema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	planmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	stringplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	validator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	types "github.com/hashicorp/terraform-plugin-framework/types"
 	framework "github.com/origincloudhq/terraform-provider-origincloud/internal/framework"
 	core "go.origincloud.eu/sdk/core"
@@ -30,7 +31,7 @@ func securityGroupAssociationSchema() schema.Schema {
 		MarkdownDescription: "A security group that filters a network interface's traffic.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The security group association's resource name, the same as `name`.",
+				MarkdownDescription: "The security group association's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/networkInterfaces/{network_interface}/securityGroupAssociations/{security_group_association}`: what an argument that refers to the security group association takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -55,8 +56,9 @@ func securityGroupAssociationSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"security_group": schema.StringAttribute{
-				MarkdownDescription: "The security group, in the interface's VPC. Changing it replaces the security group association.",
+				MarkdownDescription: "The security group's full name, in the interface's VPC. Changing it replaces the security group association.",
 				Required:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 		},
@@ -75,7 +77,11 @@ func securityGroupAssociationFromProto(p *v1beta1.SecurityGroupAssociation, m *s
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Zone = types.StringValue(values[1])
 	m.NetworkInterface = types.StringValue(values[2])
@@ -86,12 +92,14 @@ func securityGroupAssociationFromProto(p *v1beta1.SecurityGroupAssociation, m *s
 
 func securityGroupAssociationResource() framework.ResourceSpec[securityGroupAssociationModel, *v1beta1.SecurityGroupAssociation] {
 	return framework.ResourceSpec[securityGroupAssociationModel, *v1beta1.SecurityGroupAssociation]{
-		TypeName:  "_network_security_group_association",
-		Pattern:   "projects/{project}/zones/{zone}/networkInterfaces/{network_interface}/securityGroupAssociations/{security_group_association}",
-		Schema:    securityGroupAssociationSchema(),
-		Name:      func(m *securityGroupAssociationModel) string { return m.Name.ValueString() },
-		ToProto:   securityGroupAssociationToProto,
-		FromProto: securityGroupAssociationFromProto,
+		TypeName:   "_network_security_group_association",
+		Pattern:    "projects/{project}/zones/{zone}/networkInterfaces/{network_interface}/securityGroupAssociations/{security_group_association}",
+		Service:    "network",
+		References: map[string]string{"security_group": "network"},
+		Schema:     securityGroupAssociationSchema(),
+		Name:       func(m *securityGroupAssociationModel) string { return m.Name.ValueString() },
+		ToProto:    securityGroupAssociationToProto,
+		FromProto:  securityGroupAssociationFromProto,
 		UpdateMask: func(plan, state *securityGroupAssociationModel) []string {
 			var mask []string
 			return mask
@@ -118,11 +126,17 @@ func securityGroupAssociationResource() framework.ResourceSpec[securityGroupAsso
 
 // securityGroupAssociationItemModel is an item of origincloud_network_security_group_associations.
 type securityGroupAssociationItemModel struct {
+	ID            types.String `tfsdk:"id"`
 	Name          types.String `tfsdk:"name"`
 	SecurityGroup types.String `tfsdk:"security_group"`
 }
 
 func securityGroupAssociationItemFromProto(p *v1beta1.SecurityGroupAssociation, m *securityGroupAssociationItemModel) error {
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
 	m.SecurityGroup = types.StringValue(p.GetSecurityGroup())
 	return nil
@@ -157,12 +171,16 @@ func securityGroupAssociationListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The security group association's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/networkInterfaces/{network_interface}/securityGroupAssociations/{security_group_association}`: what an argument that refers to the security group association takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "The association's resource name. Its last segment is the security group's id.",
 							Computed:            true,
 						},
 						"security_group": schema1.StringAttribute{
-							MarkdownDescription: "The security group, in the interface's VPC.",
+							MarkdownDescription: "The security group's full name, in the interface's VPC.",
 							Computed:            true,
 						},
 					},

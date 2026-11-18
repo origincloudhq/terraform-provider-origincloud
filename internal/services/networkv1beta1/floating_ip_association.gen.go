@@ -9,6 +9,7 @@ import (
 	schema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	planmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	stringplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	validator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	types "github.com/hashicorp/terraform-plugin-framework/types"
 	framework "github.com/origincloudhq/terraform-provider-origincloud/internal/framework"
 	core "go.origincloud.eu/sdk/core"
@@ -31,7 +32,7 @@ func floatingIpAssociationSchema() schema.Schema {
 		MarkdownDescription: "The network interface a floating IP reaches.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The floating ip association's resource name, the same as `name`.",
+				MarkdownDescription: "The floating ip association's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/floatingIps/{floating_ip}/associations/{association}`: what an argument that refers to the floating ip association takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -56,8 +57,9 @@ func floatingIpAssociationSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"network_interface": schema.StringAttribute{
-				MarkdownDescription: "The network interface the address reaches, in the floating IP's project and zone. Changing it replaces the floating ip association.",
+				MarkdownDescription: "The full name of the network interface the address reaches, in the floating IP's project and zone. Changing it replaces the floating ip association.",
 				Required:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"private_address": schema.StringAttribute{
@@ -80,7 +82,11 @@ func floatingIpAssociationFromProto(p *v1beta1.FloatingIpAssociation, m *floatin
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Zone = types.StringValue(values[1])
 	m.FloatingIp = types.StringValue(values[2])
@@ -92,12 +98,14 @@ func floatingIpAssociationFromProto(p *v1beta1.FloatingIpAssociation, m *floatin
 
 func floatingIpAssociationResource() framework.ResourceSpec[floatingIpAssociationModel, *v1beta1.FloatingIpAssociation] {
 	return framework.ResourceSpec[floatingIpAssociationModel, *v1beta1.FloatingIpAssociation]{
-		TypeName:  "_network_floating_ip_association",
-		Pattern:   "projects/{project}/zones/{zone}/floatingIps/{floating_ip}/associations/{association}",
-		Schema:    floatingIpAssociationSchema(),
-		Name:      func(m *floatingIpAssociationModel) string { return m.Name.ValueString() },
-		ToProto:   floatingIpAssociationToProto,
-		FromProto: floatingIpAssociationFromProto,
+		TypeName:   "_network_floating_ip_association",
+		Pattern:    "projects/{project}/zones/{zone}/floatingIps/{floating_ip}/associations/{association}",
+		Service:    "network",
+		References: map[string]string{"network_interface": "network"},
+		Schema:     floatingIpAssociationSchema(),
+		Name:       func(m *floatingIpAssociationModel) string { return m.Name.ValueString() },
+		ToProto:    floatingIpAssociationToProto,
+		FromProto:  floatingIpAssociationFromProto,
 		UpdateMask: func(plan, state *floatingIpAssociationModel) []string {
 			var mask []string
 			return mask
@@ -124,12 +132,18 @@ func floatingIpAssociationResource() framework.ResourceSpec[floatingIpAssociatio
 
 // floatingIpAssociationItemModel is an item of origincloud_network_floating_ip_associations.
 type floatingIpAssociationItemModel struct {
+	ID               types.String `tfsdk:"id"`
 	Name             types.String `tfsdk:"name"`
 	NetworkInterface types.String `tfsdk:"network_interface"`
 	PrivateAddress   types.String `tfsdk:"private_address"`
 }
 
 func floatingIpAssociationItemFromProto(p *v1beta1.FloatingIpAssociation, m *floatingIpAssociationItemModel) error {
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
 	m.NetworkInterface = types.StringValue(p.GetNetworkInterface())
 	m.PrivateAddress = types.StringValue(p.GetPrivateAddress())
@@ -165,12 +179,16 @@ func floatingIpAssociationListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The floating ip association's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/floatingIps/{floating_ip}/associations/{association}`: what an argument that refers to the floating ip association takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "The association's resource name. Its last segment is the network interface's id.",
 							Computed:            true,
 						},
 						"network_interface": schema1.StringAttribute{
-							MarkdownDescription: "The network interface the address reaches, in the floating IP's project and zone.",
+							MarkdownDescription: "The full name of the network interface the address reaches, in the floating IP's project and zone.",
 							Computed:            true,
 						},
 						"private_address": schema1.StringAttribute{

@@ -15,8 +15,8 @@ import (
 
 // publicImageModel is origincloud_compute_public_image's state.
 type publicImageModel struct {
+	ID            types.String `tfsdk:"id"`
 	Name          types.String `tfsdk:"name"`
-	Urn           types.String `tfsdk:"urn"`
 	Description   types.String `tfsdk:"description"`
 	DefaultUser   types.String `tfsdk:"default_user"`
 	RootDevice    types.String `tfsdk:"root_device"`
@@ -32,13 +32,13 @@ func publicImageSchema() schema.Schema {
 	return schema.Schema{
 		MarkdownDescription: "One of the platform's images, in one zone.",
 		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				MarkdownDescription: "The public image's full resource name, `//compute.origincloudapis.eu/zones/{zone}/images/{image}`: what an argument that refers to the public image takes. `name` is the relative name, without the host.",
+				Computed:            true,
+			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "The image's resource name, `zones/{zone}/images/{image}`.",
 				Required:            true,
-			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The image's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
 			},
 			"description": schema.StringAttribute{
 				MarkdownDescription: "What the image holds.",
@@ -81,7 +81,7 @@ func publicImageSchema() schema.Schema {
 				Computed:            true,
 			},
 			"image_family": schema.StringAttribute{
-				MarkdownDescription: "The family the image belongs to, `imageFamilies/{image_family}`; empty for an image of none.",
+				MarkdownDescription: "The full name of the family the image belongs to, `//compute.origincloudapis.eu/imageFamilies/{image_family}`; empty for an image of none.",
 				Computed:            true,
 			},
 			"family_current": schema.BoolAttribute{
@@ -114,8 +114,12 @@ func publicImage_BlockDevicesToProto(o types.Object) *v1beta1.PublicImageBlockDe
 }
 
 func publicImageFromProto(p *v1beta1.PublicImage, m *publicImageModel) error {
+	id, err := framework.FullName("compute", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Description = types.StringValue(p.GetDescription())
 	m.DefaultUser = types.StringValue(p.GetDefaultUser())
 	m.RootDevice = types.StringValue(p.GetRootDevice())
@@ -159,12 +163,12 @@ func publicImageListSchema() schema.Schema {
 				Computed:            true,
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
-						"name": schema.StringAttribute{
-							MarkdownDescription: "The image's resource name, `zones/{zone}/images/{image}`.",
+						"id": schema.StringAttribute{
+							MarkdownDescription: "The public image's full resource name, `//compute.origincloudapis.eu/zones/{zone}/images/{image}`: what an argument that refers to the public image takes. `name` is the relative name, without the host.",
 							Computed:            true,
 						},
-						"urn": schema.StringAttribute{
-							MarkdownDescription: "The image's URN, the identifier access policies and the audit log use.",
+						"name": schema.StringAttribute{
+							MarkdownDescription: "The image's resource name, `zones/{zone}/images/{image}`.",
 							Computed:            true,
 						},
 						"description": schema.StringAttribute{
@@ -208,7 +212,7 @@ func publicImageListSchema() schema.Schema {
 							Computed:            true,
 						},
 						"image_family": schema.StringAttribute{
-							MarkdownDescription: "The family the image belongs to, `imageFamilies/{image_family}`; empty for an image of none.",
+							MarkdownDescription: "The full name of the family the image belongs to, `//compute.origincloudapis.eu/imageFamilies/{image_family}`; empty for an image of none.",
 							Computed:            true,
 						},
 						"family_current": schema.BoolAttribute{

@@ -23,7 +23,6 @@ type volumeModel struct {
 	Project         types.String `tfsdk:"project"`
 	Zone            types.String `tfsdk:"zone"`
 	Name            types.String `tfsdk:"name"`
-	Urn             types.String `tfsdk:"urn"`
 	SizeGib         types.Int64  `tfsdk:"size_gib"`
 	StorageClass    types.String `tfsdk:"storage_class"`
 	SourceSnapshot  types.String `tfsdk:"source_snapshot"`
@@ -45,7 +44,7 @@ func volumeSchema() schema.Schema {
 		MarkdownDescription: "A block storage volume in one zone.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The volume's resource name, the same as `name`.",
+				MarkdownDescription: "The volume's full resource name, `//pvs.origincloudapis.eu/projects/{project}/zones/{zone}/volumes/{volume}`: what an argument that refers to the volume takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -64,25 +63,23 @@ func volumeSchema() schema.Schema {
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The volume's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
-			},
 			"size_gib": schema.Int64Attribute{
 				MarkdownDescription: "The size in GiB, at least 1. Growing it resizes the volume; it never shrinks.",
 				Required:            true,
 				Validators:          []validator.Int64{framework.Int32()},
 			},
 			"storage_class": schema.StringAttribute{
-				MarkdownDescription: "The storage class, `storageClasses/{storage_class}`. The default class when left empty. Changing it replaces the volume.",
+				MarkdownDescription: "The storage class by its full name, `//pvs.origincloudapis.eu/storageClasses/{storage_class}`. The default class when left empty. Changing it replaces the volume.",
 				Optional:            true,
 				Computed:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()},
 			},
 			"source_snapshot": schema.StringAttribute{
-				MarkdownDescription: "The snapshot the volume was created from, in the same project and zone; empty for an empty volume. The volume is at least the snapshot's size. Changing it replaces the volume.",
+				MarkdownDescription: "The full name of the snapshot the volume was created from, in the same project and zone; empty for an empty volume. The volume is at least the snapshot's size. Changing it replaces the volume.",
 				Optional:            true,
 				Computed:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()},
 			},
 			"state": schema.StringAttribute{
@@ -122,7 +119,7 @@ func volumeSchema() schema.Schema {
 				Computed:            true,
 			},
 			"creator": schema.StringAttribute{
-				MarkdownDescription: "The principal that created the volume, such as `user:<id>` or `service_account:<id>`.",
+				MarkdownDescription: "The principal that created the volume, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform created it.",
 				Computed:            true,
 			},
 			"tags": schema.MapAttribute{
@@ -150,11 +147,14 @@ func volumeFromProto(p *v1beta1.Volume, m *volumeModel) error {
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("pvs", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Zone = types.StringValue(values[1])
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.SizeGib = types.Int64Value(int64(p.GetSizeGib()))
 	m.StorageClass = types.StringValue(p.GetStorageClass())
 	m.SourceSnapshot = types.StringValue(p.GetSourceSnapshot())
@@ -174,12 +174,14 @@ func volumeFromProto(p *v1beta1.Volume, m *volumeModel) error {
 
 func volumeResource() framework.ResourceSpec[volumeModel, *v1beta1.Volume] {
 	return framework.ResourceSpec[volumeModel, *v1beta1.Volume]{
-		TypeName:  "_pvs_volume",
-		Pattern:   "projects/{project}/zones/{zone}/volumes/{volume}",
-		Schema:    volumeSchema(),
-		Name:      func(m *volumeModel) string { return m.Name.ValueString() },
-		ToProto:   volumeToProto,
-		FromProto: volumeFromProto,
+		TypeName:   "_pvs_volume",
+		Pattern:    "projects/{project}/zones/{zone}/volumes/{volume}",
+		Service:    "pvs",
+		References: map[string]string{"storage_class": "pvs", "source_snapshot": "pvs"},
+		Schema:     volumeSchema(),
+		Name:       func(m *volumeModel) string { return m.Name.ValueString() },
+		ToProto:    volumeToProto,
+		FromProto:  volumeFromProto,
 		UpdateMask: func(plan, state *volumeModel) []string {
 			var mask []string
 			if !plan.SizeGib.Equal(state.SizeGib) {
@@ -220,8 +222,8 @@ func volumeResource() framework.ResourceSpec[volumeModel, *v1beta1.Volume] {
 
 // volumeItemModel is an item of origincloud_pvs_volumes.
 type volumeItemModel struct {
+	ID              types.String `tfsdk:"id"`
 	Name            types.String `tfsdk:"name"`
-	Urn             types.String `tfsdk:"urn"`
 	SizeGib         types.Int64  `tfsdk:"size_gib"`
 	StorageClass    types.String `tfsdk:"storage_class"`
 	SourceSnapshot  types.String `tfsdk:"source_snapshot"`
@@ -239,8 +241,12 @@ type volumeItemModel struct {
 }
 
 func volumeItemFromProto(p *v1beta1.Volume, m *volumeItemModel) error {
+	id, err := framework.FullName("pvs", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.SizeGib = types.Int64Value(int64(p.GetSizeGib()))
 	m.StorageClass = types.StringValue(p.GetStorageClass())
 	m.SourceSnapshot = types.StringValue(p.GetSourceSnapshot())
@@ -282,12 +288,12 @@ func volumeListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
-						"name": schema1.StringAttribute{
-							MarkdownDescription: "The volume's resource name.",
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The volume's full resource name, `//pvs.origincloudapis.eu/projects/{project}/zones/{zone}/volumes/{volume}`: what an argument that refers to the volume takes. `name` is the relative name, without the host.",
 							Computed:            true,
 						},
-						"urn": schema1.StringAttribute{
-							MarkdownDescription: "The volume's URN, the identifier access policies and the audit log use.",
+						"name": schema1.StringAttribute{
+							MarkdownDescription: "The volume's resource name.",
 							Computed:            true,
 						},
 						"size_gib": schema1.Int64Attribute{
@@ -295,11 +301,11 @@ func volumeListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"storage_class": schema1.StringAttribute{
-							MarkdownDescription: "The storage class, `storageClasses/{storage_class}`. The default class when left empty.",
+							MarkdownDescription: "The storage class by its full name, `//pvs.origincloudapis.eu/storageClasses/{storage_class}`. The default class when left empty.",
 							Computed:            true,
 						},
 						"source_snapshot": schema1.StringAttribute{
-							MarkdownDescription: "The snapshot the volume was created from, in the same project and zone; empty for an empty volume. The volume is at least the snapshot's size.",
+							MarkdownDescription: "The full name of the snapshot the volume was created from, in the same project and zone; empty for an empty volume. The volume is at least the snapshot's size.",
 							Computed:            true,
 						},
 						"state": schema1.StringAttribute{
@@ -339,7 +345,7 @@ func volumeListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"creator": schema1.StringAttribute{
-							MarkdownDescription: "The principal that created the volume, such as `user:<id>` or `service_account:<id>`.",
+							MarkdownDescription: "The principal that created the volume, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform created it.",
 							Computed:            true,
 						},
 						"tags": schema1.MapAttribute{

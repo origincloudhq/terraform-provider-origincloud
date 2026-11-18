@@ -9,6 +9,7 @@ import (
 	schema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	planmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	stringplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	validator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	types "github.com/hashicorp/terraform-plugin-framework/types"
 	framework "github.com/origincloudhq/terraform-provider-origincloud/internal/framework"
 	core "go.origincloud.eu/sdk/core"
@@ -32,7 +33,7 @@ func routeSchema() schema.Schema {
 		MarkdownDescription: "A route: traffic to `destination` leaves through one gateway. Set exactly one of `internet_gateway` and `nat_gateway`.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The route's resource name, the same as `name`.",
+				MarkdownDescription: "The route's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/routeTables/{route_table}/routes/{route}`: what an argument that refers to the route takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -62,15 +63,17 @@ func routeSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"internet_gateway": schema.StringAttribute{
-				MarkdownDescription: "The internet gateway of the table's VPC to send the traffic to. Changing it replaces the route.",
+				MarkdownDescription: "The full name of the internet gateway of the table's VPC to send the traffic to. Changing it replaces the route.",
 				Optional:            true,
 				Computed:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()},
 			},
 			"nat_gateway": schema.StringAttribute{
-				MarkdownDescription: "The NAT gateway in the table's VPC to send the traffic to, for the IPv4 default route only: a NAT gateway translates IPv4 only. Named in the gateway's own zone; a name with another zone is refused with `INVALID_ARGUMENT`. Changing it replaces the route.",
+				MarkdownDescription: "The full name of the NAT gateway in the table's VPC to send the traffic to, for the IPv4 default route only: a NAT gateway translates IPv4 only. Named in the gateway's own zone; a name with another zone is refused with `INVALID_ARGUMENT`. Changing it replaces the route.",
 				Optional:            true,
 				Computed:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()},
 			},
 		},
@@ -91,7 +94,11 @@ func routeFromProto(p *v1beta1.Route, m *routeModel) error {
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Region = types.StringValue(values[1])
 	m.RouteTable = types.StringValue(values[2])
@@ -104,12 +111,14 @@ func routeFromProto(p *v1beta1.Route, m *routeModel) error {
 
 func routeResource() framework.ResourceSpec[routeModel, *v1beta1.Route] {
 	return framework.ResourceSpec[routeModel, *v1beta1.Route]{
-		TypeName:  "_network_route",
-		Pattern:   "projects/{project}/regions/{region}/routeTables/{route_table}/routes/{route}",
-		Schema:    routeSchema(),
-		Name:      func(m *routeModel) string { return m.Name.ValueString() },
-		ToProto:   routeToProto,
-		FromProto: routeFromProto,
+		TypeName:   "_network_route",
+		Pattern:    "projects/{project}/regions/{region}/routeTables/{route_table}/routes/{route}",
+		Service:    "network",
+		References: map[string]string{"internet_gateway": "network", "nat_gateway": "network"},
+		Schema:     routeSchema(),
+		Name:       func(m *routeModel) string { return m.Name.ValueString() },
+		ToProto:    routeToProto,
+		FromProto:  routeFromProto,
 		UpdateMask: func(plan, state *routeModel) []string {
 			var mask []string
 			return mask
@@ -136,6 +145,7 @@ func routeResource() framework.ResourceSpec[routeModel, *v1beta1.Route] {
 
 // routeItemModel is an item of origincloud_network_routes.
 type routeItemModel struct {
+	ID              types.String `tfsdk:"id"`
 	Name            types.String `tfsdk:"name"`
 	Destination     types.String `tfsdk:"destination"`
 	InternetGateway types.String `tfsdk:"internet_gateway"`
@@ -143,6 +153,11 @@ type routeItemModel struct {
 }
 
 func routeItemFromProto(p *v1beta1.Route, m *routeItemModel) error {
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
 	m.Destination = types.StringValue(p.GetDestination())
 	m.InternetGateway = types.StringValue(p.GetInternetGateway())
@@ -179,6 +194,10 @@ func routeListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The route's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/routeTables/{route_table}/routes/{route}`: what an argument that refers to the route takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "The route's resource name.",
 							Computed:            true,
@@ -188,11 +207,11 @@ func routeListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"internet_gateway": schema1.StringAttribute{
-							MarkdownDescription: "The internet gateway of the table's VPC to send the traffic to.",
+							MarkdownDescription: "The full name of the internet gateway of the table's VPC to send the traffic to.",
 							Computed:            true,
 						},
 						"nat_gateway": schema1.StringAttribute{
-							MarkdownDescription: "The NAT gateway in the table's VPC to send the traffic to, for the IPv4 default route only: a NAT gateway translates IPv4 only. Named in the gateway's own zone; a name with another zone is refused with `INVALID_ARGUMENT`.",
+							MarkdownDescription: "The full name of the NAT gateway in the table's VPC to send the traffic to, for the IPv4 default route only: a NAT gateway translates IPv4 only. Named in the gateway's own zone; a name with another zone is refused with `INVALID_ARGUMENT`.",
 							Computed:            true,
 						},
 					},

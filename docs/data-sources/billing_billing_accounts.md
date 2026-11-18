@@ -31,13 +31,13 @@ Read-Only:
 - `billing_address` (Attributes) The postal address invoices are issued to. Required to create an account; unset only on an organization's default account until its profile is set. (see [below for nested schema](#nestedatt--billing_accounts--billing_address))
 - `contact_person` (String) Who invoices are addressed to. Required to create an account; empty only on an organization's default account until its profile is set.
 - `create_time` (String) When the billing account was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `creator` (String) The principal that created the billing account, such as `user:<id>` or `service_account:<id>`.
+- `creator` (String) The principal that created the billing account, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.
 - `default_account` (Boolean) Whether this is the organization's default billing account: the one its new projects are linked to. Every organization has exactly one, and it can't be deleted.
 - `display_name` (String) The name the console and spend-limit alerts show. Not empty. An organization's default account is called `default` until it is renamed.
+- `id` (String) The billing account's full resource name, `//billing.origincloudapis.eu/organizations/{organization}/billingAccounts/{billing_account}`: what an argument that refers to the billing account takes. `name` is the relative name, without the host.
 - `invoice_email` (String) Where invoices are sent. Required to create an account; empty only on an organization's default account until its profile is set.
 - `name` (String) The billing account's resource name.
 - `payment_method` (Attributes) How the account is paid. (see [below for nested schema](#nestedatt--billing_accounts--payment_method))
-- `urn` (String) The billing account's URN, the identifier access policies and the audit log use.
 - `vat_id` (String) The VAT identification number invoices name; empty for none. Required for a billing address outside Germany.
 
 <a id="nestedatt--billing_accounts--billing_address"></a>

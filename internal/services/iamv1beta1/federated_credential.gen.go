@@ -38,7 +38,7 @@ func federatedCredentialSchema() schema.Schema {
 		MarkdownDescription: "A `WORKLOAD` service account's trust in an identity provider's OIDC tokens that carry the given claims.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The federated credential's resource name, the same as `name`.",
+				MarkdownDescription: "The federated credential's full resource name, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}/federatedCredentials/{federated_credential}`: what an argument that refers to the federated credential takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -85,7 +85,7 @@ func federatedCredentialSchema() schema.Schema {
 				Computed:            true,
 			},
 			"creator": schema.StringAttribute{
-				MarkdownDescription: "Who created the federated credential, written as a role binding's member is.",
+				MarkdownDescription: "The full name of who created the federated credential: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, `//iam.origincloudapis.eu/serviceAgents/{service_agent}` for a platform service agent, or `//iam.origincloudapis.eu/services/{service}` for a change the platform made itself.",
 				Computed:            true,
 			},
 			"create_time": schema.StringAttribute{
@@ -115,7 +115,11 @@ func federatedCredentialFromProto(p *v1beta1.FederatedCredential, m *federatedCr
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("iam", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Organization = types.StringValue(values[0])
 	m.ServiceAccount = types.StringValue(values[1])
 	m.Name = types.StringValue(p.GetName())
@@ -134,6 +138,7 @@ func federatedCredentialResource() framework.ResourceSpec[federatedCredentialMod
 	return framework.ResourceSpec[federatedCredentialModel, *v1beta1.FederatedCredential]{
 		TypeName:  "_iam_federated_credential",
 		Pattern:   "organizations/{organization}/serviceAccounts/{service_account}/federatedCredentials/{federated_credential}",
+		Service:   "iam",
 		Schema:    federatedCredentialSchema(),
 		Name:      func(m *federatedCredentialModel) string { return m.Name.ValueString() },
 		ToProto:   federatedCredentialToProto,
@@ -161,6 +166,7 @@ func federatedCredentialResource() framework.ResourceSpec[federatedCredentialMod
 
 // federatedCredentialItemModel is an item of origincloud_iam_federated_credentials.
 type federatedCredentialItemModel struct {
+	ID          types.String `tfsdk:"id"`
 	Name        types.String `tfsdk:"name"`
 	DisplayName types.String `tfsdk:"display_name"`
 	Issuer      types.String `tfsdk:"issuer"`
@@ -173,6 +179,11 @@ type federatedCredentialItemModel struct {
 }
 
 func federatedCredentialItemFromProto(p *v1beta1.FederatedCredential, m *federatedCredentialItemModel) error {
+	id, err := framework.FullName("iam", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
 	m.DisplayName = types.StringValue(p.GetDisplayName())
 	m.Issuer = types.StringValue(p.GetIssuer())
@@ -209,6 +220,10 @@ func federatedCredentialListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The federated credential's full resource name, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}/federatedCredentials/{federated_credential}`: what an argument that refers to the federated credential takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "The federated credential's resource name.",
 							Computed:            true,
@@ -235,7 +250,7 @@ func federatedCredentialListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"creator": schema1.StringAttribute{
-							MarkdownDescription: "Who created the federated credential, written as a role binding's member is.",
+							MarkdownDescription: "The full name of who created the federated credential: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, `//iam.origincloudapis.eu/serviceAgents/{service_agent}` for a platform service agent, or `//iam.origincloudapis.eu/services/{service}` for a change the platform made itself.",
 							Computed:            true,
 						},
 						"create_time": schema1.StringAttribute{

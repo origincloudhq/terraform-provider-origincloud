@@ -61,7 +61,7 @@ var (
 func computePublicImage(id string, current bool) *computev1beta1.PublicImage {
 	name := "zones/eu-central1-az1/images/" + id
 	return &computev1beta1.PublicImage{
-		Name: name, Urn: "urn:origincloud:compute:image/" + name, Description: "Ubuntu 24.04 minimal",
+		Name: name, Description: "Ubuntu 24.04 minimal",
 		DefaultUser: "ubuntu", RootDevice: "vda", BlockDevices: []*computev1beta1.PublicImageBlockDevice{{Device: "vda", SizeGib: 10}},
 		Architecture: computev1beta1.Image_X86_64, Platform: computev1beta1.Image_LINUX_UNIX, State: computev1beta1.Image_AVAILABLE,
 		ImageFamily: "imageFamilies/ubuntu-24-04-minimal", FamilyCurrent: current,
@@ -168,7 +168,6 @@ func (f *fakeCompute) createKeyPair(w http.ResponseWriter, parent string, body [
 	}
 	f.next++
 	keyPair.Name = fmt.Sprintf("%s/kp-%d", parent, f.next)
-	keyPair.Urn = "urn:origincloud:compute:key-pair/" + keyPair.Name
 	keyPair.Creator = "user:test"
 	f.keyPairs[keyPair.Name] = keyPair
 	if keyPair.GetPublicKey() != "" {
@@ -197,7 +196,6 @@ func (f *fakeCompute) createImage(w http.ResponseWriter, parent string, body []b
 	}
 	f.next++
 	image.Name = fmt.Sprintf("%s/img-%d", parent, f.next)
-	image.Urn = "urn:origincloud:compute:image/" + image.Name
 	image.Creator = "user:test"
 	image.Architecture = computev1beta1.Image_X86_64
 	image.Platform = computev1beta1.Image_LINUX_UNIX
@@ -221,12 +219,12 @@ func (f *fakeCompute) createInstance(w http.ResponseWriter, parent string, body 
 	var size int32
 	zone := strings.TrimSuffix(parent[strings.Index(parent, "zones/"):], "/instances")
 	for _, image := range computePublicImages {
-		family := image.GetImageFamily() == instance.GetImageFamily() && image.GetFamilyCurrent()
-		if strings.HasPrefix(image.GetName(), zone+"/") && (image.GetName() == instance.GetImage() || family) {
-			instance.Image, defaultUser, size = image.GetName(), image.GetDefaultUser(), image.GetBlockDevices()[0].GetSizeGib()
+		family := relativeName(image.GetImageFamily()) == relativeName(instance.GetImageFamily()) && image.GetFamilyCurrent()
+		if strings.HasPrefix(image.GetName(), zone+"/") && (full("compute", image.GetName()) == instance.GetImage() || family) {
+			instance.Image, defaultUser, size = full("compute", image.GetName()), image.GetDefaultUser(), image.GetBlockDevices()[0].GetSizeGib()
 		}
 	}
-	if image, ok := f.images[instance.GetImage()]; ok {
+	if image, ok := f.images[relativeName(instance.GetImage())]; ok {
 		defaultUser, size = image.GetDefaultUser(), image.GetBlockDevices()[0].GetSizeGib()
 	}
 	if defaultUser == "" {
@@ -243,11 +241,10 @@ func (f *fakeCompute) createInstance(w http.ResponseWriter, parent string, body 
 		instance.BootVolume.SizeGib = size
 	}
 	if instance.BootVolume.StorageClass == "" {
-		instance.BootVolume.StorageClass = "storageClasses/gp1"
+		instance.BootVolume.StorageClass = "//pvs.origincloudapis.eu/storageClasses/gp1"
 	}
 	f.next++
 	instance.Name = fmt.Sprintf("%s/i-%d", parent, f.next)
-	instance.Urn = "urn:origincloud:compute:instance/" + instance.Name
 	instance.Creator = "user:test"
 	instance.State = computev1beta1.Instance_RUNNING
 	instance.CreateTime = timestamppb.New(time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))
@@ -271,11 +268,11 @@ func (f *fakeCompute) createInstance(w http.ResponseWriter, parent string, body 
 // check checks what an instance refers to.
 func (f *fakeCompute) check(instance *computev1beta1.Instance) error {
 	if !slices.ContainsFunc(computeInstanceTypes, func(t *computev1beta1.InstanceType) bool {
-		return t.GetName() == instance.GetInstanceType() && t.GetAvailable()
+		return full("compute", t.GetName()) == instance.GetInstanceType() && t.GetAvailable()
 	}) {
 		return fmt.Errorf("%s isn't an available instance type", instance.GetInstanceType())
 	}
-	if _, ok := f.keyPairs[instance.GetKeyPair()]; !ok {
+	if _, ok := f.keyPairs[relativeName(instance.GetKeyPair())]; !ok {
 		return fmt.Errorf("%s doesn't exist", instance.GetKeyPair())
 	}
 	if (instance.GetImage() == "") == (instance.GetImageFamily() == "") {
@@ -341,6 +338,11 @@ func (f *fakeCompute) attach(w http.ResponseWriter, instance string, body []byte
 		writeError(w, http.StatusBadRequest, "FAILED_PRECONDITION", instance+" isn't RUNNING or STOPPED")
 		return
 	}
+	// The platform refuses a reference to another project's resource.
+	if project := strings.Join(strings.Split(instance, "/")[:2], "/"); !strings.HasPrefix(relativeName(attachment.GetVolume()), project+"/") {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", attachment.GetVolume()+" isn't a volume of the instance's project")
+		return
+	}
 	devices := map[string]bool{}
 	for name, a := range f.attachments {
 		if a.GetVolume() == attachment.GetVolume() {
@@ -358,7 +360,6 @@ func (f *fakeCompute) attach(w http.ResponseWriter, instance string, body []byte
 	}
 	f.next++
 	attachment.Name = fmt.Sprintf("%s/volumeAttachments/att-%d", instance, f.next)
-	attachment.Urn = "urn:origincloud:compute:volume-attachment/" + attachment.Name
 	attachment.State = computev1beta1.VolumeAttachment_ATTACHED
 	f.attachments[attachment.Name] = attachment
 	writeOperation(w, attachment.Name, attachment, "")

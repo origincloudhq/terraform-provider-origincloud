@@ -38,7 +38,7 @@ func aclRuleSchema() schema.Schema {
 		MarkdownDescription: "An ACL rule: accepts or drops the traffic it matches in one direction.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The acl rule's resource name, the same as `name`.",
+				MarkdownDescription: "The acl rule's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/acls/{acl}/rules/{rule}`: what an argument that refers to the acl rule takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -127,7 +127,11 @@ func aclRuleFromProto(p *v1beta1.AclRule, m *aclRuleModel) error {
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Region = types.StringValue(values[1])
 	m.Acl = types.StringValue(values[2])
@@ -146,6 +150,7 @@ func aclRuleResource() framework.ResourceSpec[aclRuleModel, *v1beta1.AclRule] {
 	return framework.ResourceSpec[aclRuleModel, *v1beta1.AclRule]{
 		TypeName:  "_network_acl_rule",
 		Pattern:   "projects/{project}/regions/{region}/acls/{acl}/rules/{rule}",
+		Service:   "network",
 		Schema:    aclRuleSchema(),
 		Name:      func(m *aclRuleModel) string { return m.Name.ValueString() },
 		ToProto:   aclRuleToProto,
@@ -176,6 +181,7 @@ func aclRuleResource() framework.ResourceSpec[aclRuleModel, *v1beta1.AclRule] {
 
 // aclRuleItemModel is an item of origincloud_network_acl_rules.
 type aclRuleItemModel struct {
+	ID        types.String `tfsdk:"id"`
 	Name      types.String `tfsdk:"name"`
 	Direction types.String `tfsdk:"direction"`
 	Priority  types.Int64  `tfsdk:"priority"`
@@ -187,6 +193,11 @@ type aclRuleItemModel struct {
 }
 
 func aclRuleItemFromProto(p *v1beta1.AclRule, m *aclRuleItemModel) error {
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
 	m.Direction = types.StringValue(p.GetDirection().String())
 	m.Priority = types.Int64Value(int64(p.GetPriority()))
@@ -227,6 +238,10 @@ func aclRuleListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The acl rule's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/acls/{acl}/rules/{rule}`: what an argument that refers to the acl rule takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "The rule's resource name.",
 							Computed:            true,

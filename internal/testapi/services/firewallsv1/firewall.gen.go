@@ -46,7 +46,7 @@ func firewallSchema() schema.Schema {
 		MarkdownDescription: "",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The firewall's resource name, the same as `name`.",
+				MarkdownDescription: "The firewall's full resource name, `//firewalls.origincloudapis.eu/projects/{project}/firewalls/{firewall}`: what an argument that refers to the firewall takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -560,7 +560,11 @@ func firewallFromProto(p *firewallsv1.Firewall, m *firewallModel) error {
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("firewalls", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Name = types.StringValue(p.GetName())
 	m.Rules = framework.Optional(m.Rules, framework.MessageList(firewall_RulesAttrTypes(), p.GetRules(), m.Rules, firewall_RulesFromProto), len(p.GetRules()) == 0)
@@ -582,6 +586,7 @@ func firewallResource() framework.ResourceSpec[firewallModel, *firewallsv1.Firew
 	return framework.ResourceSpec[firewallModel, *firewallsv1.Firewall]{
 		TypeName:  "_firewalls_firewall",
 		Pattern:   "projects/{project}/firewalls/{firewall}",
+		Service:   "firewalls",
 		Schema:    firewallSchema(),
 		Name:      func(m *firewallModel) string { return m.Name.ValueString() },
 		ToProto:   firewallToProto,
@@ -638,6 +643,7 @@ func firewallResource() framework.ResourceSpec[firewallModel, *firewallsv1.Firew
 
 // firewallItemModel is an item of origincloud_firewalls_firewalls.
 type firewallItemModel struct {
+	ID          types.String `tfsdk:"id"`
 	Name        types.String `tfsdk:"name"`
 	Rules       types.List   `tfsdk:"rules"`
 	Tags        types.Set    `tfsdk:"tags"`
@@ -876,6 +882,11 @@ func firewallItem_PeersToProto(o types.Object) *firewallsv1.Peer {
 }
 
 func firewallItemFromProto(p *firewallsv1.Firewall, m *firewallItemModel) error {
+	id, err := framework.FullName("firewalls", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
 	m.Rules = framework.MessageList(firewallItem_RulesAttrTypes(), p.GetRules(), types.ListNull(types.ObjectType{AttrTypes: firewallItem_RulesAttrTypes()}), firewallItem_RulesFromProto)
 	m.Tags = framework.StringSet(p.GetTags())
@@ -911,6 +922,10 @@ func firewallListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The firewall's full resource name, `//firewalls.origincloudapis.eu/projects/{project}/firewalls/{firewall}`: what an argument that refers to the firewall takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "",
 							Computed:            true,

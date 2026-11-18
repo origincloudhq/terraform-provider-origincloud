@@ -42,7 +42,7 @@ output "name_servers" {
 
 ### Required
 
-- `dns_name` (String) The domain, such as `example.com`, without the final dot; answered in lowercase. A public zone's has at least two labels and at most 235 characters, so its challenge name fits. A private zone's may have one label, but isn't `internal` or a name below it, which answer each instance's own name. Neither is one of the platform's own domains or a name below one. Changing it replaces the hosted zone, unless it is the same name in another case.
+- `dns_name` (String) The domain, such as `example.com`, without the final dot; answered in lowercase. A public zone's has at least two labels and at most 235 characters, so its challenge name fits, and isn't a special-use domain or below one, as none is delegated on the internet: `test`, `localhost`, `invalid`, `example`, `local`, `onion`, `alt`, `internal` and `home.arpa`. A private zone's may have one label, but isn't `internal` or a name below it, which answer each instance's own name. Neither is one of the platform's own domains or a name below one. Changing it replaces the hosted zone, unless it is the same name in another case.
 - `project` (String) The project the hosted zone is in. Changing it replaces the hosted zone.
 - `visibility` (String) Where the zone is answered. One of `PUBLIC`, `PRIVATE`. Changing it replaces the hosted zone.
 
@@ -54,12 +54,11 @@ output "name_servers" {
 
 - `challenge` (Attributes) How a public zone proves control of its name, and how it went. Unset for a private zone. (see [below for nested schema](#nestedatt--challenge))
 - `create_time` (String) When the zone was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `creator` (String) The principal that created the zone, such as `user:<id>` or `service_account:<id>`.
-- `id` (String) The hosted zone's resource name, the same as `name`.
+- `creator` (String) The principal that created the zone, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.
+- `id` (String) The hosted zone's full resource name, `//dns.origincloudapis.eu/projects/{project}/hostedZones/{hosted_zone}`: what an argument that refers to the hosted zone takes. `name` is the relative name, without the host.
 - `name` (String) The zone's resource name.
-- `name_servers` (List of String) The name servers to delegate a public zone to at its registrar, as NS records of its name. Fixed when the zone is created. Empty for a private zone.
+- `name_servers` (List of String) The name servers to delegate a public zone to at its registrar, as NS records of its name. They are the zone's own: no other zone is given them, so a delegation to them proves control of the name and verifies the zone, as the challenge does. Fixed when the zone is created. Empty for a private zone.
 - `state` (String) Whether the zone is answered. One of `PENDING_VERIFICATION`, `ACTIVE`, `SUSPENDED`.
-- `urn` (String) The zone's URN, the identifier access policies and the audit log use.
 
 <a id="nestedatt--challenge"></a>
 ### Nested Schema for `challenge`
@@ -81,6 +80,6 @@ Import is supported using the following syntax:
 The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
-# A hosted zone is imported by its resource name.
-terraform import origincloud_dns_hosted_zone.example projects/my-project-123/hostedZones/hz-XEkE66gA3ma
+# A hosted zone is imported by its full resource name, or its relative one.
+terraform import origincloud_dns_hosted_zone.example //dns.origincloudapis.eu/projects/my-project-123/hostedZones/hz-XEkE66gA3ma
 ```

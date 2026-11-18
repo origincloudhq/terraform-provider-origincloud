@@ -38,7 +38,7 @@ func projectQuotaSchema() schema.Schema {
 		MarkdownDescription: "A project's quota: the budgets its owners set for it, and how much of each the project uses. A project without a budget for a kind of resource is bounded by its organization's quota alone; with one, by both. Budgets are not reservations: several projects' budgets may add up to more than the organization's limit.\n\nEvery project has its project quota, which exists with it: creating this resource updates the existing project quota with the settings configured, and the rest keep their values. Destroying it unsets the settings Terraform set, leaving the others as they are; to stop managing it without unsetting them, remove it from the state instead (a `removed` block with `lifecycle { destroy = false }`, or `terraform state rm`). Manage each project quota with one resource only: two would undo each other's settings.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The project quota's resource name, the same as `name`.",
+				MarkdownDescription: "The project quota's full resource name, `//resourcemanager.origincloudapis.eu/projects/{project}/quota`: what an argument that refers to the project quota takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -184,7 +184,11 @@ func projectQuotaFromProto(p *v1beta1.ProjectQuota, m *projectQuotaModel) error 
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("resourcemanager", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Name = types.StringValue(p.GetName())
 	m.MaxInstances = framework.PresentInt64(p.MaxInstances)
@@ -202,6 +206,7 @@ func projectQuotaResource() framework.ResourceSpec[projectQuotaModel, *v1beta1.P
 	return framework.ResourceSpec[projectQuotaModel, *v1beta1.ProjectQuota]{
 		TypeName:  "_resourcemanager_project_quota",
 		Pattern:   "projects/{project}/quota",
+		Service:   "resourcemanager",
 		Schema:    projectQuotaSchema(),
 		Name:      func(m *projectQuotaModel) string { return m.Name.ValueString() },
 		ToProto:   projectQuotaToProto,

@@ -23,7 +23,6 @@ type billingAccountModel struct {
 	ID             types.String `tfsdk:"id"`
 	Organization   types.String `tfsdk:"organization"`
 	Name           types.String `tfsdk:"name"`
-	Urn            types.String `tfsdk:"urn"`
 	DisplayName    types.String `tfsdk:"display_name"`
 	DefaultAccount types.Bool   `tfsdk:"default_account"`
 	BillingAddress types.Object `tfsdk:"billing_address"`
@@ -40,7 +39,7 @@ func billingAccountSchema() schema.Schema {
 		MarkdownDescription: "An organization's billing account: who invoices are issued to, and how its projects' usage is paid.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The billing account's resource name, the same as `name`.",
+				MarkdownDescription: "The billing account's full resource name, `//billing.origincloudapis.eu/organizations/{organization}/billingAccounts/{billing_account}`: what an argument that refers to the billing account takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -53,10 +52,6 @@ func billingAccountSchema() schema.Schema {
 				MarkdownDescription: "The billing account's resource name.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The billing account's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
 			},
 			"display_name": schema.StringAttribute{
 				MarkdownDescription: "The name the console and spend-limit alerts show. Not empty. An organization's default account is called `default` until it is renamed.",
@@ -123,7 +118,7 @@ func billingAccountSchema() schema.Schema {
 				Computed:            true,
 			},
 			"creator": schema.StringAttribute{
-				MarkdownDescription: "The principal that created the billing account, such as `user:<id>` or `service_account:<id>`.",
+				MarkdownDescription: "The principal that created the billing account, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 				Computed:            true,
 			},
 		},
@@ -199,10 +194,13 @@ func billingAccountFromProto(p *v1beta1.BillingAccount, m *billingAccountModel) 
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("billing", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Organization = types.StringValue(values[0])
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.DisplayName = types.StringValue(p.GetDisplayName())
 	m.DefaultAccount = types.BoolValue(p.GetDefaultAccount())
 	m.BillingAddress = framework.Object(p.GetBillingAddress(), m.BillingAddress, billingAccount_BillingAddressAttrTypes(), billingAccount_BillingAddressFromProto)
@@ -219,6 +217,7 @@ func billingAccountResource() framework.ResourceSpec[billingAccountModel, *v1bet
 	return framework.ResourceSpec[billingAccountModel, *v1beta1.BillingAccount]{
 		TypeName:  "_billing_billing_account",
 		Pattern:   "organizations/{organization}/billingAccounts/{billing_account}",
+		Service:   "billing",
 		Schema:    billingAccountSchema(),
 		Name:      func(m *billingAccountModel) string { return m.Name.ValueString() },
 		ToProto:   billingAccountToProto,
@@ -263,8 +262,8 @@ func billingAccountResource() framework.ResourceSpec[billingAccountModel, *v1bet
 
 // billingAccountItemModel is an item of origincloud_billing_billing_accounts.
 type billingAccountItemModel struct {
+	ID             types.String `tfsdk:"id"`
 	Name           types.String `tfsdk:"name"`
-	Urn            types.String `tfsdk:"urn"`
 	DisplayName    types.String `tfsdk:"display_name"`
 	DefaultAccount types.Bool   `tfsdk:"default_account"`
 	BillingAddress types.Object `tfsdk:"billing_address"`
@@ -325,8 +324,12 @@ func billingAccountItem_PaymentMethodToProto(o types.Object) *v1beta1.PaymentMet
 }
 
 func billingAccountItemFromProto(p *v1beta1.BillingAccount, m *billingAccountItemModel) error {
+	id, err := framework.FullName("billing", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.DisplayName = types.StringValue(p.GetDisplayName())
 	m.DefaultAccount = types.BoolValue(p.GetDefaultAccount())
 	m.BillingAddress = framework.Object(p.GetBillingAddress(), types.ObjectNull(billingAccountItem_BillingAddressAttrTypes()), billingAccountItem_BillingAddressAttrTypes(), billingAccountItem_BillingAddressFromProto)
@@ -358,12 +361,12 @@ func billingAccountListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
-						"name": schema1.StringAttribute{
-							MarkdownDescription: "The billing account's resource name.",
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The billing account's full resource name, `//billing.origincloudapis.eu/organizations/{organization}/billingAccounts/{billing_account}`: what an argument that refers to the billing account takes. `name` is the relative name, without the host.",
 							Computed:            true,
 						},
-						"urn": schema1.StringAttribute{
-							MarkdownDescription: "The billing account's URN, the identifier access policies and the audit log use.",
+						"name": schema1.StringAttribute{
+							MarkdownDescription: "The billing account's resource name.",
 							Computed:            true,
 						},
 						"display_name": schema1.StringAttribute{
@@ -431,7 +434,7 @@ func billingAccountListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"creator": schema1.StringAttribute{
-							MarkdownDescription: "The principal that created the billing account, such as `user:<id>` or `service_account:<id>`.",
+							MarkdownDescription: "The principal that created the billing account, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 							Computed:            true,
 						},
 					},

@@ -31,6 +31,6 @@ Every billing account has its spend limit, which exists with it: creating this r
 
 ### Read-Only
 
-- `id` (String) The spend limit's resource name, the same as `name`.
+- `id` (String) The spend limit's full resource name, `//billing.origincloudapis.eu/organizations/{organization}/billingAccounts/{billing_account}/spendLimit`: what an argument that refers to the spend limit takes. `name` is the relative name, without the host.
 - `name` (String) The spend limit's resource name, `organizations/{organization}/billingAccounts/{billing_account}/spendLimit`.
 - `update_time` (String) When the spend limit was last set; unset while there is none. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.

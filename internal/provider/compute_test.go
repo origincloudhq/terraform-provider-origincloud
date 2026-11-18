@@ -19,7 +19,7 @@ const (
 	computeInstance = "origincloud_compute_instance.web"
 	// computeNetworkInterface is an interface the network service created, which
 	// the fake compute service takes as it is.
-	computeNetworkInterface = zone + "/networkInterfaces/eni-1"
+	computeNetworkInterface = "//network.origincloudapis.eu/" + zone + "/networkInterfaces/eni-1"
 )
 
 // computeConfig returns a configuration of the provider calling fake,
@@ -38,7 +38,7 @@ resource "origincloud_compute_key_pair" "admin" {
 resource "origincloud_compute_instance" "web" {
   project            = "p-1"
   zone               = "eu-central1-az1"
-  key_pair           = origincloud_compute_key_pair.admin.name
+  key_pair           = origincloud_compute_key_pair.admin.id
   network_interfaces = [%q]
   %s
 }
@@ -57,16 +57,16 @@ func TestInstancesAreCreatedUpdatedReplacedAndImported(t *testing.T) {
 			// Launched from a family: the API resolves the image, the
 			// login user and the boot volume, which the next plan keeps.
 			{
-				Config: computeConfig(fake, `instance_type = "instanceTypes/gp1.core.2"
-  image_family  = "imageFamilies/ubuntu-24-04-minimal"
+				Config: computeConfig(fake, `instance_type = "//compute.origincloudapis.eu/instanceTypes/gp1.core.2"
+  image_family  = "//compute.origincloudapis.eu/imageFamilies/ubuntu-24-04-minimal"
   tags          = { env = "test" }`, ""),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestMatchResourceAttr(computeInstance, "name", instanceName),
-					resource.TestCheckResourceAttrPair(computeInstance, "id", computeInstance, "name"),
-					resource.TestCheckResourceAttr(computeInstance, "image", "zones/eu-central1-az1/images/ubuntu-24-04-v2"),
+					checkFullName(computeInstance),
+					resource.TestCheckResourceAttr(computeInstance, "image", "//compute.origincloudapis.eu/zones/eu-central1-az1/images/ubuntu-24-04-v2"),
 					resource.TestCheckResourceAttr(computeInstance, "login_user", "ubuntu"),
 					resource.TestCheckResourceAttr(computeInstance, "boot_volume.size_gib", "10"),
-					resource.TestCheckResourceAttr(computeInstance, "boot_volume.storage_class", "storageClasses/gp1"),
+					resource.TestCheckResourceAttr(computeInstance, "boot_volume.storage_class", "//pvs.origincloudapis.eu/storageClasses/gp1"),
 					resource.TestMatchResourceAttr(computeInstance, "boot_volume.volume", regexp.MustCompile("^"+zone+"/volumes/vol-boot-")),
 					resource.TestCheckResourceAttr(computeInstance, "state", "RUNNING"),
 					resource.TestCheckResourceAttr(computeInstance, "create_time", "2026-11-01T12:00:00Z"),
@@ -78,15 +78,15 @@ func TestInstancesAreCreatedUpdatedReplacedAndImported(t *testing.T) {
 					resource.TestMatchResourceAttr(computeInstance, "interface_addresses.0.ipv4_address", regexp.MustCompile(`^10\.0\.0\.`)),
 					resource.TestCheckResourceAttr(computeInstance, "tags.env", "test"),
 					func(s *terraform.State) error {
-						first = s.RootModule().Resources[computeInstance].Primary.ID
+						first = s.RootModule().Resources[computeInstance].Primary.Attributes["name"]
 						return nil
 					},
 				),
 			},
 			// Updated in place: the tags change.
 			{
-				Config: computeConfig(fake, `instance_type = "instanceTypes/gp1.core.2"
-  image_family  = "imageFamilies/ubuntu-24-04-minimal"
+				Config: computeConfig(fake, `instance_type = "//compute.origincloudapis.eu/instanceTypes/gp1.core.2"
+  image_family  = "//compute.origincloudapis.eu/imageFamilies/ubuntu-24-04-minimal"
   tags          = { env = "prod" }`, ""),
 				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
 					plancheck.ExpectResourceAction(computeInstance, plancheck.ResourceActionUpdate),
@@ -96,30 +96,30 @@ func TestInstancesAreCreatedUpdatedReplacedAndImported(t *testing.T) {
 			// A new type needs the instance stopped, which Terraform
 			// doesn't do: the API's refusal reaches the user.
 			{
-				Config: computeConfig(fake, `instance_type = "instanceTypes/gp1.core.4"
-  image_family  = "imageFamilies/ubuntu-24-04-minimal"
+				Config: computeConfig(fake, `instance_type = "//compute.origincloudapis.eu/instanceTypes/gp1.core.4"
+  image_family  = "//compute.origincloudapis.eu/imageFamilies/ubuntu-24-04-minimal"
   tags          = { env = "prod" }`, ""),
 				ExpectError: regexp.MustCompile(`a new instance_type needs the instance\s+STOPPED`),
 			},
 			// Stopped outside Terraform, it changes type in place.
 			{
 				PreConfig: func() { fake.stop(first) },
-				Config: computeConfig(fake, `instance_type = "instanceTypes/gp1.core.4"
-  image_family  = "imageFamilies/ubuntu-24-04-minimal"
+				Config: computeConfig(fake, `instance_type = "//compute.origincloudapis.eu/instanceTypes/gp1.core.4"
+  image_family  = "//compute.origincloudapis.eu/imageFamilies/ubuntu-24-04-minimal"
   tags          = { env = "prod" }`, ""),
 				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
 					plancheck.ExpectResourceAction(computeInstance, plancheck.ResourceActionUpdate),
 				}},
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(computeInstance, "instance_type", "instanceTypes/gp1.core.4"),
+					resource.TestCheckResourceAttr(computeInstance, "instance_type", "//compute.origincloudapis.eu/instanceTypes/gp1.core.4"),
 					resource.TestCheckResourceAttr(computeInstance, "state", "STOPPED"),
-					resource.TestCheckResourceAttrPtr(computeInstance, "id", &first),
+					resource.TestCheckResourceAttrPtr(computeInstance, "name", &first),
 				),
 			},
 			// An immutable field replaces it.
 			{
-				Config: computeConfig(fake, `instance_type = "instanceTypes/gp1.core.4"
-  image_family  = "imageFamilies/ubuntu-24-04-minimal"
+				Config: computeConfig(fake, `instance_type = "//compute.origincloudapis.eu/instanceTypes/gp1.core.4"
+  image_family  = "//compute.origincloudapis.eu/imageFamilies/ubuntu-24-04-minimal"
   login_user    = "admin"
   tags          = { env = "prod" }`, ""),
 				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
@@ -129,7 +129,7 @@ func TestInstancesAreCreatedUpdatedReplacedAndImported(t *testing.T) {
 					resource.TestCheckResourceAttr(computeInstance, "login_user", "admin"),
 					resource.TestCheckResourceAttr(computeInstance, "state", "RUNNING"),
 					func(s *terraform.State) error {
-						if id := s.RootModule().Resources[computeInstance].Primary.ID; id == first {
+						if id := s.RootModule().Resources[computeInstance].Primary.Attributes["name"]; id == first {
 							return fmt.Errorf("%s wasn't replaced", id)
 						}
 						return nil
@@ -188,7 +188,7 @@ resource "origincloud_compute_key_pair" "generated" {
 	}
 	generated := "origincloud_compute_key_pair.generated"
 	privateKey := func(s *terraform.State) error {
-		name := s.RootModule().Resources[generated].Primary.ID
+		name := s.RootModule().Resources[generated].Primary.Attributes["name"]
 		fake.mu.Lock()
 		want := fake.privateKeys[name]
 		fake.mu.Unlock()
@@ -280,8 +280,8 @@ resource "origincloud_compute_key_pair" "imported" {
 func TestAVolumeIsAttachedToAnInstance(t *testing.T) {
 	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
 	fake := newFakeCompute(t)
-	instance := `instance_type = "instanceTypes/gp1.core.2"
-  image         = "zones/eu-central1-az1/images/ubuntu-24-04-v1"`
+	instance := `instance_type = "//compute.origincloudapis.eu/instanceTypes/gp1.core.2"
+  image         = "//compute.origincloudapis.eu/zones/eu-central1-az1/images/ubuntu-24-04-v1"`
 	attachment := func(device string) string {
 		return fmt.Sprintf(`
 resource "origincloud_compute_volume_attachment" "data" {
@@ -305,7 +305,7 @@ data "origincloud_compute_volume_attachments" "zone" {
   instance   = "-"
   depends_on = [origincloud_compute_volume_attachment.data]
 }
-`, zone+"/volumes/vol-data", device)
+`, full("pvs", zone+"/volumes/vol-data"), device)
 	}
 	data := "origincloud_compute_volume_attachment.data"
 	var detached string
@@ -329,7 +329,7 @@ data "origincloud_compute_volume_attachments" "zone" {
 					resource.TestCheckResourceAttrPair("data.origincloud_compute_volume_attachments.web", "volume_attachments.1.name", data, "name"),
 					resource.TestCheckResourceAttr("data.origincloud_compute_volume_attachments.zone", "volume_attachments.#", "2"),
 					func(s *terraform.State) error {
-						detached = s.RootModule().Resources[data].Primary.ID
+						detached = s.RootModule().Resources[data].Primary.Attributes["name"]
 						return nil
 					},
 				),
@@ -372,15 +372,15 @@ func TestComputeListAndCatalogDataSourcesReadEveryPage(t *testing.T) {
 	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
 	fake := newFakeCompute(t)
 	resources := func(more string) string {
-		return computeConfig(fake, `instance_type = "instanceTypes/gp1.core.2"
-  image_family  = "imageFamilies/ubuntu-24-04-minimal"`, `
+		return computeConfig(fake, `instance_type = "//compute.origincloudapis.eu/instanceTypes/gp1.core.2"
+  image_family  = "//compute.origincloudapis.eu/imageFamilies/ubuntu-24-04-minimal"`, `
 resource "origincloud_compute_image" "golden" {
   project     = "p-1"
   zone        = "eu-central1-az1"
   description = "Golden image"
   root_device = "vda"
   block_devices = [
-    { device = "vda", size_gib = 20, source_snapshot = "`+zone+`/snapshots/snap-1" },
+    { device = "vda", size_gib = 20, source_snapshot = "`+full("pvs", zone+"/snapshots/snap-1")+`" },
     { device = "vdb", size_gib = 5 },
   ]
 }
@@ -389,10 +389,10 @@ resource "origincloud_compute_image" "golden" {
 resource "origincloud_compute_instance" "golden" {
   project            = "p-1"
   zone               = "eu-central1-az1"
-  instance_type      = "instanceTypes/gp1.core.4"
-  image              = origincloud_compute_image.golden.name
-  key_pair           = origincloud_compute_key_pair.admin.name
-  network_interfaces = ["`+zone+`/networkInterfaces/eni-2"]
+  instance_type      = "//compute.origincloudapis.eu/instanceTypes/gp1.core.4"
+  image              = origincloud_compute_image.golden.id
+  key_pair           = origincloud_compute_key_pair.admin.id
+  network_interfaces = ["`+full("network", zone+"/networkInterfaces/eni-2")+`"]
   depends_on         = [origincloud_compute_instance.web]
 }
 `+more)
@@ -401,10 +401,10 @@ resource "origincloud_compute_instance" "golden" {
 resource "origincloud_compute_instance" "gone" {
   project            = "p-1"
   zone               = "eu-central1-az1"
-  instance_type      = "instanceTypes/gp1.core.2"
-  image_family       = "imageFamilies/ubuntu-24-04-minimal"
-  key_pair           = origincloud_compute_key_pair.admin.name
-  network_interfaces = ["` + zone + `/networkInterfaces/eni-3"]
+  instance_type      = "//compute.origincloudapis.eu/instanceTypes/gp1.core.2"
+  image_family       = "//compute.origincloudapis.eu/imageFamilies/ubuntu-24-04-minimal"
+  key_pair           = origincloud_compute_key_pair.admin.id
+  network_interfaces = ["` + full("network", zone+"/networkInterfaces/eni-3") + `"]
 }
 `
 	lists := resources(`
@@ -471,13 +471,13 @@ data "origincloud_compute_image_family" "noble" {
 					resource.TestCheckResourceAttr(instances, "instances.#", "2"),
 					resource.TestCheckResourceAttrPair(instances, "instances.0.name", computeInstance, "name"),
 					resource.TestCheckResourceAttrPair(instances, "instances.1.name", "origincloud_compute_instance.golden", "name"),
-					resource.TestCheckResourceAttrPair(instances, "instances.1.image", "origincloud_compute_image.golden", "name"),
+					resource.TestCheckResourceAttrPair(instances, "instances.1.image", "origincloud_compute_image.golden", "id"),
 					resource.TestCheckResourceAttr(instances, "instances.0.boot_volume.size_gib", "10"),
 					resource.TestCheckResourceAttr(instances, "instances.0.health.checks.#", "2"),
 					resource.TestCheckResourceAttr("data.origincloud_compute_key_pairs.p1", "key_pairs.#", "1"),
 					resource.TestCheckResourceAttrPair("data.origincloud_compute_key_pairs.p1", "key_pairs.0.public_key", "origincloud_compute_key_pair.admin", "public_key"),
 					resource.TestCheckResourceAttr("data.origincloud_compute_images.az1", "images.#", "1"),
-					resource.TestCheckResourceAttr("data.origincloud_compute_images.az1", "images.0.block_devices.0.source_snapshot", zone+"/snapshots/snap-1"),
+					resource.TestCheckResourceAttr("data.origincloud_compute_images.az1", "images.0.block_devices.0.source_snapshot", full("pvs", zone+"/snapshots/snap-1")),
 					resource.TestCheckResourceAttr("data.origincloud_compute_images.az1", "images.0.block_devices.1.size_gib", "5"),
 					resource.TestCheckResourceAttr("data.origincloud_compute_public_images.az1", "public_images.#", "2"),
 					resource.TestCheckResourceAttr("data.origincloud_compute_public_images.az1", "public_images.0.family_current", "false"),

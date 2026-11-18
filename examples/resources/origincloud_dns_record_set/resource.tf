@@ -36,5 +36,5 @@ resource "origincloud_dns_record_set" "apex" {
   dns_name    = "example.com"
   type        = "A"
   ttl         = "300s"
-  alias       = { floating_ip = origincloud_network_floating_ip.web.name }
+  alias       = { floating_ip = origincloud_network_floating_ip.web.id }
 }

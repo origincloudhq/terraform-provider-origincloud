@@ -40,7 +40,7 @@ func vaultQuotaSchema() schema.Schema {
 		MarkdownDescription: "Every vault has its vault quota, which exists with it: creating this resource updates the existing vault quota with the settings configured, and the rest keep their values. Destroying it unsets the settings Terraform set, leaving the others as they are; to stop managing it without unsetting them, remove it from the state instead (a `removed` block with `lifecycle { destroy = false }`, or `terraform state rm`). Manage each vault quota with one resource only: two would undo each other's settings.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The vault quota's resource name, the same as `name`.",
+				MarkdownDescription: "The vault quota's full resource name, `//vaults.origincloudapis.eu/vaults/{vault}/quota`: what an argument that refers to the vault quota takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -114,7 +114,11 @@ func vaultQuotaFromProto(p *firewallsv1.VaultQuota, m *vaultQuotaModel) error {
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("vaults", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Vault = types.StringValue(values[0])
 	m.Name = types.StringValue(p.GetName())
 	m.MaxSecrets = framework.PresentInt64(p.MaxSecrets)
@@ -130,6 +134,7 @@ func vaultQuotaResource() framework.ResourceSpec[vaultQuotaModel, *firewallsv1.V
 	return framework.ResourceSpec[vaultQuotaModel, *firewallsv1.VaultQuota]{
 		TypeName:  "_vaults_vault_quota",
 		Pattern:   "vaults/{vault}/quota",
+		Service:   "vaults",
 		Schema:    vaultQuotaSchema(),
 		Name:      func(m *vaultQuotaModel) string { return m.Name.ValueString() },
 		ToProto:   vaultQuotaToProto,

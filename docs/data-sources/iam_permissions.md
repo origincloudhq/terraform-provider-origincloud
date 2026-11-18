@@ -25,7 +25,7 @@ Lists every permission the platform checks, in catalog order, including those no
 Read-Only:
 
 - `action` (String) The action it allows, such as `create`.
+- `id` (String) The permission's full resource name, `//iam.origincloudapis.eu/permissions/{permission}`: what an argument that refers to the permission takes. `name` is the relative name, without the host.
 - `name` (String) The permission's resource name, `permissions/{service}.{resource}.{action}`, such as `permissions/pvs.volume.create`.
 - `resource_type` (String) The kind of resource it applies to, such as `volume`.
 - `service` (String) The service whose API checks it, such as `pvs`.
-- `urn` (String) The permission's URN, the identifier access policies and the audit log use.

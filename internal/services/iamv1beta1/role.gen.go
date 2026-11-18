@@ -14,8 +14,8 @@ import (
 
 // roleModel is origincloud_iam_role's state.
 type roleModel struct {
+	ID                  types.String `tfsdk:"id"`
 	Name                types.String `tfsdk:"name"`
-	Urn                 types.String `tfsdk:"urn"`
 	DisplayName         types.String `tfsdk:"display_name"`
 	Description         types.String `tfsdk:"description"`
 	IncludedPermissions types.List   `tfsdk:"included_permissions"`
@@ -25,13 +25,13 @@ func roleSchema() schema.Schema {
 	return schema.Schema{
 		MarkdownDescription: "A predefined role: a named set of permissions that a role binding grants.",
 		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				MarkdownDescription: "The role's full resource name, `//iam.origincloudapis.eu/roles/{role}`: what an argument that refers to the role takes. `name` is the relative name, without the host.",
+				Computed:            true,
+			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "The role's resource name, such as `roles/owner`, `roles/viewer` or `roles/billing.administrator`. A role binding names its role by it.",
 				Required:            true,
-			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The role's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
 			},
 			"display_name": schema.StringAttribute{
 				MarkdownDescription: "The name the console shows, such as `Owner`.",
@@ -42,7 +42,7 @@ func roleSchema() schema.Schema {
 				Computed:            true,
 			},
 			"included_permissions": schema.ListAttribute{
-				MarkdownDescription: "The permissions the role grants, `permissions/{permission}`, in catalog order.",
+				MarkdownDescription: "The full names of the permissions the role grants, `//iam.origincloudapis.eu/permissions/{permission}`, in catalog order.",
 				Computed:            true,
 				ElementType:         types.StringType,
 			},
@@ -51,8 +51,12 @@ func roleSchema() schema.Schema {
 }
 
 func roleFromProto(p *v1beta1.Role, m *roleModel) error {
+	id, err := framework.FullName("iam", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.DisplayName = types.StringValue(p.GetDisplayName())
 	m.Description = types.StringValue(p.GetDescription())
 	m.IncludedPermissions = framework.StringList(p.GetIncludedPermissions())
@@ -85,12 +89,12 @@ func roleListSchema() schema.Schema {
 				Computed:            true,
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
-						"name": schema.StringAttribute{
-							MarkdownDescription: "The role's resource name, such as `roles/owner`, `roles/viewer` or `roles/billing.administrator`. A role binding names its role by it.",
+						"id": schema.StringAttribute{
+							MarkdownDescription: "The role's full resource name, `//iam.origincloudapis.eu/roles/{role}`: what an argument that refers to the role takes. `name` is the relative name, without the host.",
 							Computed:            true,
 						},
-						"urn": schema.StringAttribute{
-							MarkdownDescription: "The role's URN, the identifier access policies and the audit log use.",
+						"name": schema.StringAttribute{
+							MarkdownDescription: "The role's resource name, such as `roles/owner`, `roles/viewer` or `roles/billing.administrator`. A role binding names its role by it.",
 							Computed:            true,
 						},
 						"display_name": schema.StringAttribute{
@@ -102,7 +106,7 @@ func roleListSchema() schema.Schema {
 							Computed:            true,
 						},
 						"included_permissions": schema.ListAttribute{
-							MarkdownDescription: "The permissions the role grants, `permissions/{permission}`, in catalog order.",
+							MarkdownDescription: "The full names of the permissions the role grants, `//iam.origincloudapis.eu/permissions/{permission}`, in catalog order.",
 							Computed:            true,
 							ElementType:         types.StringType,
 						},

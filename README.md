@@ -92,6 +92,12 @@ data sources are generated from the API definitions in
 | Data source | `origincloud_billing_billing_accounts` | An organization's billing accounts |
 | Data source | `origincloud_billing_billing_country` | A country a billing address may be in, and whether it needs a VAT id |
 | Data source | `origincloud_billing_billing_countries` | Every billing country |
+| Data source | `origincloud_billing_legal_document` | A legal document: every version of one kind of document |
+| Data source | `origincloud_billing_legal_documents` | The published legal documents |
+| Data source | `origincloud_billing_legal_document_version` | One published version of a legal document |
+| Data source | `origincloud_billing_legal_document_versions` | A legal document's published versions, the latest first |
+| Data source | `origincloud_billing_legal_acceptance` | A billing account's acceptance of one version of a legal document |
+| Data source | `origincloud_billing_legal_acceptances` | A billing account's acceptances, the latest first |
 | Data source | `origincloud_support_case` | One question or problem, and the conversation with support about it |
 | Data source | `origincloud_support_cases` | An organization's support cases, newest first |
 | Data source | `origincloud_support_case_message` | One message in a support case |
@@ -102,6 +108,11 @@ data sources are generated from the API definitions in
 | Data source | `origincloud_dns_hosted_zones` | A project's hosted zones |
 | Data source | `origincloud_dns_record_sets` | A hosted zone's record sets |
 | Data source | `origincloud_dns_vpc_attachments` | A private zone's VPC attachments |
+| Resource | `origincloud_kms_key` | A key whose material the platform keeps and never lets leave it |
+| Resource | `origincloud_kms_grant` | One host's use of one key for one operation, until it expires |
+| Data source | `origincloud_kms_keys` | A project's keys in a region |
+| Data source | `origincloud_kms_grants` | A key's grants that haven't expired |
+| Data source | `origincloud_kms_public_key` | A signing key version's public key |
 
 ## Using it
 
@@ -124,14 +135,14 @@ resource "origincloud_pvs_volume" "data" {
   project       = "my-project-123"
   zone          = "eu-central1-az1"
   size_gib      = 20
-  storage_class = data.origincloud_pvs_storage_class.general.name
+  storage_class = data.origincloud_pvs_storage_class.general.id
   tags          = { "origin:name" = "data" }
 }
 
 resource "origincloud_pvs_snapshot" "data" {
   project       = "my-project-123"
   zone          = "eu-central1-az1"
-  source_volume = origincloud_pvs_volume.data.name
+  source_volume = origincloud_pvs_volume.data.id
 }
 ```
 
@@ -209,16 +220,29 @@ Credentials come from the environment, the first of:
   created, such as a generated private key, stays in the state from then on.
   It is sensitive, which hides it in plans and output, but the state holds
   it as plain text: protect the state. An imported resource has none.
-- **Role binding members.** A role binding holds on to a user's account, not
-  their address: the API answers with the account's current verified
-  address, in its own case (`user:mail@example.com` for
-  `user:Mail@Example.com`), or as `userId:{user}` while it has none. The state
-  keeps `member` as configured while the answer names the same account, so
-  neither plans a change, and a configuration changed to the address the
-  API answers with now updates the state in place. A refresh warns when the
-  address configured is no longer the account's: a new binding for it would
-  be refused. Once the account is gone (`deleted:user:{user}`), the binding
-  is replaced.
+- **Names.** A resource is identified by its full resource name,
+  `//{service}.origincloudapis.eu/{relative name}`, such as
+  `//pvs.origincloudapis.eu/projects/my-project-123/zones/eu-central1-az1/volumes/vol-1`.
+  It is the resource's `id`, and what an argument that refers to another
+  resource takes, whichever service or the resource's project it is in:
+  `source_volume = origincloud_pvs_volume.data.id`. `name` is the relative
+  name, `projects/{project}/zones/{zone}/volumes/{volume}`, which `project`,
+  `zone` and the other parts of a resource's own place are taken from. An
+  argument that refers to a resource refuses a relative name at the plan,
+  naming the `id` to use instead. A role binding's `member` and `role`, and a
+  resource's `creator`, are full names on `iam` too. An import takes either
+  form, such as `terraform import origincloud_pvs_volume.data
+  //pvs.origincloudapis.eu/projects/my-project-123/zones/eu-central1-az1/volumes/vol-1`.
+  The platform refuses a reference to a resource of another project in the
+  places a resource has to be in its own, such as the volume of an attachment,
+  and says so.
+- **Upgrading.** After v0.18, a resource's state has its `id` as the full
+  name, and no `urn`. Terraform upgrades the state it holds the first time it
+  reads it, without a change to apply; the upgrade stays in the provider for
+  every state written before. Change the arguments that refer to another
+  resource from its `name` to its `id`, and write `role`, `member` and the
+  like as the full names the arguments' descriptions show; the plan refuses
+  one that isn't.
 - **Domain names.** A hosted zone's or a record set's `dns_name` is the same
   name in any case: the API answers it in lowercase, and the state keeps it
   as configured, so neither plans a change. Names in a record set's values,

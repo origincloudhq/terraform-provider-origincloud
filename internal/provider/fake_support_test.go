@@ -21,7 +21,7 @@ var (
 
 func init() {
 	for _, c := range []string{
-		`{"name":"organizations/acme/cases/c-1","urn":"urn:origincloud:support:case/organizations/acme/cases/c-1","project":"projects/acme-prod",` +
+		`{"name":"organizations/acme/cases/c-1","project":"projects/acme-prod",` +
 			`"subject":"Instance unreachable","description":"i-1 doesn't answer on port 22.","contactEmail":"ops@acme.example","state":"IN_PROGRESS",` +
 			`"creator":"user:test","createTime":"2026-11-01T12:00:00Z","updateTime":"2026-11-01T13:30:00Z"}`,
 		`{"name":"organizations/acme/cases/c-2","subject":"Invoice address","description":"Please explain the reverse charge.","contactEmail":"finance@acme.example",` +

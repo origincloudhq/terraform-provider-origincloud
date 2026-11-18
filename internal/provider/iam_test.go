@@ -55,14 +55,14 @@ resource "origincloud_iam_service_account" "ci" {
 resource "origincloud_iam_role_binding" "ci" {
   organization = "acme"
   member       = origincloud_iam_service_account.ci.member
-  role         = "roles/viewer"
-  project      = "projects/acme-prod"
+  role         = "//iam.origincloudapis.eu/roles/viewer"
+  project      = "//resourcemanager.origincloudapis.eu/projects/acme-prod"
 }
 
 resource "origincloud_iam_role_binding" "ana" {
   organization = "acme"
   member       = %q
-  role         = "roles/editor"
+  role         = "//iam.origincloudapis.eu/roles/editor"
 }
 `, displayName, member)
 }
@@ -71,7 +71,7 @@ resource "origincloud_iam_role_binding" "ana" {
 // state is the one the fake generated for it.
 func checkClientSecret(fake *fakeIAM) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
-		name := s.RootModule().Resources[ciServiceAccount].Primary.ID
+		name := s.RootModule().Resources[ciServiceAccount].Primary.Attributes["name"]
 		fake.mu.Lock()
 		want := fake.secrets[name]
 		fake.mu.Unlock()
@@ -85,7 +85,7 @@ func checkClientSecret(fake *fakeIAM) resource.TestCheckFunc {
 func TestServiceAccountsAndRoleBindingsAreCreatedImportedReplacedAndDestroyed(t *testing.T) {
 	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
 	fake := newFakeIAM(t)
-	created := iamConfig(fake, "CI", "user:Ana@Example.com")
+	created := iamConfig(fake, "CI", "//iam.origincloudapis.eu/users/u-ana")
 
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: factories(),
@@ -98,19 +98,19 @@ func TestServiceAccountsAndRoleBindingsAreCreatedImportedReplacedAndDestroyed(t 
 				Config: created,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestMatchResourceAttr(ciServiceAccount, "name", regexp.MustCompile(`^organizations/acme/serviceAccounts/sa-[0-9]+$`)),
-					resource.TestCheckResourceAttrPair(ciServiceAccount, "id", ciServiceAccount, "name"),
-					resource.TestMatchResourceAttr(ciServiceAccount, "member", regexp.MustCompile(`^serviceAccount:sa-[0-9]+$`)),
+					checkFullName(ciServiceAccount),
+					resource.TestMatchResourceAttr(ciServiceAccount, "member", regexp.MustCompile(`^//iam\.origincloudapis\.eu/organizations/acme/serviceAccounts/sa-[0-9]+$`)),
 					resource.TestMatchResourceAttr(ciServiceAccount, "client_id", regexp.MustCompile(`^client-sa-[0-9]+$`)),
 					resource.TestCheckResourceAttr(ciServiceAccount, "state", "ACTIVE"),
-					resource.TestCheckResourceAttr(ciServiceAccount, "creator", "user:me@example.com"),
+					resource.TestCheckResourceAttr(ciServiceAccount, "creator", "//iam.origincloudapis.eu/users/u-me"),
 					resource.TestCheckNoResourceAttr(ciServiceAccount, "delete_time"),
 					checkClientSecret(fake),
 					resource.TestMatchResourceAttr(ciBinding, "name", regexp.MustCompile(`^organizations/acme/roleBindings/rb-[0-9]+$`)),
 					resource.TestCheckResourceAttrPair(ciBinding, "member", ciServiceAccount, "member"),
-					resource.TestCheckResourceAttr(ciBinding, "project", "projects/acme-prod"),
-					resource.TestCheckResourceAttr(anaBinding, "member", "user:Ana@Example.com"),
+					resource.TestCheckResourceAttr(ciBinding, "project", "//resourcemanager.origincloudapis.eu/projects/acme-prod"),
+					resource.TestCheckResourceAttr(anaBinding, "member", "//iam.origincloudapis.eu/users/u-ana"),
 					resource.TestCheckResourceAttr(anaBinding, "project", ""),
-					resource.TestCheckResourceAttr(anaBinding, "creator", "user:me@example.com"),
+					resource.TestCheckResourceAttr(anaBinding, "creator", "//iam.origincloudapis.eu/users/u-me"),
 					resource.TestCheckResourceAttr(anaBinding, "create_time", "2026-11-01T12:00:00Z"),
 				),
 				ConfigStateChecks: []statecheck.StateCheck{
@@ -170,7 +170,7 @@ output "secret" {
 				ResourceName: anaBinding,
 				ImportState:  true,
 				ImportStateCheck: func(states []*terraform.InstanceState) error {
-					if member := states[0].Attributes["member"]; member != "user:ana@example.com" {
+					if member := states[0].Attributes["member"]; member != "//iam.origincloudapis.eu/users/u-ana" {
 						return fmt.Errorf("the imported binding's member is %q", member)
 					}
 					return nil
@@ -186,7 +186,7 @@ output "secret" {
 			// A new display name replaces the service account, and with it
 			// the binding of its member; a new secret comes with it.
 			{
-				Config: iamConfig(fake, "CI pipeline", "user:Ana@Example.com"),
+				Config: iamConfig(fake, "CI pipeline", "//iam.origincloudapis.eu/users/u-ana"),
 				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
 					plancheck.ExpectResourceAction(ciServiceAccount, plancheck.ResourceActionReplace),
 					plancheck.ExpectResourceAction(ciBinding, plancheck.ResourceActionReplace),
@@ -294,166 +294,6 @@ resource "origincloud_iam_service_account" "ci" {
 	}
 }
 
-// A binding holds on to its user's account: the API answers with the
-// account's current address, in its own case, which neither replaces it
-// nor plans a change. Only another member, or a user whose account is
-// gone, replaces it.
-func TestARoleBindingKeepsItsMemberAsConfiguredWhileItNamesTheSameAccount(t *testing.T) {
-	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
-	fake := newFakeIAM(t)
-	config := func(member string) string {
-		return iamProvider(fake) + fmt.Sprintf(`
-resource "origincloud_iam_role_binding" "ana" {
-  organization = "acme"
-  member       = %q
-  role         = "roles/editor"
-}
-`, member)
-	}
-	bindingMutations := func(want ...string) resource.TestCheckFunc {
-		return func(*terraform.State) error {
-			var got []string
-			for _, call := range fake.mutations() {
-				got = append(got, strings.Fields(call)[0])
-			}
-			if !slices.Equal(got, want) {
-				return fmt.Errorf("the mutations were %v, not %v", fake.mutations(), want)
-			}
-			return nil
-		}
-	}
-
-	resource.UnitTest(t, resource.TestCase{
-		ProtoV6ProviderFactories: factories(),
-		Steps: []resource.TestStep{
-			{
-				Config: config("user:Ana@Example.com"),
-				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(anaBinding, "member", "user:Ana@Example.com"),
-					bindingMutations("POST"),
-				),
-			},
-			// Written in another case, it is the same member: the state
-			// takes the new spelling without calling the API.
-			{
-				Config: config("user:ana@EXAMPLE.COM"),
-				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
-					plancheck.ExpectResourceAction(anaBinding, plancheck.ResourceActionUpdate),
-				}},
-				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(anaBinding, "member", "user:ana@EXAMPLE.COM"),
-					bindingMutations("POST"),
-				),
-			},
-			// The user's address changes: the API answers with the new
-			// one, and the state keeps the member as configured.
-			{
-				PreConfig: func() { fake.changeEmail("u-ana", "ana@new.example") },
-				Config:    config("user:ana@EXAMPLE.COM"),
-				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
-					plancheck.ExpectEmptyPlan(),
-				}},
-				Check: resource.TestCheckResourceAttr(anaBinding, "member", "user:ana@EXAMPLE.COM"),
-			},
-			// Configured with the new address, as the API answers it in any
-			// case, it is still the same binding.
-			{
-				Config: config("user:Ana@New.Example"),
-				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
-					plancheck.ExpectResourceAction(anaBinding, plancheck.ResourceActionUpdate),
-				}},
-				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(anaBinding, "member", "user:Ana@New.Example"),
-					bindingMutations("POST"),
-				),
-			},
-			// Without a verified address, it is answered as userId:, and
-			// the state keeps it as configured.
-			{
-				PreConfig: func() { fake.unverify("u-ana") },
-				Config:    config("user:Ana@New.Example"),
-				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
-					plancheck.ExpectEmptyPlan(),
-				}},
-				Check: resource.TestCheckResourceAttr(anaBinding, "member", "user:Ana@New.Example"),
-			},
-			// The old address isn't the member any more.
-			{
-				Config:             config("user:ana@example.com"),
-				PlanOnly:           true,
-				ExpectNonEmptyPlan: true,
-				ConfigPlanChecks: resource.ConfigPlanChecks{PostApplyPreRefresh: []plancheck.PlanCheck{
-					plancheck.ExpectResourceAction(anaBinding, plancheck.ResourceActionReplace),
-				}},
-			},
-			// Another user replaces it.
-			{
-				Config: config("user:bo@example.com"),
-				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
-					plancheck.ExpectResourceAction(anaBinding, plancheck.ResourceActionReplace),
-				}},
-				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(anaBinding, "member", "user:bo@example.com"),
-					bindingMutations("POST", "DELETE", "POST"),
-				),
-			},
-			// Once the user's account is gone, the binding is no one's: the
-			// state takes the API's answer, and the binding is replaced,
-			// which the API refuses while no account has the address.
-			{
-				PreConfig: func() { fake.deleteUser("u-bo") },
-				Config:    config("user:bo@example.com"),
-				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
-					plancheck.ExpectResourceAction(anaBinding, plancheck.ResourceActionReplace),
-					plancheck.ExpectKnownValue(anaBinding, tfjsonpath.New("member"), knownvalue.StringExact("user:bo@example.com")),
-				}},
-				ExpectError: regexp.MustCompile(`no account has the verified address bo@example.com`),
-			},
-		},
-	})
-}
-
-// Imported, a binding has its member as the API answers it; a
-// configuration that writes it in another case updates the state in place.
-func TestAnImportedRoleBindingTakesTheConfiguredSpelling(t *testing.T) {
-	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
-	fake := newFakeIAM(t)
-	name := fake.bind("acme", "u-ana", "roles/editor")
-
-	resource.UnitTest(t, resource.TestCase{
-		ProtoV6ProviderFactories: factories(),
-		Steps: []resource.TestStep{
-			{
-				Config: iamProvider(fake) + fmt.Sprintf(`
-import {
-  to = origincloud_iam_role_binding.ana
-  id = %q
-}
-
-resource "origincloud_iam_role_binding" "ana" {
-  organization = "acme"
-  member       = "user:Ana@Example.com"
-  role         = "roles/editor"
-}
-`, name),
-				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
-					plancheck.ExpectResourceAction(anaBinding, plancheck.ResourceActionUpdate),
-				}},
-				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(anaBinding, "name", name),
-					resource.TestCheckResourceAttr(anaBinding, "member", "user:Ana@Example.com"),
-					func(*terraform.State) error {
-						if calls := fake.mutations(); len(calls) > 0 {
-							return fmt.Errorf("the import called %v", calls)
-						}
-						return nil
-					},
-				),
-			},
-		},
-	})
-}
-
 // federatedConfig returns a configuration of the provider calling fake,
 // with a WORKLOAD service account and a federated credential on it that
 // trusts GitHub Actions' tokens of one repository's main branch; credential
@@ -508,18 +348,18 @@ func TestFederatedCredentialsAreCreatedImportedReplacedAndDestroyed(t *testing.T
 					resource.TestCheckResourceAttr(deployAccount, "type", "WORKLOAD"),
 					resource.TestCheckResourceAttr(deployAccount, "client_id", ""),
 					resource.TestMatchResourceAttr(githubCredential, "name", regexp.MustCompile(`^organizations/acme/serviceAccounts/sa-[0-9]+/federatedCredentials/fc-[0-9]+$`)),
-					resource.TestCheckResourceAttrPair(githubCredential, "id", githubCredential, "name"),
+					checkFullName(githubCredential),
 					resource.TestCheckResourceAttr(githubCredential, "organization", "acme"),
 					resource.TestMatchResourceAttr(githubCredential, "service_account", regexp.MustCompile(`^sa-[0-9]+$`)),
 					resource.TestCheckResourceAttr(githubCredential, "audience", "https://sts.origincloudapis.eu"),
 					resource.TestCheckResourceAttr(githubCredential, "conditions.%", "2"),
 					resource.TestCheckResourceAttr(githubCredential, "conditions.repository_id", "123456"),
 					resource.TestCheckResourceAttr(githubCredential, "state", "ACTIVE"),
-					resource.TestCheckResourceAttr(githubCredential, "creator", "user:me@example.com"),
+					resource.TestCheckResourceAttr(githubCredential, "creator", "//iam.origincloudapis.eu/users/u-me"),
 					resource.TestCheckResourceAttr(githubCredential, "create_time", "2026-11-01T12:00:00Z"),
 					resource.TestCheckNoResourceAttr(githubCredential, "delete_time"),
 					func(s *terraform.State) error {
-						first = s.RootModule().Resources[githubCredential].Primary.ID
+						first = s.RootModule().Resources[githubCredential].Primary.Attributes["name"]
 						return nil
 					},
 				),
@@ -561,7 +401,7 @@ func TestFederatedCredentialsAreCreatedImportedReplacedAndDestroyed(t *testing.T
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(githubCredential, "conditions.ref", "refs/heads/release"),
 					func(s *terraform.State) error {
-						if name := s.RootModule().Resources[githubCredential].Primary.ID; name == first {
+						if name := s.RootModule().Resources[githubCredential].Primary.Attributes["name"]; name == first {
 							return fmt.Errorf("%s wasn't replaced", name)
 						}
 						fake.mu.Lock()
@@ -673,7 +513,7 @@ func TestIAMDataSourcesReadEveryPage(t *testing.T) {
 	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
 	fake := newFakeIAM(t)
 	resources := func(retired bool) string {
-		config := iamConfig(fake, "CI", "user:ana@example.com")
+		config := iamConfig(fake, "CI", "//iam.origincloudapis.eu/users/u-ana")
 		if retired {
 			config += `
 resource "origincloud_iam_service_account" "retired" {
@@ -746,19 +586,19 @@ data "origincloud_iam_audit_log_entry" "first" {
 					resource.TestCheckResourceAttr("data.origincloud_iam_permission.create", "action", "create"),
 					// users/me is answered with the user's own name.
 					resource.TestCheckResourceAttr("data.origincloud_iam_user.me", "name", "users/u-me"),
-					resource.TestCheckResourceAttr("data.origincloud_iam_user.me", "member", "user:me@example.com"),
+					resource.TestCheckResourceAttr("data.origincloud_iam_user.me", "member", "//iam.origincloudapis.eu/users/u-me"),
 					resource.TestCheckResourceAttr("data.origincloud_iam_user.me", "email_verified", "true"),
 					resource.TestCheckResourceAttr("data.origincloud_iam_role_bindings.acme", "role_bindings.#", "3"),
-					resource.TestCheckResourceAttr("data.origincloud_iam_role_bindings.acme", "role_bindings.0.member", "user:me@example.com"),
+					resource.TestCheckResourceAttr("data.origincloud_iam_role_bindings.acme", "role_bindings.0.member", "//iam.origincloudapis.eu/users/u-me"),
 					resource.TestCheckResourceAttr("data.origincloud_iam_role_bindings.acme", "role_bindings.0.creator", "platform"),
 					resource.TestCheckTypeSetElemNestedAttrs("data.origincloud_iam_role_bindings.acme", "role_bindings.*", map[string]string{
-						"member": "user:ana@example.com", "role": "roles/editor", "project": "",
+						"member": "//iam.origincloudapis.eu/users/u-ana", "role": "roles/editor", "project": "",
 					}),
 					resource.TestCheckTypeSetElemAttrPair("data.origincloud_iam_role_bindings.acme", "role_bindings.*.name", ciBinding, "name"),
 					// The caller's own, shown by their id.
 					resource.TestCheckResourceAttr("data.origincloud_iam_role_bindings.mine", "role_bindings.#", "1"),
-					resource.TestCheckResourceAttr("data.origincloud_iam_role_bindings.mine", "role_bindings.0.member", "userId:u-me"),
-					resource.TestCheckResourceAttr("data.origincloud_iam_role_bindings.mine", "role_bindings.0.role", "roles/owner"),
+					resource.TestCheckResourceAttr("data.origincloud_iam_role_bindings.mine", "role_bindings.0.member", "//iam.origincloudapis.eu/users/u-me"),
+					resource.TestCheckResourceAttr("data.origincloud_iam_role_bindings.mine", "role_bindings.0.role", "//iam.origincloudapis.eu/roles/owner"),
 					resource.TestCheckResourceAttr("data.origincloud_iam_service_accounts.acme", "service_accounts.#", "1"),
 					resource.TestCheckResourceAttrPair("data.origincloud_iam_service_accounts.acme", "service_accounts.0.name", ciServiceAccount, "name"),
 					resource.TestCheckNoResourceAttr("data.origincloud_iam_service_accounts.acme", "service_accounts.0.client_secret"),
@@ -803,7 +643,7 @@ resource "origincloud_iam_service_account" "ci" {
 resource "origincloud_iam_role_binding" "ci" {
   organization = "acme"
   member       = origincloud_iam_service_account.ci.member
-  role         = "roles/viewer"
+  role         = "//iam.origincloudapis.eu/roles/viewer"
 }
 
 data "origincloud_iam_roles" "all" {}

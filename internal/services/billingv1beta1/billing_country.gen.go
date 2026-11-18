@@ -14,6 +14,7 @@ import (
 
 // billingCountryModel is origincloud_billing_billing_country's state.
 type billingCountryModel struct {
+	ID            types.String `tfsdk:"id"`
 	Name          types.String `tfsdk:"name"`
 	RegionCode    types.String `tfsdk:"region_code"`
 	DisplayName   types.String `tfsdk:"display_name"`
@@ -24,6 +25,10 @@ func billingCountrySchema() schema.Schema {
 	return schema.Schema{
 		MarkdownDescription: "A country a billing address may be in.",
 		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				MarkdownDescription: "The billing country's full resource name, `//billing.origincloudapis.eu/billingCountries/{billing_country}`: what an argument that refers to the billing country takes. `name` is the relative name, without the host.",
+				Computed:            true,
+			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "The country's resource name, `billingCountries/{code}`.",
 				Required:            true,
@@ -45,6 +50,11 @@ func billingCountrySchema() schema.Schema {
 }
 
 func billingCountryFromProto(p *v1beta1.BillingCountry, m *billingCountryModel) error {
+	id, err := framework.FullName("billing", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
 	m.RegionCode = types.StringValue(p.GetRegionCode())
 	m.DisplayName = types.StringValue(p.GetDisplayName())
@@ -78,6 +88,10 @@ func billingCountryListSchema() schema.Schema {
 				Computed:            true,
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
+						"id": schema.StringAttribute{
+							MarkdownDescription: "The billing country's full resource name, `//billing.origincloudapis.eu/billingCountries/{billing_country}`: what an argument that refers to the billing country takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema.StringAttribute{
 							MarkdownDescription: "The country's resource name, `billingCountries/{code}`.",
 							Computed:            true,

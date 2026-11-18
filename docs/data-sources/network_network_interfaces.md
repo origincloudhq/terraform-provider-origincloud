@@ -30,14 +30,14 @@ Lists the network interfaces in a zone, oldest first.
 Read-Only:
 
 - `create_time` (String) When the network interface was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `creator` (String) The principal that created the network interface, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.
-- `instance` (String) The instance the interface is attached to; empty while it is `AVAILABLE`. An instance attaches interfaces when it is launched.
+- `creator` (String) The principal that created the network interface, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.
+- `id` (String) The network interface's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/networkInterfaces/{network_interface}`: what an argument that refers to the network interface takes. `name` is the relative name, without the host.
+- `instance` (String) The full name of the instance the interface is attached to, on the compute service; empty while it is `AVAILABLE`. An instance attaches interfaces when it is launched.
 - `ipv4_address` (String) The interface's private IPv4 address.
 - `ipv6_address` (String) The interface's IPv6 address.
 - `name` (String) The interface's resource name.
-- `security_groups` (Set of String) The security groups that filter the interface's traffic, as its security group associations (each a `SecurityGroupAssociation`) set them. The interface admits the traffic any of them allows. With none, it admits and sends nothing except replies to its own traffic and address resolution (ARP and IPv6 neighbor discovery): it is closed.
+- `security_groups` (Set of String) The full names of the security groups that filter the interface's traffic, as its security group associations (each a `SecurityGroupAssociation`) set them. The interface admits the traffic any of them allows. With none, it admits and sends nothing except replies to its own traffic and address resolution (ARP and IPv6 neighbor discovery): it is closed.
 - `source_address_check` (Boolean) Whether a packet the instance sends must carry the interface's own MAC and IP address as its source; `true` when left unset. Turn it off for an instance that forwards traffic for other addresses, such as a router, a NAT instance or a shared virtual IP.
 - `state` (String) Whether the interface is in use. One of `AVAILABLE`, `ATTACHED`.
-- `subnet` (String) The subnet the interface has its addresses in, in the same project and zone.
+- `subnet` (String) The full name of the subnet the interface has its addresses in, in the same project and zone.
 - `tags` (Map of String) Labels of your own, at most 50. The `origin:name` tag is the name the console shows.
-- `urn` (String) The interface's URN, the identifier access policies and the audit log use.

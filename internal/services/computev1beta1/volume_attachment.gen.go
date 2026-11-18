@@ -9,6 +9,7 @@ import (
 	schema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	planmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	stringplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	validator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	types "github.com/hashicorp/terraform-plugin-framework/types"
 	framework "github.com/origincloudhq/terraform-provider-origincloud/internal/framework"
 	v1beta1 "go.origincloud.eu/sdk/compute/v1beta1"
@@ -22,7 +23,6 @@ type volumeAttachmentModel struct {
 	Zone     types.String `tfsdk:"zone"`
 	Instance types.String `tfsdk:"instance"`
 	Name     types.String `tfsdk:"name"`
-	Urn      types.String `tfsdk:"urn"`
 	Volume   types.String `tfsdk:"volume"`
 	Device   types.String `tfsdk:"device"`
 	Boot     types.Bool   `tfsdk:"boot"`
@@ -34,7 +34,7 @@ func volumeAttachmentSchema() schema.Schema {
 		MarkdownDescription: "A volume an instance holds.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The volume attachment's resource name, the same as `name`.",
+				MarkdownDescription: "The volume attachment's full resource name, `//compute.origincloudapis.eu/projects/{project}/zones/{zone}/instances/{instance}/volumeAttachments/{volume_attachment}`: what an argument that refers to the volume attachment takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -58,13 +58,10 @@ func volumeAttachmentSchema() schema.Schema {
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The attachment's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
-			},
 			"volume": schema.StringAttribute{
-				MarkdownDescription: "The volume, in the instance's project and zone. Changing it replaces the volume attachment.",
+				MarkdownDescription: "The volume's full name, in the instance's project and zone. Changing it replaces the volume attachment.",
 				Required:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"device": schema.StringAttribute{
@@ -98,12 +95,15 @@ func volumeAttachmentFromProto(p *v1beta1.VolumeAttachment, m *volumeAttachmentM
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("compute", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Zone = types.StringValue(values[1])
 	m.Instance = types.StringValue(values[2])
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Volume = types.StringValue(p.GetVolume())
 	m.Device = types.StringValue(p.GetDevice())
 	m.Boot = types.BoolValue(p.GetBoot())
@@ -113,12 +113,14 @@ func volumeAttachmentFromProto(p *v1beta1.VolumeAttachment, m *volumeAttachmentM
 
 func volumeAttachmentResource() framework.ResourceSpec[volumeAttachmentModel, *v1beta1.VolumeAttachment] {
 	return framework.ResourceSpec[volumeAttachmentModel, *v1beta1.VolumeAttachment]{
-		TypeName:  "_compute_volume_attachment",
-		Pattern:   "projects/{project}/zones/{zone}/instances/{instance}/volumeAttachments/{volume_attachment}",
-		Schema:    volumeAttachmentSchema(),
-		Name:      func(m *volumeAttachmentModel) string { return m.Name.ValueString() },
-		ToProto:   volumeAttachmentToProto,
-		FromProto: volumeAttachmentFromProto,
+		TypeName:   "_compute_volume_attachment",
+		Pattern:    "projects/{project}/zones/{zone}/instances/{instance}/volumeAttachments/{volume_attachment}",
+		Service:    "compute",
+		References: map[string]string{"volume": "pvs"},
+		Schema:     volumeAttachmentSchema(),
+		Name:       func(m *volumeAttachmentModel) string { return m.Name.ValueString() },
+		ToProto:    volumeAttachmentToProto,
+		FromProto:  volumeAttachmentFromProto,
 		UpdateMask: func(plan, state *volumeAttachmentModel) []string {
 			var mask []string
 			return mask
@@ -145,8 +147,8 @@ func volumeAttachmentResource() framework.ResourceSpec[volumeAttachmentModel, *v
 
 // volumeAttachmentItemModel is an item of origincloud_compute_volume_attachments.
 type volumeAttachmentItemModel struct {
+	ID     types.String `tfsdk:"id"`
 	Name   types.String `tfsdk:"name"`
-	Urn    types.String `tfsdk:"urn"`
 	Volume types.String `tfsdk:"volume"`
 	Device types.String `tfsdk:"device"`
 	Boot   types.Bool   `tfsdk:"boot"`
@@ -154,8 +156,12 @@ type volumeAttachmentItemModel struct {
 }
 
 func volumeAttachmentItemFromProto(p *v1beta1.VolumeAttachment, m *volumeAttachmentItemModel) error {
+	id, err := framework.FullName("compute", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Volume = types.StringValue(p.GetVolume())
 	m.Device = types.StringValue(p.GetDevice())
 	m.Boot = types.BoolValue(p.GetBoot())
@@ -192,16 +198,16 @@ func volumeAttachmentListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The volume attachment's full resource name, `//compute.origincloudapis.eu/projects/{project}/zones/{zone}/instances/{instance}/volumeAttachments/{volume_attachment}`: what an argument that refers to the volume attachment takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "The attachment's resource name.",
 							Computed:            true,
 						},
-						"urn": schema1.StringAttribute{
-							MarkdownDescription: "The attachment's URN, the identifier access policies and the audit log use.",
-							Computed:            true,
-						},
 						"volume": schema1.StringAttribute{
-							MarkdownDescription: "The volume, in the instance's project and zone.",
+							MarkdownDescription: "The volume's full name, in the instance's project and zone.",
 							Computed:            true,
 						},
 						"device": schema1.StringAttribute{

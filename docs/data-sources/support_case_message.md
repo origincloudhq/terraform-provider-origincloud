@@ -21,6 +21,7 @@ One message of a case's conversation.
 
 ### Read-Only
 
-- `author` (String) The principal that wrote the message, such as `user:<id>` or `service_account:<id>`.
+- `author` (String) The principal that wrote the message, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.
 - `body` (String) The message's text. Not empty.
 - `create_time` (String) When the message was added. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
+- `id` (String) The case message's full resource name, `//support.origincloudapis.eu/organizations/{organization}/cases/{case}/messages/{message}`: what an argument that refers to the case message takes. `name` is the relative name, without the host.

@@ -40,7 +40,7 @@ func securityGroupRuleSchema() schema.Schema {
 		MarkdownDescription: "A security group rule: the traffic it allows in one direction, to or from one peer. Set exactly one of `cidr_block`, `peer_security_group` and `same_group`.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The security group rule's resource name, the same as `name`.",
+				MarkdownDescription: "The security group rule's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/securityGroups/{security_group}/rules/{rule}`: what an argument that refers to the security group rule takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -97,9 +97,10 @@ func securityGroupRuleSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()},
 			},
 			"peer_security_group": schema.StringAttribute{
-				MarkdownDescription: "The peer as another security group of the same VPC: its members' addresses. The rule's own group is refused here with `INVALID_ARGUMENT`: it is `same_group`. Changing it replaces the security group rule.",
+				MarkdownDescription: "The peer as another security group of the same VPC, by its full name: its members' addresses. The rule's own group is refused here with `INVALID_ARGUMENT`: it is `same_group`. Changing it replaces the security group rule.",
 				Optional:            true,
 				Computed:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()},
 			},
 			"same_group": schema.BoolAttribute{
@@ -137,7 +138,11 @@ func securityGroupRuleFromProto(p *v1beta1.SecurityGroupRule, m *securityGroupRu
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Region = types.StringValue(values[1])
 	m.SecurityGroup = types.StringValue(values[2])
@@ -155,12 +160,14 @@ func securityGroupRuleFromProto(p *v1beta1.SecurityGroupRule, m *securityGroupRu
 
 func securityGroupRuleResource() framework.ResourceSpec[securityGroupRuleModel, *v1beta1.SecurityGroupRule] {
 	return framework.ResourceSpec[securityGroupRuleModel, *v1beta1.SecurityGroupRule]{
-		TypeName:  "_network_security_group_rule",
-		Pattern:   "projects/{project}/regions/{region}/securityGroups/{security_group}/rules/{rule}",
-		Schema:    securityGroupRuleSchema(),
-		Name:      func(m *securityGroupRuleModel) string { return m.Name.ValueString() },
-		ToProto:   securityGroupRuleToProto,
-		FromProto: securityGroupRuleFromProto,
+		TypeName:   "_network_security_group_rule",
+		Pattern:    "projects/{project}/regions/{region}/securityGroups/{security_group}/rules/{rule}",
+		Service:    "network",
+		References: map[string]string{"peer_security_group": "network"},
+		Schema:     securityGroupRuleSchema(),
+		Name:       func(m *securityGroupRuleModel) string { return m.Name.ValueString() },
+		ToProto:    securityGroupRuleToProto,
+		FromProto:  securityGroupRuleFromProto,
 		UpdateMask: func(plan, state *securityGroupRuleModel) []string {
 			var mask []string
 			return mask
@@ -187,6 +194,7 @@ func securityGroupRuleResource() framework.ResourceSpec[securityGroupRuleModel, 
 
 // securityGroupRuleItemModel is an item of origincloud_network_security_group_rules.
 type securityGroupRuleItemModel struct {
+	ID                types.String `tfsdk:"id"`
 	Name              types.String `tfsdk:"name"`
 	Direction         types.String `tfsdk:"direction"`
 	Protocol          types.String `tfsdk:"protocol"`
@@ -199,6 +207,11 @@ type securityGroupRuleItemModel struct {
 }
 
 func securityGroupRuleItemFromProto(p *v1beta1.SecurityGroupRule, m *securityGroupRuleItemModel) error {
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
 	m.Direction = types.StringValue(p.GetDirection().String())
 	m.Protocol = types.StringValue(p.GetProtocol().String())
@@ -240,6 +253,10 @@ func securityGroupRuleListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The security group rule's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/securityGroups/{security_group}/rules/{rule}`: what an argument that refers to the security group rule takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "The rule's resource name.",
 							Computed:            true,
@@ -265,7 +282,7 @@ func securityGroupRuleListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"peer_security_group": schema1.StringAttribute{
-							MarkdownDescription: "The peer as another security group of the same VPC: its members' addresses. The rule's own group is refused here with `INVALID_ARGUMENT`: it is `same_group`.",
+							MarkdownDescription: "The peer as another security group of the same VPC, by its full name: its members' addresses. The rule's own group is refused here with `INVALID_ARGUMENT`: it is `same_group`.",
 							Computed:            true,
 						},
 						"same_group": schema1.BoolAttribute{

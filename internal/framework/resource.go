@@ -59,6 +59,14 @@ type ResourceSpec[M any, P proto.Message] struct {
 	// own set and clear, rather than an update.
 	Toggles []Toggle[M, P]
 
+	// Service is the short code of the service the resource is on, such as
+	// "pvs": its full name is //{service}.origincloudapis.eu/{name}.
+	Service string
+	// References are the attributes of the state that hold another
+	// resource's name, and the short code of the service that resource is
+	// on, for the upgrade of a state that held them relative.
+	References map[string]string
+
 	// Pattern is the pattern of the resource's names, which an imported
 	// name must have, such as projects/{project}/zones/{zone}/volumes/{volume}.
 	Pattern string
@@ -125,9 +133,10 @@ type Resource[M any, P proto.Message] struct {
 }
 
 var (
-	_ resource.ResourceWithConfigure   = (*Resource[struct{}, proto.Message])(nil)
-	_ resource.ResourceWithImportState = (*Resource[struct{}, proto.Message])(nil)
-	_ resource.ResourceWithModifyPlan  = (*Resource[struct{}, proto.Message])(nil)
+	_ resource.ResourceWithConfigure    = (*Resource[struct{}, proto.Message])(nil)
+	_ resource.ResourceWithImportState  = (*Resource[struct{}, proto.Message])(nil)
+	_ resource.ResourceWithModifyPlan   = (*Resource[struct{}, proto.Message])(nil)
+	_ resource.ResourceWithUpgradeState = (*Resource[struct{}, proto.Message])(nil)
 )
 
 func (r *Resource[M, P]) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -136,6 +145,7 @@ func (r *Resource[M, P]) Metadata(_ context.Context, req resource.MetadataReques
 
 func (r *Resource[M, P]) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = r.spec.Schema
+	resp.Schema.Version = StateVersion
 }
 
 func (r *Resource[M, P]) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -425,17 +435,34 @@ func (r *Resource[M, P]) clearBeforeDelete(ctx context.Context, name string) (bo
 	return false, nil
 }
 
-// ImportState adopts a resource by its resource name, such as
-// projects/my-project/zones/eu-central1-az1/volumes/vol-1: Terraform
-// reads the rest after.
+// ImportState adopts a resource by its full resource name, such as
+// //pvs.origincloudapis.eu/projects/my-project/zones/eu-central1-az1/volumes/vol-1,
+// or by its relative one, without the host: Terraform reads the rest after.
 func (r *Resource[M, P]) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	if r.spec.Pattern != "" {
-		if _, err := NameValues(r.spec.Pattern, req.ID); err != nil {
-			resp.Diagnostics.AddError(r.summary("import"), err.Error())
-			return
+	name, err := r.importName(req.ID)
+	if err != nil {
+		resp.Diagnostics.AddError(r.summary("import"), err.Error())
+		return
+	}
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("name"), name)...)
+}
+
+// importName returns the relative name of the resource an import names, in
+// either form; it must have the resource's pattern.
+func (r *Resource[M, P]) importName(id string) (string, error) {
+	name := id
+	if r.spec.Service != "" {
+		var err error
+		if name, err = RelativeName(r.spec.Service, id); err != nil {
+			return "", err
 		}
 	}
-	resource.ImportStatePassthroughID(ctx, path.Root("name"), req, resp)
+	if r.spec.Pattern != "" {
+		if _, err := NameValues(r.spec.Pattern, name); err != nil {
+			return "", err
+		}
+	}
+	return name, nil
 }
 
 func (r *Resource[M, P]) summary(verb string) string {

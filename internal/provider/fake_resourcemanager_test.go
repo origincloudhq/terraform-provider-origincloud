@@ -89,7 +89,7 @@ func (f *fakeResourceManager) serve(w http.ResponseWriter, r *http.Request) {
 		f.createOrganization(w, body)
 	case len(s) == 2 && s[0] == "organizations" && r.Method == http.MethodDelete:
 		for _, p := range f.projects {
-			if p.GetOrganization() == path {
+			if relativeName(p.GetOrganization()) == path {
 				writeError(w, http.StatusConflict, "CONFLICT", path+" still has a project: delete its projects first")
 				return
 			}
@@ -100,8 +100,8 @@ func (f *fakeResourceManager) serve(w http.ResponseWriter, r *http.Request) {
 	case len(s) == 3 && s[0] == "organizations" && s[2] == "quota" && r.Method == http.MethodGet:
 		f.organizationQuota(w, strings.TrimSuffix(path, "/quota"))
 	case path == "projects" && r.Method == http.MethodGet:
-		organization := r.URL.Query().Get("organization")
-		items, next := page(f.projects, "projects/", r, func(p *resourcemanagerv1beta1.Project) bool { return p.GetOrganization() == organization })
+		organization := relativeName(r.URL.Query().Get("organization"))
+		items, next := page(f.projects, "projects/", r, func(p *resourcemanagerv1beta1.Project) bool { return relativeName(p.GetOrganization()) == organization })
 		writeMessage(w, &resourcemanagerv1beta1.ListProjectsResponse{Projects: items, NextPageToken: next})
 	case path == "projects" && r.Method == http.MethodPost:
 		f.createProject(w, r.URL.Query().Get("projectId"), body)
@@ -124,7 +124,6 @@ func (f *fakeResourceManager) createOrganization(w http.ResponseWriter, body []b
 	}
 	f.next++
 	organization.Name = fmt.Sprintf("organizations/org-%d", f.next)
-	organization.Urn = "urn:origincloud:resourcemanager:organization/" + organization.Name
 	organization.Creator = "user:test"
 	organization.CreateTime = timestamppb.New(time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))
 	organization.State = resourcemanagerv1beta1.Organization_ACTIVE
@@ -138,7 +137,7 @@ func (f *fakeResourceManager) createProject(w http.ResponseWriter, id string, bo
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
 		return
 	}
-	if organization, ok := f.organizations[project.GetOrganization()]; !ok || organization.GetState() != resourcemanagerv1beta1.Organization_ACTIVE {
+	if organization, ok := f.organizations[relativeName(project.GetOrganization())]; !ok || organization.GetState() != resourcemanagerv1beta1.Organization_ACTIVE {
 		writeError(w, http.StatusBadRequest, "FAILED_PRECONDITION", project.GetOrganization()+" isn't an ACTIVE organization")
 		return
 	}
@@ -148,7 +147,6 @@ func (f *fakeResourceManager) createProject(w http.ResponseWriter, id string, bo
 	}
 	f.used[id] = true
 	project.Name = "projects/" + id
-	project.Urn = "urn:origincloud:resourcemanager:project/" + project.Name
 	project.Creator = "user:test"
 	project.CreateTime = timestamppb.New(time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))
 	f.projects[project.Name] = project
@@ -186,7 +184,7 @@ func (f *fakeResourceManager) organizationQuota(w http.ResponseWriter, organizat
 		Usage: &resourcemanagerv1beta1.QuotaUsage{},
 	}
 	for name, project := range f.projects {
-		if project.GetOrganization() == organization {
+		if relativeName(project.GetOrganization()) == organization {
 			usage := f.quotas[name+"/quota"].GetUsage()
 			quota.Usage.Instances += usage.GetInstances()
 			quota.Usage.Vcpu += usage.GetVcpu()

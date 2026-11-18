@@ -23,8 +23,8 @@ resource "origincloud_iam_service_account" "deploy" {
 resource "origincloud_iam_role_binding" "deploy" {
   organization = "my-org-123"
   member       = origincloud_iam_service_account.deploy.member
-  role         = "roles/editor"
-  project      = "projects/my-project-123"
+  role         = "//iam.origincloudapis.eu/roles/editor"
+  project      = "//resourcemanager.origincloudapis.eu/projects/my-project-123"
 }
 
 # GitHub Actions jobs of one repository, on its main branch. repository_id
@@ -71,9 +71,9 @@ resource "origincloud_iam_federated_credential" "gitlab" {
 ### Read-Only
 
 - `create_time` (String) When the federated credential was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `creator` (String) Who created the federated credential, written as a role binding's member is.
+- `creator` (String) The full name of who created the federated credential: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, `//iam.origincloudapis.eu/serviceAgents/{service_agent}` for a platform service agent, or `//iam.origincloudapis.eu/services/{service}` for a change the platform made itself.
 - `delete_time` (String) When the federated credential was deleted; unset while it is active. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `id` (String) The federated credential's resource name, the same as `name`.
+- `id` (String) The federated credential's full resource name, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}/federatedCredentials/{federated_credential}`: what an argument that refers to the federated credential takes. `name` is the relative name, without the host.
 - `name` (String) The federated credential's resource name.
 - `state` (String) Where the federated credential is in its lifecycle. One of `ACTIVE`, `DELETED`.
 
@@ -84,6 +84,6 @@ Import is supported using the following syntax:
 The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
-# A federated credential is imported by its resource name.
-terraform import origincloud_iam_federated_credential.github organizations/my-org-123/serviceAccounts/sa-1a2b3c/federatedCredentials/fc-4d5e6f
+# A federated credential is imported by its full resource name, or its relative one.
+terraform import origincloud_iam_federated_credential.github //iam.origincloudapis.eu/organizations/my-org-123/serviceAccounts/sa-1a2b3c/federatedCredentials/fc-4d5e6f
 ```

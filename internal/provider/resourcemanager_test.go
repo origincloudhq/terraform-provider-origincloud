@@ -55,7 +55,7 @@ func TestProjectsAreCreatedWithTheirIdUpdatedImportedAndDeleted(t *testing.T) {
 	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
 	fake := newFakeResourceManager(t)
 	prod := func(organization, id, name string) string {
-		return fmt.Sprintf(`organization = origincloud_resourcemanager_organization.%s.name
+		return fmt.Sprintf(`organization = origincloud_resourcemanager_organization.%s.id
   project_id   = %q
   display_name = %q`, organization, id, name)
 	}
@@ -71,9 +71,9 @@ func TestProjectsAreCreatedWithTheirIdUpdatedImportedAndDeleted(t *testing.T) {
 					resource.TestCheckResourceAttr(acmeOrganization, "state", "ACTIVE"),
 					resource.TestCheckResourceAttr(acmeOrganization, "create_time", "2026-11-01T12:00:00Z"),
 					resource.TestCheckResourceAttr(prodProject, "name", "projects/acme-prod"),
-					resource.TestCheckResourceAttr(prodProject, "id", "projects/acme-prod"),
+					resource.TestCheckResourceAttr(prodProject, "id", "//resourcemanager.origincloudapis.eu/projects/acme-prod"),
 					resource.TestCheckResourceAttr(prodProject, "project_id", "acme-prod"),
-					resource.TestCheckResourceAttrPair(prodProject, "organization", acmeOrganization, "name"),
+					resource.TestCheckResourceAttrPair(prodProject, "organization", acmeOrganization, "id"),
 					resource.TestCheckResourceAttr(prodProject, "creator", "user:test"),
 				),
 			},
@@ -120,14 +120,14 @@ func TestProjectsAreCreatedWithTheirIdUpdatedImportedAndDeleted(t *testing.T) {
 				}},
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(prodProject, "name", "projects/acme-prod-2"),
-					resource.TestCheckResourceAttrPair(prodProject, "organization", "origincloud_resourcemanager_organization.other", "name"),
+					resource.TestCheckResourceAttrPair(prodProject, "organization", "origincloud_resourcemanager_organization.other", "id"),
 				),
 			},
 			// The deleted project's id is refused by the API.
 			{
 				Config: resourceManagerConfig(fake, "Acme GmbH", prod("other", "acme-prod-2", "Production EU")) + `
 resource "origincloud_resourcemanager_project" "again" {
-  organization = origincloud_resourcemanager_organization.acme.name
+  organization = origincloud_resourcemanager_organization.acme.id
   project_id   = "acme-prod"
   display_name = "Production again"
 }
@@ -191,13 +191,13 @@ resource "origincloud_resourcemanager_organization" "empty" {
 }
 
 resource "origincloud_resourcemanager_project" "prod" {
-  organization = origincloud_resourcemanager_organization.acme.name
+  organization = origincloud_resourcemanager_organization.acme.id
   project_id   = "acme-prod"
   display_name = "Production"
 }
 
 resource "origincloud_resourcemanager_project" "dev" {
-  organization = origincloud_resourcemanager_organization.acme.name
+  organization = origincloud_resourcemanager_organization.acme.id
   project_id   = "acme-dev"
   display_name = "Development"
   depends_on   = [origincloud_resourcemanager_project.prod]
@@ -220,12 +220,12 @@ data "origincloud_resourcemanager_organizations" "all" {
 }
 
 data "origincloud_resourcemanager_projects" "acme" {
-  organization = origincloud_resourcemanager_organization.acme.name
+  organization = origincloud_resourcemanager_organization.acme.id
   depends_on   = [origincloud_resourcemanager_project.dev]
 }
 
 data "origincloud_resourcemanager_projects" "empty" {
-  organization = origincloud_resourcemanager_organization.empty.name
+  organization = origincloud_resourcemanager_organization.empty.id
 }
 `
 	quota := "origincloud_resourcemanager_project_quota.prod"
@@ -261,7 +261,7 @@ data "origincloud_resourcemanager_projects" "empty" {
 					resource.TestCheckResourceAttr("data.origincloud_resourcemanager_projects.acme", "projects.#", "2"),
 					// Sorted by name in the fake: acme-dev, then acme-prod.
 					resource.TestCheckResourceAttr("data.origincloud_resourcemanager_projects.acme", "projects.0.display_name", "Development"),
-					resource.TestCheckResourceAttrPair("data.origincloud_resourcemanager_projects.acme", "projects.1.organization", acmeOrganization, "name"),
+					resource.TestCheckResourceAttrPair("data.origincloud_resourcemanager_projects.acme", "projects.1.organization", acmeOrganization, "id"),
 				),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("data.origincloud_resourcemanager_projects.empty", tfjsonpath.New("projects"), knownvalue.ListSizeExact(0)),
@@ -332,7 +332,7 @@ resource "origincloud_resourcemanager_organization" "acme" {
 }
 
 resource "origincloud_resourcemanager_project" "prod" {
-  organization = origincloud_resourcemanager_organization.acme.name
+  organization = origincloud_resourcemanager_organization.acme.id
   project_id   = "acme-prod"
   display_name = "Production"
 }

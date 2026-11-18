@@ -51,7 +51,7 @@ resource "origincloud_dns_record_set" "apex" {
   dns_name    = "example.com"
   type        = "A"
   ttl         = "300s"
-  alias       = { floating_ip = origincloud_network_floating_ip.web.name }
+  alias       = { floating_ip = origincloud_network_floating_ip.web.id }
 }
 ```
 
@@ -74,17 +74,16 @@ resource "origincloud_dns_record_set" "apex" {
 ### Read-Only
 
 - `create_time` (String) When the record set was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `id` (String) The record set's resource name, the same as `name`.
+- `id` (String) The record set's full resource name, `//dns.origincloudapis.eu/projects/{project}/hostedZones/{hosted_zone}/recordSets/{record_set}`: what an argument that refers to the record set takes. `name` is the relative name, without the host.
 - `name` (String) The record set's resource name.
 - `update_time` (String) When the record set was last changed. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `urn` (String) The record set's URN, the identifier access policies and the audit log use.
 
 <a id="nestedatt--alias"></a>
 ### Nested Schema for `alias`
 
 Required:
 
-- `floating_ip` (String) The Floating IP whose address the record set answers with, in the zone's project. A Floating IP's address is an IPv4 address, so the record set is of type `A`; an `AAAA` alias is refused.
+- `floating_ip` (String) The full name of the Floating IP whose address the record set answers with, in the zone's project. A Floating IP's address is an IPv4 address, so the record set is of type `A`; an `AAAA` alias is refused.
 
 
 <a id="nestedatt--basic"></a>
@@ -103,6 +102,6 @@ Import is supported using the following syntax:
 The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
-# A record set is imported by its resource name.
-terraform import origincloud_dns_record_set.www projects/my-project-123/hostedZones/hz-XEkE66gA3ma/recordSets/rrset-XGFinQHdETZ
+# A record set is imported by its full resource name, or its relative one.
+terraform import origincloud_dns_record_set.www //dns.origincloudapis.eu/projects/my-project-123/hostedZones/hz-XEkE66gA3ma/recordSets/rrset-XGFinQHdETZ
 ```

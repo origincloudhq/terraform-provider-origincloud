@@ -14,6 +14,7 @@ import (
 
 // storageClassModel is origincloud_pvs_storage_class's state.
 type storageClassModel struct {
+	ID                      types.String `tfsdk:"id"`
 	Name                    types.String `tfsdk:"name"`
 	DisplayName             types.String `tfsdk:"display_name"`
 	Media                   types.String `tfsdk:"media"`
@@ -27,6 +28,10 @@ func storageClassSchema() schema.Schema {
 	return schema.Schema{
 		MarkdownDescription: "A storage tier a volume is created in.",
 		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				MarkdownDescription: "The storage class's full resource name, `//pvs.origincloudapis.eu/storageClasses/{storage_class}`: what an argument that refers to the storage class takes. `name` is the relative name, without the host.",
+				Computed:            true,
+			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "The class's resource name, `storageClasses/gp1`.",
 				Required:            true,
@@ -60,6 +65,11 @@ func storageClassSchema() schema.Schema {
 }
 
 func storageClassFromProto(p *v1beta1.StorageClass, m *storageClassModel) error {
+	id, err := framework.FullName("pvs", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
 	m.DisplayName = types.StringValue(p.GetDisplayName())
 	m.Media = types.StringValue(p.GetMedia().String())
@@ -96,6 +106,10 @@ func storageClassListSchema() schema.Schema {
 				Computed:            true,
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
+						"id": schema.StringAttribute{
+							MarkdownDescription: "The storage class's full resource name, `//pvs.origincloudapis.eu/storageClasses/{storage_class}`: what an argument that refers to the storage class takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema.StringAttribute{
 							MarkdownDescription: "The class's resource name, `storageClasses/gp1`.",
 							Computed:            true,

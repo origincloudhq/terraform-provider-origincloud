@@ -24,10 +24,10 @@ A route: traffic to `destination` leaves through one gateway. Set exactly one of
 
 ### Optional
 
-- `internet_gateway` (String) The internet gateway of the table's VPC to send the traffic to. Changing it replaces the route.
-- `nat_gateway` (String) The NAT gateway in the table's VPC to send the traffic to, for the IPv4 default route only: a NAT gateway translates IPv4 only. Named in the gateway's own zone; a name with another zone is refused with `INVALID_ARGUMENT`. Changing it replaces the route.
+- `internet_gateway` (String) The full name of the internet gateway of the table's VPC to send the traffic to. Changing it replaces the route.
+- `nat_gateway` (String) The full name of the NAT gateway in the table's VPC to send the traffic to, for the IPv4 default route only: a NAT gateway translates IPv4 only. Named in the gateway's own zone; a name with another zone is refused with `INVALID_ARGUMENT`. Changing it replaces the route.
 
 ### Read-Only
 
-- `id` (String) The route's resource name, the same as `name`.
+- `id` (String) The route's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/routeTables/{route_table}/routes/{route}`: what an argument that refers to the route takes. `name` is the relative name, without the host.
 - `name` (String) The route's resource name.

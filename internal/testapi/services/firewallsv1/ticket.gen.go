@@ -14,6 +14,7 @@ import (
 
 // ticketModel is origincloud_vaults_ticket's state.
 type ticketModel struct {
+	ID      types.String `tfsdk:"id"`
 	Name    types.String `tfsdk:"name"`
 	Subject types.String `tfsdk:"subject"`
 }
@@ -22,6 +23,10 @@ func ticketSchema() schema.Schema {
 	return schema.Schema{
 		MarkdownDescription: "",
 		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				MarkdownDescription: "The ticket's full resource name, `//vaults.origincloudapis.eu/vaults/{vault}/tickets/{ticket}`: what an argument that refers to the ticket takes. `name` is the relative name, without the host.",
+				Computed:            true,
+			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "",
 				Required:            true,
@@ -35,6 +40,11 @@ func ticketSchema() schema.Schema {
 }
 
 func ticketFromProto(p *firewallsv1.Ticket, m *ticketModel) error {
+	id, err := framework.FullName("vaults", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
 	m.Subject = types.StringValue(p.GetSubject())
 	return nil
@@ -71,6 +81,10 @@ func ticketListSchema() schema.Schema {
 				Computed:            true,
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
+						"id": schema.StringAttribute{
+							MarkdownDescription: "The ticket's full resource name, `//vaults.origincloudapis.eu/vaults/{vault}/tickets/{ticket}`: what an argument that refers to the ticket takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema.StringAttribute{
 							MarkdownDescription: "",
 							Computed:            true,
