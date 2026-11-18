@@ -19,7 +19,7 @@ Rules that allow traffic to and from the network interfaces associated with the 
 
 - `project` (String) The project the security group is in. Changing it replaces the security group.
 - `region` (String) The region the security group is in. Changing it replaces the security group.
-- `vpc` (String) The VPC the group belongs to, in the same project and region. Changing it replaces the security group.
+- `vpc` (String) The full name of the VPC the group belongs to, in the same project and region. Changing it replaces the security group.
 
 ### Optional
 
@@ -28,8 +28,7 @@ Rules that allow traffic to and from the network interfaces associated with the 
 ### Read-Only
 
 - `create_time` (String) When the security group was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `creator` (String) The principal that created the security group, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.
-- `id` (String) The security group's resource name, the same as `name`.
+- `creator` (String) The principal that created the security group, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.
+- `id` (String) The security group's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/securityGroups/{security_group}`: what an argument that refers to the security group takes. `name` is the relative name, without the host.
 - `name` (String) The group's resource name.
-- `urn` (String) The group's URN, the identifier access policies and the audit log use.
 - `vpc_default` (Boolean) Whether the platform created the group with the VPC. Only the project's default VPC has such resources. It can't be deleted, and goes with its VPC.

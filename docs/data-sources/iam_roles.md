@@ -26,6 +26,6 @@ Read-Only:
 
 - `description` (String) What holding the role allows, in a sentence.
 - `display_name` (String) The name the console shows, such as `Owner`.
-- `included_permissions` (List of String) The permissions the role grants, `permissions/{permission}`, in catalog order.
+- `id` (String) The role's full resource name, `//iam.origincloudapis.eu/roles/{role}`: what an argument that refers to the role takes. `name` is the relative name, without the host.
+- `included_permissions` (List of String) The full names of the permissions the role grants, `//iam.origincloudapis.eu/permissions/{permission}`, in catalog order.
 - `name` (String) The role's resource name, such as `roles/owner`, `roles/viewer` or `roles/billing.administrator`. A role binding names its role by it.
-- `urn` (String) The role's URN, the identifier access policies and the audit log use.

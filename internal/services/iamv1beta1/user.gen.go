@@ -14,6 +14,7 @@ import (
 
 // userModel is origincloud_iam_user's state.
 type userModel struct {
+	ID            types.String `tfsdk:"id"`
 	Name          types.String `tfsdk:"name"`
 	Member        types.String `tfsdk:"member"`
 	Email         types.String `tfsdk:"email"`
@@ -26,12 +27,16 @@ func userSchema() schema.Schema {
 	return schema.Schema{
 		MarkdownDescription: "A person who signs in to the platform.",
 		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				MarkdownDescription: "The user's full resource name, `//iam.origincloudapis.eu/users/{user}`: what an argument that refers to the user takes. `name` is the relative name, without the host.",
+				Computed:            true,
+			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "The user's resource name, `users/{user}`, with their id; never `users/me`.",
 				Required:            true,
 			},
 			"member": schema.StringAttribute{
-				MarkdownDescription: "How a role binding shows the user: `user:{email}` once `email` is verified, `userId:{user}` until then.",
+				MarkdownDescription: "The user's full name, `//iam.origincloudapis.eu/users/{user}`, which a role binding names them by as a member.",
 				Computed:            true,
 			},
 			"email": schema.StringAttribute{
@@ -55,6 +60,11 @@ func userSchema() schema.Schema {
 }
 
 func userFromProto(p *v1beta1.User, m *userModel) error {
+	id, err := framework.FullName("iam", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
 	m.Member = types.StringValue(p.GetMember())
 	m.Email = types.StringValue(p.GetEmail())

@@ -23,7 +23,6 @@ type securityGroupModel struct {
 	Project    types.String `tfsdk:"project"`
 	Region     types.String `tfsdk:"region"`
 	Name       types.String `tfsdk:"name"`
-	Urn        types.String `tfsdk:"urn"`
 	Vpc        types.String `tfsdk:"vpc"`
 	VpcDefault types.Bool   `tfsdk:"vpc_default"`
 	CreateTime types.String `tfsdk:"create_time"`
@@ -36,7 +35,7 @@ func securityGroupSchema() schema.Schema {
 		MarkdownDescription: "Rules that allow traffic to and from the network interfaces associated with the group.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The security group's resource name, the same as `name`.",
+				MarkdownDescription: "The security group's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/securityGroups/{security_group}`: what an argument that refers to the security group takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -55,13 +54,10 @@ func securityGroupSchema() schema.Schema {
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The group's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
-			},
 			"vpc": schema.StringAttribute{
-				MarkdownDescription: "The VPC the group belongs to, in the same project and region. Changing it replaces the security group.",
+				MarkdownDescription: "The full name of the VPC the group belongs to, in the same project and region. Changing it replaces the security group.",
 				Required:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"vpc_default": schema.BoolAttribute{
@@ -73,7 +69,7 @@ func securityGroupSchema() schema.Schema {
 				Computed:            true,
 			},
 			"creator": schema.StringAttribute{
-				MarkdownDescription: "The principal that created the security group, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.",
+				MarkdownDescription: "The principal that created the security group, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 				Computed:            true,
 			},
 			"tags": schema.MapAttribute{
@@ -99,11 +95,14 @@ func securityGroupFromProto(p *v1beta1.SecurityGroup, m *securityGroupModel) err
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Region = types.StringValue(values[1])
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Vpc = types.StringValue(p.GetVpc())
 	m.VpcDefault = types.BoolValue(p.GetVpcDefault())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
@@ -114,12 +113,14 @@ func securityGroupFromProto(p *v1beta1.SecurityGroup, m *securityGroupModel) err
 
 func securityGroupResource() framework.ResourceSpec[securityGroupModel, *v1beta1.SecurityGroup] {
 	return framework.ResourceSpec[securityGroupModel, *v1beta1.SecurityGroup]{
-		TypeName:  "_network_security_group",
-		Pattern:   "projects/{project}/regions/{region}/securityGroups/{security_group}",
-		Schema:    securityGroupSchema(),
-		Name:      func(m *securityGroupModel) string { return m.Name.ValueString() },
-		ToProto:   securityGroupToProto,
-		FromProto: securityGroupFromProto,
+		TypeName:   "_network_security_group",
+		Pattern:    "projects/{project}/regions/{region}/securityGroups/{security_group}",
+		Service:    "network",
+		References: map[string]string{"vpc": "network"},
+		Schema:     securityGroupSchema(),
+		Name:       func(m *securityGroupModel) string { return m.Name.ValueString() },
+		ToProto:    securityGroupToProto,
+		FromProto:  securityGroupFromProto,
 		UpdateMask: func(plan, state *securityGroupModel) []string {
 			var mask []string
 			if !plan.Tags.Equal(state.Tags) {
@@ -156,8 +157,8 @@ func securityGroupResource() framework.ResourceSpec[securityGroupModel, *v1beta1
 
 // securityGroupItemModel is an item of origincloud_network_security_groups.
 type securityGroupItemModel struct {
+	ID         types.String `tfsdk:"id"`
 	Name       types.String `tfsdk:"name"`
-	Urn        types.String `tfsdk:"urn"`
 	Vpc        types.String `tfsdk:"vpc"`
 	VpcDefault types.Bool   `tfsdk:"vpc_default"`
 	CreateTime types.String `tfsdk:"create_time"`
@@ -166,8 +167,12 @@ type securityGroupItemModel struct {
 }
 
 func securityGroupItemFromProto(p *v1beta1.SecurityGroup, m *securityGroupItemModel) error {
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Vpc = types.StringValue(p.GetVpc())
 	m.VpcDefault = types.BoolValue(p.GetVpcDefault())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
@@ -200,16 +205,16 @@ func securityGroupListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The security group's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/securityGroups/{security_group}`: what an argument that refers to the security group takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "The group's resource name.",
 							Computed:            true,
 						},
-						"urn": schema1.StringAttribute{
-							MarkdownDescription: "The group's URN, the identifier access policies and the audit log use.",
-							Computed:            true,
-						},
 						"vpc": schema1.StringAttribute{
-							MarkdownDescription: "The VPC the group belongs to, in the same project and region.",
+							MarkdownDescription: "The full name of the VPC the group belongs to, in the same project and region.",
 							Computed:            true,
 						},
 						"vpc_default": schema1.BoolAttribute{
@@ -221,7 +226,7 @@ func securityGroupListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"creator": schema1.StringAttribute{
-							MarkdownDescription: "The principal that created the security group, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.",
+							MarkdownDescription: "The principal that created the security group, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 							Computed:            true,
 						},
 						"tags": schema1.MapAttribute{

@@ -38,5 +38,6 @@ Read-Only:
 - `baseline_throughput_mibps` (Number) The MiB per second a volume of the class is limited to; 0 for a class not on sale.
 - `default_class` (Boolean) Whether a volume created without a storage class is created in this one.
 - `display_name` (String) The name the console shows.
+- `id` (String) The storage class's full resource name, `//pvs.origincloudapis.eu/storageClasses/{storage_class}`: what an argument that refers to the storage class takes. `name` is the relative name, without the host.
 - `media` (String) The media the class is backed by. One of `SSD`, `HDD`.
 - `name` (String) The class's resource name, `storageClasses/gp1`.

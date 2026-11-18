@@ -22,9 +22,10 @@ One recorded change.
 ### Read-Only
 
 - `action` (String) What was done, as a permission key names it, such as `iam.role.assign`.
-- `actor` (String) Who made the change, as it was when the change was made: `user:{email}` with the verified address the account had then, `userId:{user}` when none was recorded, `serviceAccount:{service_account}`, or `platform` for a change the platform made itself. A later change of address doesn't change it.
+- `actor` (String) The full name of who made the change: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, `//iam.origincloudapis.eu/serviceAgents/{service_agent}` for a platform service agent, or `//iam.origincloudapis.eu/services/{service}` for a change the platform made itself.
 - `details` (Map of String) Details of the change that depend on the action, such as the `role` granted or a service account's `display_name`.
+- `id` (String) The audit log entry's full resource name, `//iam.origincloudapis.eu/organizations/{organization}/auditLogEntries/{audit_log_entry}`: what an argument that refers to the audit log entry takes. `name` is the relative name, without the host.
 - `occur_time` (String) When the change was made. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `outcome` (String) Whether the change was made. One of `SUCCEEDED`, `DENIED`.
-- `project` (String) The project the change was limited to, `projects/{project}`; empty for a change to the whole organization.
-- `target` (String) What it was done to, written as `actor` is, or the email address invited; empty when the action has no target.
+- `outcome` (String) Whether the change was made. One of `SUCCEEDED`, `DENIED`, `FAILED`.
+- `project` (String) The full name of the project the change was limited to, `//resourcemanager.origincloudapis.eu/projects/{project}`; empty for a change to the whole organization.
+- `target` (String) The full name of what it was done to, such as a member's, or the email address invited; empty when the action has no target.

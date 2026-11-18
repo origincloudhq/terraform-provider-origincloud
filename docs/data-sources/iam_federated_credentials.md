@@ -32,9 +32,10 @@ Read-Only:
 - `audience` (String) The audience a token must be issued for, its `aud`, matched exactly; `https://sts.origincloudapis.eu` when the create leaves it empty.
 - `conditions` (Map of String) The claims a token must carry, each with exactly this value, such as `repository_id` and `environment` for GitHub Actions. At least one, on an identity that never changes.
 - `create_time` (String) When the federated credential was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `creator` (String) Who created the federated credential, written as a role binding's member is.
+- `creator` (String) The full name of who created the federated credential: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, `//iam.origincloudapis.eu/serviceAgents/{service_agent}` for a platform service agent, or `//iam.origincloudapis.eu/services/{service}` for a change the platform made itself.
 - `delete_time` (String) When the federated credential was deleted; unset while it is active. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
 - `display_name` (String) A name of your own, shown in the console; at most 100 characters.
+- `id` (String) The federated credential's full resource name, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}/federatedCredentials/{federated_credential}`: what an argument that refers to the federated credential takes. `name` is the relative name, without the host.
 - `issuer` (String) The identity provider whose tokens are trusted: a token's `iss`, matched exactly, an `https` URL that serves `/.well-known/openid-configuration`, such as `https://token.actions.githubusercontent.com`.
 - `name` (String) The federated credential's resource name.
 - `state` (String) Where the federated credential is in its lifecycle. One of `ACTIVE`, `DELETED`.

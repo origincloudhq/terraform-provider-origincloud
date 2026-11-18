@@ -72,10 +72,24 @@ to the plugin or `internal/framework`.
   empty: set to `[]` or `{}`, it is sent empty, and so is one it owns that
   the configuration no longer sets. A singleton with a create fails
   generation. A singleton the service doesn't update is a data source.
-- An imported name must have the resource's pattern.
+- A resource's `id` is its full resource name (AIP-122),
+  `//{service}.origincloudapis.eu/{relative name}`, built from the `name` the
+  API answers with, which stays the relative name; a data source has one too.
+  An imported name must have the resource's pattern, given in either form:
+  the full name must be on the resource's own service.
 - A field referring to another resource (`google.api.resource_reference`) is
-  a string the API checks, so a reference that may take several patterns
-  needs nothing of its own.
+  a string the API checks, and takes a full name: the plan refuses a relative
+  one, so that a configuration written before can't replace a resource whose
+  reference the API now answers in full. A reference that may take several
+  patterns needs nothing of its own.
+- The state's schema has a version, `framework.StateVersion`, and a
+  permanent upgrade from every earlier one, in `internal/framework/names.go`:
+  version 0 held the relative name as `id` and a `urn`, and the references
+  relative. It rewrites the `id`, and the references of the types the API
+  names, to full names, and drops what the schema no longer has. A change of
+  a resource's state that needs its own upgrade raises the version and keeps
+  this one. `testdata/v0.18.0` holds a state a release wrote, which the
+  tests upgrade and plan.
 - A resource type the service also lists (`List<plural>`, AIP-132) gets a
   second data source named after its plural, such as
   `origincloud_pvs_volumes`, that reads every page of the list. The name's
@@ -158,6 +172,7 @@ to the plugin or `internal/framework`.
     chose would differ from the one set;
   - `UNORDERED_LIST` on a field that isn't repeated, and an `IDENTIFIER` in a
     nested message.
+- A `google.type.Date` is a string such as `2026-11-01`.
 - A `google.protobuf.Timestamp` is a string in RFC 3339, such as
   `2026-11-01T12:00:00Z`, and a `google.protobuf.Duration` a string in
   seconds, such as `90s`: their JSON forms. Unset is null, a settable one is
@@ -196,9 +211,8 @@ to the plugin or `internal/framework`.
   An imported resource has none, and
   data sources leave it out: no read answers with it.
 - A required, immutable string the API answers in a form of its own, such
-  as a role binding's `member` (`user:Mail@Example.com` is answered as
-  `user:mail@example.com`, and later with the user's new address), is
-  **spelled**: the state keeps the value configured while the API's answer
+  as a hosted zone's `dns_name` (`Example.COM` is answered as `example.com`),
+  is **spelled**: the state keeps the value configured while the API's answer
   names the same thing, as the framework's `Spelling` for it says, and
   records the answer in the resource's private state, so that a
   configuration changed to it doesn't replace the resource either; only a

@@ -89,7 +89,7 @@ data "origincloud_billing_billing_country" "at" {
   name = "billingCountries/AT"
 }
 `
-	research := researchAccount + ".name"
+	research := researchAccount + ".id"
 
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: factories(),
@@ -112,7 +112,7 @@ data "origincloud_billing_billing_country" "at" {
 					resource.TestCheckResourceAttr(researchLimit, "alert_thresholds_percent.1", "100"),
 					resource.TestCheckResourceAttr(researchLimit, "update_time", "2026-11-02T09:00:00Z"),
 					resource.TestCheckResourceAttr(prodBillingInfo, "name", "projects/acme-prod/billingInfo"),
-					resource.TestCheckResourceAttr(prodBillingInfo, "billing_account", researchName),
+					resource.TestCheckResourceAttr(prodBillingInfo, "billing_account", full("billing", researchName)),
 					resource.TestCheckResourceAttr("data.origincloud_billing_billing_accounts.acme", "billing_accounts.#", "2"),
 					resource.TestCheckResourceAttr("data.origincloud_billing_billing_accounts.acme", "billing_accounts.0.default_account", "true"),
 					resource.TestCheckResourceAttr("data.origincloud_billing_billing_accounts.acme", "billing_accounts.0.payment_method.state", "NOT_REQUIRED"),
@@ -151,20 +151,20 @@ data "origincloud_billing_billing_country" "at" {
 			// refusal reaches the user. The spend limit, destroyed first,
 			// is unset.
 			{
-				Config:      billingConfig(fake, fmt.Sprintf("%q", researchName), "", "", ""),
+				Config:      billingConfig(fake, fmt.Sprintf("%q", full("billing", researchName)), "", "", ""),
 				ExpectError: regexp.MustCompile(`pays\s+for\s+projects/acme-prod:\s+link\s+it\s+to\s+another\s+account\s+first`),
 			},
 			// Linked back to the default account, the project lets the
 			// account go.
 			{
-				Config: billingConfig(fake, fmt.Sprintf("%q", defaultAccount), account("Research GmbH", "AT", `vat_id = "ATU12345678"`), "", ""),
+				Config: billingConfig(fake, fmt.Sprintf("%q", full("billing", defaultAccount)), account("Research GmbH", "AT", `vat_id = "ATU12345678"`), "", ""),
 				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
 					plancheck.ExpectResourceAction(prodBillingInfo, plancheck.ResourceActionUpdate),
 				}},
-				Check: resource.TestCheckResourceAttr(prodBillingInfo, "billing_account", defaultAccount),
+				Check: resource.TestCheckResourceAttr(prodBillingInfo, "billing_account", full("billing", defaultAccount)),
 			},
 			{
-				Config: billingConfig(fake, fmt.Sprintf("%q", defaultAccount), "", "", ""),
+				Config: billingConfig(fake, fmt.Sprintf("%q", full("billing", defaultAccount)), "", "", ""),
 				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
 					plancheck.ExpectResourceAction(researchAccount, plancheck.ResourceActionDestroy),
 				}},
@@ -237,7 +237,7 @@ provider "origincloud" {
 
 resource "origincloud_billing_project_billing_info" "prod" {
   project         = "acme-prod"
-  billing_account = "organizations/acme/billingAccounts/ba-1"
+  billing_account = "//billing.origincloudapis.eu/organizations/acme/billingAccounts/ba-1"
 }
 
 data "origincloud_billing_billing_country" "de" {
@@ -245,7 +245,7 @@ data "origincloud_billing_billing_country" "de" {
 }
 `,
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(prodBillingInfo, "billing_account", defaultAccount),
+					resource.TestCheckResourceAttr(prodBillingInfo, "billing_account", full("billing", defaultAccount)),
 					resource.TestCheckResourceAttr("data.origincloud_billing_billing_country.de", "vat_id_required", "false"),
 					func(*terraform.State) error {
 						for _, want := range []string{

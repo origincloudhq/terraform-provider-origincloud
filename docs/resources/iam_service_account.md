@@ -27,11 +27,12 @@ A credential of an organization for software.
 ### Read-Only
 
 - `client_id` (String) The OAuth 2.0 client id it authenticates with; empty for a `WORKLOAD` service account.
-- `client_secret` (String, Sensitive) The OAuth 2.0 client secret it authenticates with. Set only in the response that created an `EXTERNAL` service account, and empty everywhere else: it can't be read again.
+- `client_secret` (String, Sensitive) The OAuth 2.0 client secret it authenticates with. Set only in the response that created an `EXTERNAL` service account or rotated its secret, and empty everywhere else: it can't be read again.
 - `create_time` (String) When the service account was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `creator` (String) Who created the service account, written as a role binding's member is.
+- `creator` (String) The full name of who created the service account: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, `//iam.origincloudapis.eu/serviceAgents/{service_agent}` for a platform service agent, or `//iam.origincloudapis.eu/services/{service}` for a change the platform made itself.
 - `delete_time` (String) When the service account was deleted; unset while it is active. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `id` (String) The service account's resource name, the same as `name`.
-- `member` (String) The member a role binding names it by, `serviceAccount:{service_account}`.
+- `id` (String) The service account's full resource name, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`: what an argument that refers to the service account takes. `name` is the relative name, without the host.
+- `member` (String) The service account's full name, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, which a role binding names it by as a member.
 - `name` (String) The service account's resource name.
+- `secret_expire_time` (String) When the client secret expires. From then on the secret is refused, so no new access token is issued with it, until RotateServiceAccountSecret issues a new one. Unset when the service account has no secret that expires, such as a `WORKLOAD` one. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
 - `state` (String) Where the service account is in its lifecycle. One of `ACTIVE`, `DELETED`.

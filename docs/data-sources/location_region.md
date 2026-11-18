@@ -32,4 +32,5 @@ output "zones" {
 ### Read-Only
 
 - `display_name` (String) The name the console shows, such as `EU Central 1`.
-- `zones` (List of String) The region's zones, `zones/{zone}`, in catalog order.
+- `id` (String) The region's full resource name, `//location.origincloudapis.eu/regions/{region}`: what an argument that refers to the region takes. `name` is the relative name, without the host.
+- `zones` (List of String) The full names of the region's zones, `//location.origincloudapis.eu/zones/{zone}`, in catalog order.

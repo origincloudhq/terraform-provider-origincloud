@@ -26,8 +26,7 @@ An SSH public key, and on creation the private key generated for it.
 
 ### Read-Only
 
-- `creator` (String) The principal that created the key pair, such as `user:<id>` or `service_account:<id>`.
-- `id` (String) The key pair's resource name, the same as `name`.
+- `creator` (String) The principal that created the key pair, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.
+- `id` (String) The key pair's full resource name, `//compute.origincloudapis.eu/projects/{project}/keyPairs/{key_pair}`: what an argument that refers to the key pair takes. `name` is the relative name, without the host.
 - `name` (String) The key pair's resource name.
 - `private_key` (String, Sensitive) The generated private key in OpenSSH format, in the response that generated it and never again: the platform keeps only the public key. Empty in every other response.
-- `urn` (String) The key pair's URN, the identifier access policies and the audit log use.

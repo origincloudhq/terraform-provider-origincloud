@@ -29,11 +29,12 @@ Lists the subnets in a zone, oldest first. For every zone's subnets, list the zo
 
 Read-Only:
 
-- `acl` (String) The ACL that filters traffic in and out of the subnet, as the subnet's ACL association (an `AclAssociation`) sets it. Empty while it has none: nothing is filtered at the subnet's edge, and its interfaces' security groups still apply.
+- `acl` (String) The full name of the ACL that filters traffic in and out of the subnet, as the subnet's ACL association (an `AclAssociation`) sets it. Empty while it has none: nothing is filtered at the subnet's edge, and its interfaces' security groups still apply.
 - `auto_assign_public_ip` (Boolean) Whether a launch that creates its network interface in the subnet, as the GraphQL API's `launchInstance` does, gives that interface a floating IP of its own, released when the instance is terminated. The interface is created with its address or not at all: with none free in the zone, or the public IP quota used up, the instance is `FAILED` with the reason. `CreateInstance` takes existing interfaces, so an instance it launches gets none: create a floating IP and a floating IP association for its interface instead.
 - `available_ipv4_address_count` (Number) How many IPv4 addresses in the subnet are free for interfaces.
 - `create_time` (String) When the subnet was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `creator` (String) The principal that created the subnet, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.
+- `creator` (String) The principal that created the subnet, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.
+- `id` (String) The subnet's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/subnets/{subnet}`: what an argument that refers to the subnet takes. `name` is the relative name, without the host.
 - `ipv4_cidr_block` (String) The subnet's IPv4 range.
 - `ipv4_dns_servers` (List of String) The DNS servers instances in the subnet use over IPv4.
 - `ipv4_gateway` (String) The IPv4 address of the subnet's router.
@@ -41,7 +42,6 @@ Read-Only:
 - `ipv6_dns_servers` (List of String) The DNS servers instances in the subnet use over IPv6.
 - `ipv6_gateway` (String) The IPv6 address of the subnet's router.
 - `name` (String) The subnet's resource name.
-- `route_table` (String) The route table that decides where the subnet's traffic goes, as the subnet's route table association (a `RouteTableAssociation`) sets it. A subnet reaches, and is reached from, the internet for an address family only if its own route table has that family's default route (a `Route` with that family's default destination). Empty while it has none: a subnet with no route table has no route out of its VPC and isn't reachable from the internet, even when the VPC has an internet gateway.
+- `route_table` (String) The full name of the route table that decides where the subnet's traffic goes, as the subnet's route table association (a `RouteTableAssociation`) sets it. A subnet reaches, and is reached from, the internet for an address family only if its own route table has that family's default route (a `Route` with that family's default destination). Empty while it has none: a subnet with no route table has no route out of its VPC and isn't reachable from the internet, even when the VPC has an internet gateway.
 - `tags` (Map of String) Labels of your own, at most 50. The `origin:name` tag is the name the console shows.
-- `urn` (String) The subnet's URN, the identifier access policies and the audit log use.
-- `vpc` (String) The VPC the subnet is part of, in the same project and in the zone's region. For now a VPC lives in one zone of its region: a subnet in another zone is refused with `FAILED_PRECONDITION`.
+- `vpc` (String) The full name of the VPC the subnet is part of, in the same project and in the zone's region. For now a VPC lives in one zone of its region: a subnet in another zone is refused with `FAILED_PRECONDITION`.

@@ -207,8 +207,8 @@ func TestAListedResourceTypeGetsAListDataSource(t *testing.T) {
 	}
 	widget := files["internal/services/widgetsv1/widget.gen.go"]
 	contains(t, "widget.gen.go", widget,
-		// A resource's items have a model of their own, without its id.
-		"type widgetItemModel struct { Name types.String `tfsdk:\"name\"` Aliases types.List `tfsdk:\"aliases\"` }",
+		// A resource's items have a model of their own, without its name variables.
+		"type widgetItemModel struct { ID types.String `tfsdk:\"id\"` Name types.String `tfsdk:\"name\"` Aliases types.List `tfsdk:\"aliases\"` }",
 		"type widgetListModel struct { Project types.String `tfsdk:\"project\"` Widgets []widgetItemModel `tfsdk:\"widgets\"` }",
 		`TypeName: "_widgets_widgets",`,
 		// Paginated: every page.
@@ -828,15 +828,15 @@ var withMember = withField("Widget", `name: "member" number: 9 label: LABEL_OPTI
 // else, and the framework keeps its configured value.
 func TestASpelledFieldIsReplacedOnlyWhenItNamesSomethingElse(t *testing.T) {
 	saved := spellings
-	spellings = []spelling{{resource: "test.widgets.v1.Widget", field: "member", framework: "MemberSpelling", doc: "Spelled."}}
+	spellings = []spelling{{resource: "test.widgets.v1.Widget", field: "member", framework: "DomainSpelling", doc: "Spelled."}}
 	t.Cleanup(func() { spellings = saved })
 	files, failure := run(t, withMember)
 	if failure != "" {
 		t.Fatal(failure)
 	}
 	contains(t, "widget.gen.go", files["internal/services/widgetsv1/widget.gen.go"],
-		`"member": schema.StringAttribute{ MarkdownDescription: "Spelled.", Required: true, PlanModifiers: []planmodifier.String{framework.StringReplaceSpelled(framework.MemberSpelling)}, },`,
-		`Spelled: []framework.Spelled[widgetModel]{ { Attribute: "member", Spelling: framework.MemberSpelling, Value: func(m *widgetModel) *types.String { return &m.Member }, }, },`,
+		`"member": schema.StringAttribute{ MarkdownDescription: "Spelled.", Required: true, PlanModifiers: []planmodifier.String{framework.StringReplaceSpelled(framework.DomainSpelling)}, },`,
+		`Spelled: []framework.Spelled[widgetModel]{ { Attribute: "member", Spelling: framework.DomainSpelling, Value: func(m *widgetModel) *types.String { return &m.Member }, }, },`,
 	)
 	// The list data source's item isn't.
 	contains(t, "widget.gen.go", files["internal/services/widgetsv1/widget.gen.go"],
@@ -922,5 +922,55 @@ func TestAReadOnlyTypesUpdateIsCalledByNothing(t *testing.T) {
 	_, failure := run(t, withMethods(createGadget, `name: "UpdateGadget" input_type: ".test.widgets.v1.NameRequest" output_type: ".test.widgets.v1.Gadget"`))
 	if want := "test.widgets.v1.WidgetService.UpdateGadget: no resource or data source calls it"; !strings.Contains(failure, want) {
 		t.Errorf("generation failed with %q, want %q", failure, want)
+	}
+}
+
+// A resource's id is its full name, on its service's host, and a state
+// written before that is upgraded; a data source has an id too.
+func TestTheIdIsTheFullResourceName(t *testing.T) {
+	files, failure := run(t, nil)
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	widget := files["internal/services/widgetsv1/widget.gen.go"]
+	contains(t, "widget.gen.go", widget,
+		"id, err := framework.FullName(\"widgets\", p.GetName()) if err != nil { return err } m.ID = id",
+		`Service: "widgets",`,
+		"`//widgets.origincloudapis.eu/projects/{project}/widgets/{widget}`",
+	)
+	gadget := files["internal/services/widgetsv1/gadget.gen.go"]
+	contains(t, "gadget.gen.go", gadget,
+		"type gadgetModel struct { ID types.String `tfsdk:\"id\"`",
+		"id, err := framework.FullName(\"widgets\", p.GetName())",
+	)
+	if strings.Contains(widget, `tfsdk:"urn"`) || strings.Contains(gadget, `tfsdk:"urn"`) {
+		t.Error("a urn is generated")
+	}
+}
+
+// A settable string that refers to a resource takes its full name: a
+// relative one is refused at the plan, before it could replace anything.
+func TestAReferenceIsValidatedAsAFullName(t *testing.T) {
+	files, failure := run(t, func(file *descriptorpb.FileDescriptorProto) {
+		withField("Widget", `name: "gadget" number: 9 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: OPTIONAL [google.api.resource_reference]: { type: "widgets.origincloudapis.eu/Gadget" } }`)(file)
+		withField("Widget", `name: "owner" number: 10 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: OPTIONAL [google.api.resource_reference]: { type: "*" } }`)(file)
+		withField("Widget", `name: "peers" number: 11 label: LABEL_REPEATED type: TYPE_STRING options { [google.api.field_behavior]: OPTIONAL [google.api.resource_reference]: { type: "other.origincloudapis.eu/Peer" } }`)(file)
+		withField("Widget", `name: "label" number: 12 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: OPTIONAL }`)(file)
+	})
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	widget := files["internal/services/widgetsv1/widget.gen.go"]
+	contains(t, "widget.gen.go", widget,
+		`"gadget": schema.StringAttribute{`,
+		`"owner": schema.StringAttribute{`,
+		`Validators: []validator.String{framework.FullNameReference()},`,
+		`Validators: []validator.List{framework.ElementCheck{FullNames: true}},`,
+		// For the upgrade of a state that held them relative: those of a
+		// type, not of any.
+		`References: map[string]string{"gadget": "widgets"},`,
+	)
+	if n := strings.Count(widget, "framework.FullNameReference()"); n != 2 {
+		t.Errorf("%d references are validated, want 2 (gadget and owner, not label)", n)
 	}
 }

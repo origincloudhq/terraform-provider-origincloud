@@ -24,6 +24,7 @@ A stable name for the current public image of an operating system release.
 - `available` (Boolean) Whether an instance can be launched from the family now. Instances launched from a family no longer offered are unaffected.
 - `description` (String) What the family's images hold.
 - `display_name` (String) The name the console shows.
+- `id` (String) The image family's full resource name, `//compute.origincloudapis.eu/imageFamilies/{image_family}`: what an argument that refers to the image family takes. `name` is the relative name, without the host.
 - `os` (String) The operating system, such as `ubuntu`.
 - `os_version` (String) The release, such as `24.04`.
 - `support_end_time` (String) When the vendor stops supporting the release; empty when no date is known. Advisory: launches aren't refused after it. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.

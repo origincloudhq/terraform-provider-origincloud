@@ -32,7 +32,7 @@ Read-Only:
 
 - `boot` (Boolean) Whether this is the instance's boot volume, which was attached at launch and can't be detached.
 - `device` (String) The device name the guest sees the volume under, `vda` to `vdz`. The first free one when left empty.
+- `id` (String) The volume attachment's full resource name, `//compute.origincloudapis.eu/projects/{project}/zones/{zone}/instances/{instance}/volumeAttachments/{volume_attachment}`: what an argument that refers to the volume attachment takes. `name` is the relative name, without the host.
 - `name` (String) The attachment's resource name.
 - `state` (String) Where the attachment is. One of `CREATING`, `ATTACHING`, `ATTACHED`, `DETACHING`, `RELEASING`, `RELEASE_ABANDONED`, `FAILED`.
-- `urn` (String) The attachment's URN, the identifier access policies and the audit log use.
-- `volume` (String) The volume, in the instance's project and zone.
+- `volume` (String) The volume's full name, in the instance's project and zone.

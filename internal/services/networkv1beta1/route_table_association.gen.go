@@ -9,6 +9,7 @@ import (
 	schema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	planmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	stringplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	validator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	types "github.com/hashicorp/terraform-plugin-framework/types"
 	framework "github.com/origincloudhq/terraform-provider-origincloud/internal/framework"
 	core "go.origincloud.eu/sdk/core"
@@ -30,7 +31,7 @@ func routeTableAssociationSchema() schema.Schema {
 		MarkdownDescription: "The route table a subnet uses.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The route table association's resource name, the same as `name`.",
+				MarkdownDescription: "The route table association's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/subnets/{subnet}/routeTableAssociations/{route_table_association}`: what an argument that refers to the route table association takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -55,8 +56,9 @@ func routeTableAssociationSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"route_table": schema.StringAttribute{
-				MarkdownDescription: "The route table the subnet uses, in the subnet's VPC. Changing it replaces the route table association.",
+				MarkdownDescription: "The full name of the route table the subnet uses, in the subnet's VPC. Changing it replaces the route table association.",
 				Required:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 		},
@@ -75,7 +77,11 @@ func routeTableAssociationFromProto(p *v1beta1.RouteTableAssociation, m *routeTa
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Zone = types.StringValue(values[1])
 	m.Subnet = types.StringValue(values[2])
@@ -86,12 +92,14 @@ func routeTableAssociationFromProto(p *v1beta1.RouteTableAssociation, m *routeTa
 
 func routeTableAssociationResource() framework.ResourceSpec[routeTableAssociationModel, *v1beta1.RouteTableAssociation] {
 	return framework.ResourceSpec[routeTableAssociationModel, *v1beta1.RouteTableAssociation]{
-		TypeName:  "_network_route_table_association",
-		Pattern:   "projects/{project}/zones/{zone}/subnets/{subnet}/routeTableAssociations/{route_table_association}",
-		Schema:    routeTableAssociationSchema(),
-		Name:      func(m *routeTableAssociationModel) string { return m.Name.ValueString() },
-		ToProto:   routeTableAssociationToProto,
-		FromProto: routeTableAssociationFromProto,
+		TypeName:   "_network_route_table_association",
+		Pattern:    "projects/{project}/zones/{zone}/subnets/{subnet}/routeTableAssociations/{route_table_association}",
+		Service:    "network",
+		References: map[string]string{"route_table": "network"},
+		Schema:     routeTableAssociationSchema(),
+		Name:       func(m *routeTableAssociationModel) string { return m.Name.ValueString() },
+		ToProto:    routeTableAssociationToProto,
+		FromProto:  routeTableAssociationFromProto,
 		UpdateMask: func(plan, state *routeTableAssociationModel) []string {
 			var mask []string
 			return mask
@@ -118,11 +126,17 @@ func routeTableAssociationResource() framework.ResourceSpec[routeTableAssociatio
 
 // routeTableAssociationItemModel is an item of origincloud_network_route_table_associations.
 type routeTableAssociationItemModel struct {
+	ID         types.String `tfsdk:"id"`
 	Name       types.String `tfsdk:"name"`
 	RouteTable types.String `tfsdk:"route_table"`
 }
 
 func routeTableAssociationItemFromProto(p *v1beta1.RouteTableAssociation, m *routeTableAssociationItemModel) error {
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
 	m.RouteTable = types.StringValue(p.GetRouteTable())
 	return nil
@@ -157,12 +171,16 @@ func routeTableAssociationListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The route table association's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/subnets/{subnet}/routeTableAssociations/{route_table_association}`: what an argument that refers to the route table association takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "The association's resource name. Its last segment is the route table's id.",
 							Computed:            true,
 						},
 						"route_table": schema1.StringAttribute{
-							MarkdownDescription: "The route table the subnet uses, in the subnet's VPC.",
+							MarkdownDescription: "The full name of the route table the subnet uses, in the subnet's VPC.",
 							Computed:            true,
 						},
 					},

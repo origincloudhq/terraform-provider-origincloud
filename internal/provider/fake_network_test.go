@@ -234,6 +234,7 @@ func (f *fakeNetwork) create(w http.ResponseWriter, kind networkKind, collection
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
 		return
 	}
+	mapNetworkReferences(m, relativeName)
 	parent := path.Dir(collection)
 	if strings.Count(parent, "/") > 3 && f.resources[parent] == nil {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", parent+" doesn't exist")
@@ -260,7 +261,6 @@ func (f *fakeNetwork) create(w http.ResponseWriter, kind networkKind, collection
 		return
 	}
 	setNetworkField(m, "name", protoreflect.ValueOfString(name))
-	setNetworkField(m, "urn", protoreflect.ValueOfString("urn:origincloud:network:"+name))
 	setNetworkField(m, "creator", protoreflect.ValueOfString("user:test"))
 	setNetworkField(m, "create_time", protoreflect.ValueOfMessage(timestamppb.New(networkCreateTime).ProtoReflect()))
 	f.resources[name] = m
@@ -285,6 +285,7 @@ func (f *fakeNetwork) resource(w http.ResponseWriter, r *http.Request, kind netw
 			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
 			return
 		}
+		mapNetworkReferences(update, relativeName)
 		fields := m.ProtoReflect().Descriptor().Fields()
 		mask := strings.Split(r.URL.Query().Get("updateMask"), ",")
 		for _, p := range mask {
@@ -464,6 +465,13 @@ func (f *fakeNetwork) check(parent string, m networkResource) *networkRefusal {
 // view returns m as the API answers with it: with the attributes its
 // associations and its contents set.
 func (f *fakeNetwork) view(m networkResource) networkResource {
+	m = f.relativeView(m)
+	mapNetworkReferences(m, func(v string) string { return full("network", v) })
+	return m
+}
+
+// relativeView is view with the references relative, as the fake holds them.
+func (f *fakeNetwork) relativeView(m networkResource) networkResource {
 	m = proto.Clone(m).(networkResource)
 	switch m := m.(type) {
 	case *networkv1beta1.Vpc:
@@ -603,14 +611,31 @@ func networkPorts(first, last int32) *networkRefusal {
 	return nil
 }
 
+// mapNetworkReferences rewrites the references m's fields hold, other than its
+// own name: the API answers them as full names, and the fake holds them
+// relative.
+func mapNetworkReferences(m proto.Message, rewrite func(string) string) {
+	set := map[protoreflect.FieldDescriptor]string{}
+	m.ProtoReflect().Range(func(field protoreflect.FieldDescriptor, v protoreflect.Value) bool {
+		if field.Kind() == protoreflect.StringKind && !field.IsList() && !field.IsMap() && field.Name() != "name" &&
+			strings.HasPrefix(relativeName(v.String()), "projects/") {
+			set[field] = rewrite(relativeName(v.String()))
+		}
+		return true
+	})
+	for field, v := range set {
+		m.ProtoReflect().Set(field, protoreflect.ValueOfString(v))
+	}
+}
+
 // networkReferences returns the resource names m's fields hold, other than its
 // own.
 func networkReferences(m proto.Message) []string {
 	var refs []string
 	m.ProtoReflect().Range(func(field protoreflect.FieldDescriptor, v protoreflect.Value) bool {
 		if field.Kind() == protoreflect.StringKind && !field.IsList() && !field.IsMap() &&
-			field.Name() != "name" && strings.HasPrefix(v.String(), "projects/") {
-			refs = append(refs, v.String())
+			field.Name() != "name" && strings.HasPrefix(relativeName(v.String()), "projects/") {
+			refs = append(refs, relativeName(v.String()))
 		}
 		return true
 	})

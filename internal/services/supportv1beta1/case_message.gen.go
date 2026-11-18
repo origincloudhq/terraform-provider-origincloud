@@ -14,6 +14,7 @@ import (
 
 // caseMessageModel is origincloud_support_case_message's state.
 type caseMessageModel struct {
+	ID         types.String `tfsdk:"id"`
 	Name       types.String `tfsdk:"name"`
 	Body       types.String `tfsdk:"body"`
 	Author     types.String `tfsdk:"author"`
@@ -24,6 +25,10 @@ func caseMessageSchema() schema.Schema {
 	return schema.Schema{
 		MarkdownDescription: "One message of a case's conversation.",
 		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				MarkdownDescription: "The case message's full resource name, `//support.origincloudapis.eu/organizations/{organization}/cases/{case}/messages/{message}`: what an argument that refers to the case message takes. `name` is the relative name, without the host.",
+				Computed:            true,
+			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "The message's resource name, `organizations/{organization}/cases/{case}/messages/{message}`.",
 				Required:            true,
@@ -33,7 +38,7 @@ func caseMessageSchema() schema.Schema {
 				Computed:            true,
 			},
 			"author": schema.StringAttribute{
-				MarkdownDescription: "The principal that wrote the message, such as `user:<id>` or `service_account:<id>`.",
+				MarkdownDescription: "The principal that wrote the message, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 				Computed:            true,
 			},
 			"create_time": schema.StringAttribute{
@@ -45,6 +50,11 @@ func caseMessageSchema() schema.Schema {
 }
 
 func caseMessageFromProto(p *v1beta1.CaseMessage, m *caseMessageModel) error {
+	id, err := framework.FullName("support", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
 	m.Body = types.StringValue(p.GetBody())
 	m.Author = types.StringValue(p.GetAuthor())
@@ -88,6 +98,10 @@ func caseMessageListSchema() schema.Schema {
 				Computed:            true,
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
+						"id": schema.StringAttribute{
+							MarkdownDescription: "The case message's full resource name, `//support.origincloudapis.eu/organizations/{organization}/cases/{case}/messages/{message}`: what an argument that refers to the case message takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema.StringAttribute{
 							MarkdownDescription: "The message's resource name, `organizations/{organization}/cases/{case}/messages/{message}`.",
 							Computed:            true,
@@ -97,7 +111,7 @@ func caseMessageListSchema() schema.Schema {
 							Computed:            true,
 						},
 						"author": schema.StringAttribute{
-							MarkdownDescription: "The principal that wrote the message, such as `user:<id>` or `service_account:<id>`.",
+							MarkdownDescription: "The principal that wrote the message, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 							Computed:            true,
 						},
 						"create_time": schema.StringAttribute{

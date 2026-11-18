@@ -23,7 +23,6 @@ type floatingIpModel struct {
 	Project          types.String `tfsdk:"project"`
 	Zone             types.String `tfsdk:"zone"`
 	Name             types.String `tfsdk:"name"`
-	Urn              types.String `tfsdk:"urn"`
 	Address          types.String `tfsdk:"address"`
 	NetworkInterface types.String `tfsdk:"network_interface"`
 	PrivateAddress   types.String `tfsdk:"private_address"`
@@ -38,7 +37,7 @@ func floatingIpSchema() schema.Schema {
 		MarkdownDescription: "A public IPv4 address of your own.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The floating ip's resource name, the same as `name`.",
+				MarkdownDescription: "The floating ip's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/floatingIps/{floating_ip}`: what an argument that refers to the floating ip takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -57,16 +56,12 @@ func floatingIpSchema() schema.Schema {
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The floating IP's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
-			},
 			"address": schema.StringAttribute{
 				MarkdownDescription: "The public address.",
 				Computed:            true,
 			},
 			"network_interface": schema.StringAttribute{
-				MarkdownDescription: "The network interface the address reaches, as the floating IP's association (a `FloatingIpAssociation`) sets it; empty while it has none.",
+				MarkdownDescription: "The full name of the network interface the address reaches, as the floating IP's association (a `FloatingIpAssociation`) sets it; empty while it has none.",
 				Computed:            true,
 			},
 			"private_address": schema.StringAttribute{
@@ -82,7 +77,7 @@ func floatingIpSchema() schema.Schema {
 				Computed:            true,
 			},
 			"creator": schema.StringAttribute{
-				MarkdownDescription: "The principal that created the floating IP, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.",
+				MarkdownDescription: "The principal that created the floating IP, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 				Computed:            true,
 			},
 			"tags": schema.MapAttribute{
@@ -107,11 +102,14 @@ func floatingIpFromProto(p *v1beta1.FloatingIp, m *floatingIpModel) error {
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Zone = types.StringValue(values[1])
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Address = types.StringValue(p.GetAddress())
 	m.NetworkInterface = types.StringValue(p.GetNetworkInterface())
 	m.PrivateAddress = types.StringValue(p.GetPrivateAddress())
@@ -124,12 +122,14 @@ func floatingIpFromProto(p *v1beta1.FloatingIp, m *floatingIpModel) error {
 
 func floatingIpResource() framework.ResourceSpec[floatingIpModel, *v1beta1.FloatingIp] {
 	return framework.ResourceSpec[floatingIpModel, *v1beta1.FloatingIp]{
-		TypeName:  "_network_floating_ip",
-		Pattern:   "projects/{project}/zones/{zone}/floatingIps/{floating_ip}",
-		Schema:    floatingIpSchema(),
-		Name:      func(m *floatingIpModel) string { return m.Name.ValueString() },
-		ToProto:   floatingIpToProto,
-		FromProto: floatingIpFromProto,
+		TypeName:   "_network_floating_ip",
+		Pattern:    "projects/{project}/zones/{zone}/floatingIps/{floating_ip}",
+		Service:    "network",
+		References: map[string]string{"network_interface": "network"},
+		Schema:     floatingIpSchema(),
+		Name:       func(m *floatingIpModel) string { return m.Name.ValueString() },
+		ToProto:    floatingIpToProto,
+		FromProto:  floatingIpFromProto,
 		UpdateMask: func(plan, state *floatingIpModel) []string {
 			var mask []string
 			if !plan.Tags.Equal(state.Tags) {
@@ -166,8 +166,8 @@ func floatingIpResource() framework.ResourceSpec[floatingIpModel, *v1beta1.Float
 
 // floatingIpItemModel is an item of origincloud_network_floating_ips.
 type floatingIpItemModel struct {
+	ID               types.String `tfsdk:"id"`
 	Name             types.String `tfsdk:"name"`
-	Urn              types.String `tfsdk:"urn"`
 	Address          types.String `tfsdk:"address"`
 	NetworkInterface types.String `tfsdk:"network_interface"`
 	PrivateAddress   types.String `tfsdk:"private_address"`
@@ -178,8 +178,12 @@ type floatingIpItemModel struct {
 }
 
 func floatingIpItemFromProto(p *v1beta1.FloatingIp, m *floatingIpItemModel) error {
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Address = types.StringValue(p.GetAddress())
 	m.NetworkInterface = types.StringValue(p.GetNetworkInterface())
 	m.PrivateAddress = types.StringValue(p.GetPrivateAddress())
@@ -214,12 +218,12 @@ func floatingIpListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
-						"name": schema1.StringAttribute{
-							MarkdownDescription: "The floating IP's resource name.",
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The floating ip's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/floatingIps/{floating_ip}`: what an argument that refers to the floating ip takes. `name` is the relative name, without the host.",
 							Computed:            true,
 						},
-						"urn": schema1.StringAttribute{
-							MarkdownDescription: "The floating IP's URN, the identifier access policies and the audit log use.",
+						"name": schema1.StringAttribute{
+							MarkdownDescription: "The floating IP's resource name.",
 							Computed:            true,
 						},
 						"address": schema1.StringAttribute{
@@ -227,7 +231,7 @@ func floatingIpListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"network_interface": schema1.StringAttribute{
-							MarkdownDescription: "The network interface the address reaches, as the floating IP's association (a `FloatingIpAssociation`) sets it; empty while it has none.",
+							MarkdownDescription: "The full name of the network interface the address reaches, as the floating IP's association (a `FloatingIpAssociation`) sets it; empty while it has none.",
 							Computed:            true,
 						},
 						"private_address": schema1.StringAttribute{
@@ -243,7 +247,7 @@ func floatingIpListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"creator": schema1.StringAttribute{
-							MarkdownDescription: "The principal that created the floating IP, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.",
+							MarkdownDescription: "The principal that created the floating IP, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 							Computed:            true,
 						},
 						"tags": schema1.MapAttribute{

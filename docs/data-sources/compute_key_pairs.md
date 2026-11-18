@@ -28,8 +28,8 @@ Lists a project's key pairs, oldest first.
 
 Read-Only:
 
-- `creator` (String) The principal that created the key pair, such as `user:<id>` or `service_account:<id>`.
+- `creator` (String) The principal that created the key pair, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.
+- `id` (String) The key pair's full resource name, `//compute.origincloudapis.eu/projects/{project}/keyPairs/{key_pair}`: what an argument that refers to the key pair takes. `name` is the relative name, without the host.
 - `name` (String) The key pair's resource name.
 - `public_key` (String) The OpenSSH public key line, such as `ssh-ed25519 AAAA... comment`. Left empty, the platform generates the key pair.
 - `tags` (Map of String) Labels of your own, at most 50. The `origin:name` tag is the name the console shows, and the comment of a generated key.
-- `urn` (String) The key pair's URN, the identifier access policies and the audit log use.

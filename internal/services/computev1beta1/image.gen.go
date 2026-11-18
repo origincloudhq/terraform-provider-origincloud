@@ -24,7 +24,6 @@ type imageModel struct {
 	Project      types.String `tfsdk:"project"`
 	Zone         types.String `tfsdk:"zone"`
 	Name         types.String `tfsdk:"name"`
-	Urn          types.String `tfsdk:"urn"`
 	Description  types.String `tfsdk:"description"`
 	DefaultUser  types.String `tfsdk:"default_user"`
 	RootDevice   types.String `tfsdk:"root_device"`
@@ -41,7 +40,7 @@ func imageSchema() schema.Schema {
 		MarkdownDescription: "A project's own image, which an instance's boot volume can be created from.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The image's resource name, the same as `name`.",
+				MarkdownDescription: "The image's full resource name, `//compute.origincloudapis.eu/projects/{project}/zones/{zone}/images/{image}`: what an argument that refers to the image takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -59,10 +58,6 @@ func imageSchema() schema.Schema {
 				MarkdownDescription: "The image's resource name.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The image's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
 			},
 			"description": schema.StringAttribute{
 				MarkdownDescription: "What the image holds, as you describe it.",
@@ -98,8 +93,9 @@ func imageSchema() schema.Schema {
 							Validators:          []validator.Int64{framework.Int32()},
 						},
 						"source_snapshot": schema.StringAttribute{
-							MarkdownDescription: "The protected snapshot the disk is created from, in the image's project and zone; an empty disk when left empty.",
+							MarkdownDescription: "The full name of the protected snapshot the disk is created from, in the image's project and zone; an empty disk when left empty.",
 							Optional:            true,
+							Validators:          []validator.String{framework.FullNameReference()},
 						},
 					},
 				},
@@ -117,7 +113,7 @@ func imageSchema() schema.Schema {
 				Computed:            true,
 			},
 			"creator": schema.StringAttribute{
-				MarkdownDescription: "The principal that created the image, such as `user:<id>`.",
+				MarkdownDescription: "The principal that created the image, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 				Computed:            true,
 			},
 			"tags": schema.MapAttribute{
@@ -173,11 +169,14 @@ func imageFromProto(p *v1beta1.Image, m *imageModel) error {
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("compute", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Zone = types.StringValue(values[1])
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Description = types.StringValue(p.GetDescription())
 	m.DefaultUser = types.StringValue(p.GetDefaultUser())
 	m.RootDevice = types.StringValue(p.GetRootDevice())
@@ -194,6 +193,7 @@ func imageResource() framework.ResourceSpec[imageModel, *v1beta1.Image] {
 	return framework.ResourceSpec[imageModel, *v1beta1.Image]{
 		TypeName:  "_compute_image",
 		Pattern:   "projects/{project}/zones/{zone}/images/{image}",
+		Service:   "compute",
 		Schema:    imageSchema(),
 		Name:      func(m *imageModel) string { return m.Name.ValueString() },
 		ToProto:   imageToProto,
@@ -229,8 +229,8 @@ func imageResource() framework.ResourceSpec[imageModel, *v1beta1.Image] {
 
 // imageItemModel is an item of origincloud_compute_images.
 type imageItemModel struct {
+	ID           types.String `tfsdk:"id"`
 	Name         types.String `tfsdk:"name"`
-	Urn          types.String `tfsdk:"urn"`
 	Description  types.String `tfsdk:"description"`
 	DefaultUser  types.String `tfsdk:"default_user"`
 	RootDevice   types.String `tfsdk:"root_device"`
@@ -266,8 +266,12 @@ func imageItem_BlockDevicesToProto(o types.Object) *v1beta1.ImageBlockDevice {
 }
 
 func imageItemFromProto(p *v1beta1.Image, m *imageItemModel) error {
+	id, err := framework.FullName("compute", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Description = types.StringValue(p.GetDescription())
 	m.DefaultUser = types.StringValue(p.GetDefaultUser())
 	m.RootDevice = types.StringValue(p.GetRootDevice())
@@ -304,12 +308,12 @@ func imageListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
-						"name": schema1.StringAttribute{
-							MarkdownDescription: "The image's resource name.",
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The image's full resource name, `//compute.origincloudapis.eu/projects/{project}/zones/{zone}/images/{image}`: what an argument that refers to the image takes. `name` is the relative name, without the host.",
 							Computed:            true,
 						},
-						"urn": schema1.StringAttribute{
-							MarkdownDescription: "The image's URN, the identifier access policies and the audit log use.",
+						"name": schema1.StringAttribute{
+							MarkdownDescription: "The image's resource name.",
 							Computed:            true,
 						},
 						"description": schema1.StringAttribute{
@@ -338,7 +342,7 @@ func imageListSchema() schema1.Schema {
 										Computed:            true,
 									},
 									"source_snapshot": schema1.StringAttribute{
-										MarkdownDescription: "The protected snapshot the disk is created from, in the image's project and zone; an empty disk when left empty.",
+										MarkdownDescription: "The full name of the protected snapshot the disk is created from, in the image's project and zone; an empty disk when left empty.",
 										Computed:            true,
 									},
 								},
@@ -357,7 +361,7 @@ func imageListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"creator": schema1.StringAttribute{
-							MarkdownDescription: "The principal that created the image, such as `user:<id>`.",
+							MarkdownDescription: "The principal that created the image, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 							Computed:            true,
 						},
 						"tags": schema1.MapAttribute{

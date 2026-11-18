@@ -23,7 +23,6 @@ type vpcModel struct {
 	Project                types.String `tfsdk:"project"`
 	Region                 types.String `tfsdk:"region"`
 	Name                   types.String `tfsdk:"name"`
-	Urn                    types.String `tfsdk:"urn"`
 	Ipv4CidrBlock          types.String `tfsdk:"ipv4_cidr_block"`
 	Ipv6CidrBlock          types.String `tfsdk:"ipv6_cidr_block"`
 	SubnetIpv4PrefixLength types.Int64  `tfsdk:"subnet_ipv4_prefix_length"`
@@ -41,7 +40,7 @@ func vpcSchema() schema.Schema {
 		MarkdownDescription: "A private network in one region.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The vpc's resource name, the same as `name`.",
+				MarkdownDescription: "The vpc's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/vpcs/{vpc}`: what an argument that refers to the vpc takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -59,10 +58,6 @@ func vpcSchema() schema.Schema {
 				MarkdownDescription: "The VPC's resource name.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The VPC's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
 			},
 			"ipv4_cidr_block": schema.StringAttribute{
 				MarkdownDescription: "The private IPv4 range (RFC 1918), from `/16` to `/28`. A free `/16` of the `172.16` private block when left empty. Subnets are carved from it in equal sizes. Changing it replaces the vpc.",
@@ -83,11 +78,11 @@ func vpcSchema() schema.Schema {
 				Computed:            true,
 			},
 			"dns_policy": schema.StringAttribute{
-				MarkdownDescription: "The DNS policy the VPC's resolver relays through, as the VPC's DNS policy association (a `DnsPolicyAssociation`) sets it. Empty while it has none: the VPC then relays through the project's default DNS policy in its region.",
+				MarkdownDescription: "The full name of the DNS policy the VPC's resolver relays through, as the VPC's DNS policy association (a `DnsPolicyAssociation`) sets it. Empty while it has none: the VPC then relays through the project's default DNS policy in its region.",
 				Computed:            true,
 			},
 			"internet_gateway": schema.StringAttribute{
-				MarkdownDescription: "The VPC's internet gateway; empty while it has none.",
+				MarkdownDescription: "The full name of the VPC's internet gateway; empty while it has none.",
 				Computed:            true,
 			},
 			"project_default": schema.BoolAttribute{
@@ -99,7 +94,7 @@ func vpcSchema() schema.Schema {
 				Computed:            true,
 			},
 			"creator": schema.StringAttribute{
-				MarkdownDescription: "The principal that created the VPC, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.",
+				MarkdownDescription: "The principal that created the VPC, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 				Computed:            true,
 			},
 			"tags": schema.MapAttribute{
@@ -125,11 +120,14 @@ func vpcFromProto(p *v1beta1.Vpc, m *vpcModel) error {
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Region = types.StringValue(values[1])
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Ipv4CidrBlock = types.StringValue(p.GetIpv4CidrBlock())
 	m.Ipv6CidrBlock = types.StringValue(p.GetIpv6CidrBlock())
 	m.SubnetIpv4PrefixLength = types.Int64Value(int64(p.GetSubnetIpv4PrefixLength()))
@@ -145,12 +143,14 @@ func vpcFromProto(p *v1beta1.Vpc, m *vpcModel) error {
 
 func vpcResource() framework.ResourceSpec[vpcModel, *v1beta1.Vpc] {
 	return framework.ResourceSpec[vpcModel, *v1beta1.Vpc]{
-		TypeName:  "_network_vpc",
-		Pattern:   "projects/{project}/regions/{region}/vpcs/{vpc}",
-		Schema:    vpcSchema(),
-		Name:      func(m *vpcModel) string { return m.Name.ValueString() },
-		ToProto:   vpcToProto,
-		FromProto: vpcFromProto,
+		TypeName:   "_network_vpc",
+		Pattern:    "projects/{project}/regions/{region}/vpcs/{vpc}",
+		Service:    "network",
+		References: map[string]string{"dns_policy": "network", "internet_gateway": "network"},
+		Schema:     vpcSchema(),
+		Name:       func(m *vpcModel) string { return m.Name.ValueString() },
+		ToProto:    vpcToProto,
+		FromProto:  vpcFromProto,
 		UpdateMask: func(plan, state *vpcModel) []string {
 			var mask []string
 			if !plan.Tags.Equal(state.Tags) {
@@ -187,8 +187,8 @@ func vpcResource() framework.ResourceSpec[vpcModel, *v1beta1.Vpc] {
 
 // vpcItemModel is an item of origincloud_network_vpcs.
 type vpcItemModel struct {
+	ID                     types.String `tfsdk:"id"`
 	Name                   types.String `tfsdk:"name"`
-	Urn                    types.String `tfsdk:"urn"`
 	Ipv4CidrBlock          types.String `tfsdk:"ipv4_cidr_block"`
 	Ipv6CidrBlock          types.String `tfsdk:"ipv6_cidr_block"`
 	SubnetIpv4PrefixLength types.Int64  `tfsdk:"subnet_ipv4_prefix_length"`
@@ -202,8 +202,12 @@ type vpcItemModel struct {
 }
 
 func vpcItemFromProto(p *v1beta1.Vpc, m *vpcItemModel) error {
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Ipv4CidrBlock = types.StringValue(p.GetIpv4CidrBlock())
 	m.Ipv6CidrBlock = types.StringValue(p.GetIpv6CidrBlock())
 	m.SubnetIpv4PrefixLength = types.Int64Value(int64(p.GetSubnetIpv4PrefixLength()))
@@ -241,12 +245,12 @@ func vpcListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
-						"name": schema1.StringAttribute{
-							MarkdownDescription: "The VPC's resource name.",
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The vpc's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/vpcs/{vpc}`: what an argument that refers to the vpc takes. `name` is the relative name, without the host.",
 							Computed:            true,
 						},
-						"urn": schema1.StringAttribute{
-							MarkdownDescription: "The VPC's URN, the identifier access policies and the audit log use.",
+						"name": schema1.StringAttribute{
+							MarkdownDescription: "The VPC's resource name.",
 							Computed:            true,
 						},
 						"ipv4_cidr_block": schema1.StringAttribute{
@@ -266,11 +270,11 @@ func vpcListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"dns_policy": schema1.StringAttribute{
-							MarkdownDescription: "The DNS policy the VPC's resolver relays through, as the VPC's DNS policy association (a `DnsPolicyAssociation`) sets it. Empty while it has none: the VPC then relays through the project's default DNS policy in its region.",
+							MarkdownDescription: "The full name of the DNS policy the VPC's resolver relays through, as the VPC's DNS policy association (a `DnsPolicyAssociation`) sets it. Empty while it has none: the VPC then relays through the project's default DNS policy in its region.",
 							Computed:            true,
 						},
 						"internet_gateway": schema1.StringAttribute{
-							MarkdownDescription: "The VPC's internet gateway; empty while it has none.",
+							MarkdownDescription: "The full name of the VPC's internet gateway; empty while it has none.",
 							Computed:            true,
 						},
 						"project_default": schema1.BoolAttribute{
@@ -282,7 +286,7 @@ func vpcListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"creator": schema1.StringAttribute{
-							MarkdownDescription: "The principal that created the VPC, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.",
+							MarkdownDescription: "The principal that created the VPC, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 							Computed:            true,
 						},
 						"tags": schema1.MapAttribute{

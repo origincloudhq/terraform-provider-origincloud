@@ -24,7 +24,6 @@ type networkInterfaceModel struct {
 	Project            types.String `tfsdk:"project"`
 	Zone               types.String `tfsdk:"zone"`
 	Name               types.String `tfsdk:"name"`
-	Urn                types.String `tfsdk:"urn"`
 	Subnet             types.String `tfsdk:"subnet"`
 	SecurityGroups     types.Set    `tfsdk:"security_groups"`
 	SourceAddressCheck types.Bool   `tfsdk:"source_address_check"`
@@ -42,7 +41,7 @@ func networkInterfaceSchema() schema.Schema {
 		MarkdownDescription: "A network interface: private addresses in one subnet, filtered by security groups.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The network interface's resource name, the same as `name`.",
+				MarkdownDescription: "The network interface's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/networkInterfaces/{network_interface}`: what an argument that refers to the network interface takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -61,17 +60,14 @@ func networkInterfaceSchema() schema.Schema {
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The interface's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
-			},
 			"subnet": schema.StringAttribute{
-				MarkdownDescription: "The subnet the interface has its addresses in, in the same project and zone. Changing it replaces the network interface.",
+				MarkdownDescription: "The full name of the subnet the interface has its addresses in, in the same project and zone. Changing it replaces the network interface.",
 				Required:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"security_groups": schema.SetAttribute{
-				MarkdownDescription: "The security groups that filter the interface's traffic, as its security group associations (each a `SecurityGroupAssociation`) set them. The interface admits the traffic any of them allows. With none, it admits and sends nothing except replies to its own traffic and address resolution (ARP and IPv6 neighbor discovery): it is closed.",
+				MarkdownDescription: "The full names of the security groups that filter the interface's traffic, as its security group associations (each a `SecurityGroupAssociation`) set them. The interface admits the traffic any of them allows. With none, it admits and sends nothing except replies to its own traffic and address resolution (ARP and IPv6 neighbor discovery): it is closed.",
 				Computed:            true,
 				ElementType:         types.StringType,
 			},
@@ -94,7 +90,7 @@ func networkInterfaceSchema() schema.Schema {
 				Computed:            true,
 			},
 			"instance": schema.StringAttribute{
-				MarkdownDescription: "The instance the interface is attached to; empty while it is `AVAILABLE`. An instance attaches interfaces when it is launched.",
+				MarkdownDescription: "The full name of the instance the interface is attached to, on the compute service; empty while it is `AVAILABLE`. An instance attaches interfaces when it is launched.",
 				Computed:            true,
 			},
 			"create_time": schema.StringAttribute{
@@ -102,7 +98,7 @@ func networkInterfaceSchema() schema.Schema {
 				Computed:            true,
 			},
 			"creator": schema.StringAttribute{
-				MarkdownDescription: "The principal that created the network interface, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.",
+				MarkdownDescription: "The principal that created the network interface, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 				Computed:            true,
 			},
 			"tags": schema.MapAttribute{
@@ -129,11 +125,14 @@ func networkInterfaceFromProto(p *v1beta1.NetworkInterface, m *networkInterfaceM
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Zone = types.StringValue(values[1])
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Subnet = types.StringValue(p.GetSubnet())
 	m.SecurityGroups = framework.StringSet(p.GetSecurityGroups())
 	m.SourceAddressCheck = framework.PresentBool(p.SourceAddressCheck)
@@ -149,12 +148,14 @@ func networkInterfaceFromProto(p *v1beta1.NetworkInterface, m *networkInterfaceM
 
 func networkInterfaceResource() framework.ResourceSpec[networkInterfaceModel, *v1beta1.NetworkInterface] {
 	return framework.ResourceSpec[networkInterfaceModel, *v1beta1.NetworkInterface]{
-		TypeName:  "_network_network_interface",
-		Pattern:   "projects/{project}/zones/{zone}/networkInterfaces/{network_interface}",
-		Schema:    networkInterfaceSchema(),
-		Name:      func(m *networkInterfaceModel) string { return m.Name.ValueString() },
-		ToProto:   networkInterfaceToProto,
-		FromProto: networkInterfaceFromProto,
+		TypeName:   "_network_network_interface",
+		Pattern:    "projects/{project}/zones/{zone}/networkInterfaces/{network_interface}",
+		Service:    "network",
+		References: map[string]string{"subnet": "network", "instance": "compute"},
+		Schema:     networkInterfaceSchema(),
+		Name:       func(m *networkInterfaceModel) string { return m.Name.ValueString() },
+		ToProto:    networkInterfaceToProto,
+		FromProto:  networkInterfaceFromProto,
 		UpdateMask: func(plan, state *networkInterfaceModel) []string {
 			var mask []string
 			if !plan.SourceAddressCheck.Equal(state.SourceAddressCheck) {
@@ -194,8 +195,8 @@ func networkInterfaceResource() framework.ResourceSpec[networkInterfaceModel, *v
 
 // networkInterfaceItemModel is an item of origincloud_network_network_interfaces.
 type networkInterfaceItemModel struct {
+	ID                 types.String `tfsdk:"id"`
 	Name               types.String `tfsdk:"name"`
-	Urn                types.String `tfsdk:"urn"`
 	Subnet             types.String `tfsdk:"subnet"`
 	SecurityGroups     types.Set    `tfsdk:"security_groups"`
 	SourceAddressCheck types.Bool   `tfsdk:"source_address_check"`
@@ -209,8 +210,12 @@ type networkInterfaceItemModel struct {
 }
 
 func networkInterfaceItemFromProto(p *v1beta1.NetworkInterface, m *networkInterfaceItemModel) error {
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Subnet = types.StringValue(p.GetSubnet())
 	m.SecurityGroups = framework.StringSet(p.GetSecurityGroups())
 	m.SourceAddressCheck = framework.PresentBool(p.SourceAddressCheck)
@@ -248,20 +253,20 @@ func networkInterfaceListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The network interface's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/networkInterfaces/{network_interface}`: what an argument that refers to the network interface takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "The interface's resource name.",
 							Computed:            true,
 						},
-						"urn": schema1.StringAttribute{
-							MarkdownDescription: "The interface's URN, the identifier access policies and the audit log use.",
-							Computed:            true,
-						},
 						"subnet": schema1.StringAttribute{
-							MarkdownDescription: "The subnet the interface has its addresses in, in the same project and zone.",
+							MarkdownDescription: "The full name of the subnet the interface has its addresses in, in the same project and zone.",
 							Computed:            true,
 						},
 						"security_groups": schema1.SetAttribute{
-							MarkdownDescription: "The security groups that filter the interface's traffic, as its security group associations (each a `SecurityGroupAssociation`) set them. The interface admits the traffic any of them allows. With none, it admits and sends nothing except replies to its own traffic and address resolution (ARP and IPv6 neighbor discovery): it is closed.",
+							MarkdownDescription: "The full names of the security groups that filter the interface's traffic, as its security group associations (each a `SecurityGroupAssociation`) set them. The interface admits the traffic any of them allows. With none, it admits and sends nothing except replies to its own traffic and address resolution (ARP and IPv6 neighbor discovery): it is closed.",
 							Computed:            true,
 							ElementType:         types.StringType,
 						},
@@ -282,7 +287,7 @@ func networkInterfaceListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"instance": schema1.StringAttribute{
-							MarkdownDescription: "The instance the interface is attached to; empty while it is `AVAILABLE`. An instance attaches interfaces when it is launched.",
+							MarkdownDescription: "The full name of the instance the interface is attached to, on the compute service; empty while it is `AVAILABLE`. An instance attaches interfaces when it is launched.",
 							Computed:            true,
 						},
 						"create_time": schema1.StringAttribute{
@@ -290,7 +295,7 @@ func networkInterfaceListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"creator": schema1.StringAttribute{
-							MarkdownDescription: "The principal that created the network interface, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.",
+							MarkdownDescription: "The principal that created the network interface, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 							Computed:            true,
 						},
 						"tags": schema1.MapAttribute{

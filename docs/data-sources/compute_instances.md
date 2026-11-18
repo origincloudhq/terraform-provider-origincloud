@@ -31,21 +31,21 @@ Read-Only:
 
 - `boot_volume` (Attributes) The boot volume: its size and storage class at launch, and the volume. The image's size on the default storage class when left out. (see [below for nested schema](#nestedatt--instances--boot_volume))
 - `create_time` (String) When the instance was launched. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `creator` (String) The principal that launched the instance, such as `user:<id>` or `service_account:<id>`.
+- `creator` (String) The principal that launched the instance, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.
 - `health` (Attributes) Whether the platform can currently confirm the instance is working, which `state` doesn't say: a `RUNNING` instance on a machine that stopped answering is still `RUNNING`. (see [below for nested schema](#nestedatt--instances--health))
-- `image` (String) The image the boot volume is created from, in the instance's zone: one of the project's own, `projects/{project}/zones/{zone}/images/{image}`, or a public one, `zones/{zone}/images/{image}`. Set exactly one of `image` and `image_family`; launched from a family, this is the public image the family resolved to.
-- `image_family` (String) The image family to launch the current public image of, `imageFamilies/{image_family}`. Set exactly one of `image` and `image_family`. Empty when the instance was launched from an image.
-- `instance_type` (String) The instance type, `instanceTypes/{instance_type}`, such as `instanceTypes/gp1.core.2`: one whose `available` is true. Changing it needs the instance `STOPPED`.
+- `id` (String) The instance's full resource name, `//compute.origincloudapis.eu/projects/{project}/zones/{zone}/instances/{instance}`: what an argument that refers to the instance takes. `name` is the relative name, without the host.
+- `image` (String) The full name of the image the boot volume is created from, in the instance's zone: one of the project's own, `//compute.origincloudapis.eu/projects/{project}/zones/{zone}/images/{image}`, or a public one, `//compute.origincloudapis.eu/zones/{zone}/images/{image}`. Set exactly one of `image` and `image_family`; launched from a family, this is the public image the family resolved to.
+- `image_family` (String) The full name of the image family to launch the current public image of, `//compute.origincloudapis.eu/imageFamilies/{image_family}`. Set exactly one of `image` and `image_family`. Empty when the instance was launched from an image.
+- `instance_type` (String) The instance type by its full name, `//compute.origincloudapis.eu/instanceTypes/{instance_type}`, such as `//compute.origincloudapis.eu/instanceTypes/gp1.core.2`: one whose `available` is true. Changing it needs the instance `STOPPED`.
 - `interface_addresses` (Attributes List) Each network interface's private addresses, in the order of `network_interfaces`; an interface not attached yet has none. (see [below for nested schema](#nestedatt--instances--interface_addresses))
-- `key_pair` (String) The key pair whose public key is installed for `login_user`, in the instance's project.
+- `key_pair` (String) The full name of the key pair whose public key is installed for `login_user`, in the instance's project.
 - `login_user` (String) The account to log in as: a user created at first boot that holds the key pair. A POSIX user name of at most 32 lowercase letters, digits, underscores and hyphens, starting with a letter or an underscore, and not `root`. The image's `default_user` when left empty.
 - `name` (String) The instance's resource name.
-- `network_interfaces` (List of String) The network interfaces, in device order, the boot interface first; exactly one today. Each is an existing interface in the instance's project and zone that nothing else holds, created with the network service: its subnet and security groups are the instance's. Terminating the instance releases it, and it stays. An instance launched before interfaces were named at launch shows the interface created for it, which is deleted with the instance.
-- `service_account` (String) The service account the instance runs as, `organizations/{organization}/serviceAccounts/{service_account}`: a `WORKLOAD` service account of the instance's organization that isn't deleted. Launching with one, or updating the instance to one, needs `iam.service_account.act_as` on the organization as well; an update that leaves it empty removes it, and a terminated instance's can't change. Empty for an instance that runs as none.
+- `network_interfaces` (List of String) The network interfaces' full names, in device order, the boot interface first; exactly one today. Each is an existing interface in the instance's project and zone that nothing else holds, created with the network service: its subnet and security groups are the instance's. Terminating the instance releases it, and it stays. An instance launched before interfaces were named at launch shows the interface created for it, which is deleted with the instance.
+- `service_account` (String) The full name of the service account the instance runs as, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`: a `WORKLOAD` service account of the instance's organization that isn't deleted. Launching with one, or updating the instance to one, needs `iam.service_account.act_as` on the organization as well; an update that leaves it empty removes it, and a terminated instance's can't change. Empty for an instance that runs as none.
 - `state` (String) Where the instance is in its lifecycle. One of `INITIALIZING`, `PENDING`, `RUNNING`, `STOPPING`, `STOPPED`, `SHUTTING_DOWN`, `TERMINATED`, `FAILED`.
 - `state_reason` (String) Why the instance is `FAILED`, or why a `STOPPED` instance went down when the machine it ran on failed; empty otherwise.
 - `tags` (Map of String) Labels of your own, at most 50. The `origin:name` tag is the name the console shows.
-- `urn` (String) The instance's URN, the identifier access policies and the audit log use.
 
 <a id="nestedatt--instances--boot_volume"></a>
 ### Nested Schema for `instances.boot_volume`
@@ -53,8 +53,8 @@ Read-Only:
 Read-Only:
 
 - `size_gib` (Number) The size in GiB the volume was created with, at least the image's size; the image's size when left at 0. Grow the volume itself to resize it; this keeps the size at launch.
-- `storage_class` (String) The storage class, `storageClasses/{storage_class}` of the persistent volume service; the default class when left empty.
-- `volume` (String) The volume, in the instance's project and zone.
+- `storage_class` (String) The storage class by its full name, `//pvs.origincloudapis.eu/storageClasses/{storage_class}`; the default class when left empty.
+- `volume` (String) The volume's full name, in the instance's project and zone.
 
 
 <a id="nestedatt--instances--health"></a>
@@ -84,4 +84,4 @@ Read-Only:
 
 - `ipv4_address` (String) Its private IPv4 address.
 - `ipv6_address` (String) Its IPv6 address.
-- `network_interface` (String) The network interface.
+- `network_interface` (String) The network interface's full name.

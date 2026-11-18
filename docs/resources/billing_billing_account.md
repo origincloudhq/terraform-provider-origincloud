@@ -30,12 +30,11 @@ An organization's billing account: who invoices are issued to, and how its proje
 ### Read-Only
 
 - `create_time` (String) When the billing account was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `creator` (String) The principal that created the billing account, such as `user:<id>` or `service_account:<id>`.
+- `creator` (String) The principal that created the billing account, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.
 - `default_account` (Boolean) Whether this is the organization's default billing account: the one its new projects are linked to. Every organization has exactly one, and it can't be deleted.
-- `id` (String) The billing account's resource name, the same as `name`.
+- `id` (String) The billing account's full resource name, `//billing.origincloudapis.eu/organizations/{organization}/billingAccounts/{billing_account}`: what an argument that refers to the billing account takes. `name` is the relative name, without the host.
 - `name` (String) The billing account's resource name.
 - `payment_method` (Attributes) How the account is paid. (see [below for nested schema](#nestedatt--payment_method))
-- `urn` (String) The billing account's URN, the identifier access policies and the audit log use.
 
 <a id="nestedatt--billing_address"></a>
 ### Nested Schema for `billing_address`

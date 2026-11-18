@@ -23,7 +23,6 @@ type aclModel struct {
 	Project    types.String `tfsdk:"project"`
 	Region     types.String `tfsdk:"region"`
 	Name       types.String `tfsdk:"name"`
-	Urn        types.String `tfsdk:"urn"`
 	Vpc        types.String `tfsdk:"vpc"`
 	VpcDefault types.Bool   `tfsdk:"vpc_default"`
 	CreateTime types.String `tfsdk:"create_time"`
@@ -36,7 +35,7 @@ func aclSchema() schema.Schema {
 		MarkdownDescription: "Stateless rules for the traffic in and out of the subnets associated with the ACL.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The acl's resource name, the same as `name`.",
+				MarkdownDescription: "The acl's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/acls/{acl}`: what an argument that refers to the acl takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -55,13 +54,10 @@ func aclSchema() schema.Schema {
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The ACL's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
-			},
 			"vpc": schema.StringAttribute{
-				MarkdownDescription: "The VPC the ACL belongs to, in the same project and region. Changing it replaces the acl.",
+				MarkdownDescription: "The full name of the VPC the ACL belongs to, in the same project and region. Changing it replaces the acl.",
 				Required:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"vpc_default": schema.BoolAttribute{
@@ -73,7 +69,7 @@ func aclSchema() schema.Schema {
 				Computed:            true,
 			},
 			"creator": schema.StringAttribute{
-				MarkdownDescription: "The principal that created the ACL, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.",
+				MarkdownDescription: "The principal that created the ACL, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 				Computed:            true,
 			},
 			"tags": schema.MapAttribute{
@@ -99,11 +95,14 @@ func aclFromProto(p *v1beta1.Acl, m *aclModel) error {
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Region = types.StringValue(values[1])
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Vpc = types.StringValue(p.GetVpc())
 	m.VpcDefault = types.BoolValue(p.GetVpcDefault())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
@@ -114,12 +113,14 @@ func aclFromProto(p *v1beta1.Acl, m *aclModel) error {
 
 func aclResource() framework.ResourceSpec[aclModel, *v1beta1.Acl] {
 	return framework.ResourceSpec[aclModel, *v1beta1.Acl]{
-		TypeName:  "_network_acl",
-		Pattern:   "projects/{project}/regions/{region}/acls/{acl}",
-		Schema:    aclSchema(),
-		Name:      func(m *aclModel) string { return m.Name.ValueString() },
-		ToProto:   aclToProto,
-		FromProto: aclFromProto,
+		TypeName:   "_network_acl",
+		Pattern:    "projects/{project}/regions/{region}/acls/{acl}",
+		Service:    "network",
+		References: map[string]string{"vpc": "network"},
+		Schema:     aclSchema(),
+		Name:       func(m *aclModel) string { return m.Name.ValueString() },
+		ToProto:    aclToProto,
+		FromProto:  aclFromProto,
 		UpdateMask: func(plan, state *aclModel) []string {
 			var mask []string
 			if !plan.Tags.Equal(state.Tags) {
@@ -156,8 +157,8 @@ func aclResource() framework.ResourceSpec[aclModel, *v1beta1.Acl] {
 
 // aclItemModel is an item of origincloud_network_acls.
 type aclItemModel struct {
+	ID         types.String `tfsdk:"id"`
 	Name       types.String `tfsdk:"name"`
-	Urn        types.String `tfsdk:"urn"`
 	Vpc        types.String `tfsdk:"vpc"`
 	VpcDefault types.Bool   `tfsdk:"vpc_default"`
 	CreateTime types.String `tfsdk:"create_time"`
@@ -166,8 +167,12 @@ type aclItemModel struct {
 }
 
 func aclItemFromProto(p *v1beta1.Acl, m *aclItemModel) error {
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Vpc = types.StringValue(p.GetVpc())
 	m.VpcDefault = types.BoolValue(p.GetVpcDefault())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
@@ -200,16 +205,16 @@ func aclListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The acl's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/acls/{acl}`: what an argument that refers to the acl takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "The ACL's resource name.",
 							Computed:            true,
 						},
-						"urn": schema1.StringAttribute{
-							MarkdownDescription: "The ACL's URN, the identifier access policies and the audit log use.",
-							Computed:            true,
-						},
 						"vpc": schema1.StringAttribute{
-							MarkdownDescription: "The VPC the ACL belongs to, in the same project and region.",
+							MarkdownDescription: "The full name of the VPC the ACL belongs to, in the same project and region.",
 							Computed:            true,
 						},
 						"vpc_default": schema1.BoolAttribute{
@@ -221,7 +226,7 @@ func aclListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"creator": schema1.StringAttribute{
-							MarkdownDescription: "The principal that created the ACL, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.",
+							MarkdownDescription: "The principal that created the ACL, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 							Computed:            true,
 						},
 						"tags": schema1.MapAttribute{

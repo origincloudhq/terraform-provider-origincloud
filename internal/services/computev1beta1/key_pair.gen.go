@@ -22,7 +22,6 @@ type keyPairModel struct {
 	ID         types.String `tfsdk:"id"`
 	Project    types.String `tfsdk:"project"`
 	Name       types.String `tfsdk:"name"`
-	Urn        types.String `tfsdk:"urn"`
 	PublicKey  types.String `tfsdk:"public_key"`
 	PrivateKey types.String `tfsdk:"private_key"`
 	Creator    types.String `tfsdk:"creator"`
@@ -34,7 +33,7 @@ func keyPairSchema() schema.Schema {
 		MarkdownDescription: "An SSH public key, and on creation the private key generated for it.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The key pair's resource name, the same as `name`.",
+				MarkdownDescription: "The key pair's full resource name, `//compute.origincloudapis.eu/projects/{project}/keyPairs/{key_pair}`: what an argument that refers to the key pair takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -47,10 +46,6 @@ func keyPairSchema() schema.Schema {
 				MarkdownDescription: "The key pair's resource name.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The key pair's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
 			},
 			"public_key": schema.StringAttribute{
 				MarkdownDescription: "The OpenSSH public key line, such as `ssh-ed25519 AAAA... comment`. Left empty, the platform generates the key pair. Changing it replaces the key pair.",
@@ -65,7 +60,7 @@ func keyPairSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"creator": schema.StringAttribute{
-				MarkdownDescription: "The principal that created the key pair, such as `user:<id>` or `service_account:<id>`.",
+				MarkdownDescription: "The principal that created the key pair, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 				Computed:            true,
 			},
 			"tags": schema.MapAttribute{
@@ -91,10 +86,13 @@ func keyPairFromProto(p *v1beta1.KeyPair, m *keyPairModel) error {
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("compute", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.PublicKey = types.StringValue(p.GetPublicKey())
 	m.PrivateKey = framework.Kept(m.PrivateKey, p.GetPrivateKey())
 	m.Creator = types.StringValue(p.GetCreator())
@@ -106,6 +104,7 @@ func keyPairResource() framework.ResourceSpec[keyPairModel, *v1beta1.KeyPair] {
 	return framework.ResourceSpec[keyPairModel, *v1beta1.KeyPair]{
 		TypeName:  "_compute_key_pair",
 		Pattern:   "projects/{project}/keyPairs/{key_pair}",
+		Service:   "compute",
 		Schema:    keyPairSchema(),
 		Name:      func(m *keyPairModel) string { return m.Name.ValueString() },
 		ToProto:   keyPairToProto,
@@ -139,16 +138,20 @@ func keyPairResource() framework.ResourceSpec[keyPairModel, *v1beta1.KeyPair] {
 
 // keyPairItemModel is an item of origincloud_compute_key_pairs.
 type keyPairItemModel struct {
+	ID        types.String `tfsdk:"id"`
 	Name      types.String `tfsdk:"name"`
-	Urn       types.String `tfsdk:"urn"`
 	PublicKey types.String `tfsdk:"public_key"`
 	Creator   types.String `tfsdk:"creator"`
 	Tags      types.Map    `tfsdk:"tags"`
 }
 
 func keyPairItemFromProto(p *v1beta1.KeyPair, m *keyPairItemModel) error {
+	id, err := framework.FullName("compute", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.PublicKey = types.StringValue(p.GetPublicKey())
 	m.Creator = types.StringValue(p.GetCreator())
 	m.Tags = framework.StringMap(p.GetTags())
@@ -174,12 +177,12 @@ func keyPairListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
-						"name": schema1.StringAttribute{
-							MarkdownDescription: "The key pair's resource name.",
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The key pair's full resource name, `//compute.origincloudapis.eu/projects/{project}/keyPairs/{key_pair}`: what an argument that refers to the key pair takes. `name` is the relative name, without the host.",
 							Computed:            true,
 						},
-						"urn": schema1.StringAttribute{
-							MarkdownDescription: "The key pair's URN, the identifier access policies and the audit log use.",
+						"name": schema1.StringAttribute{
+							MarkdownDescription: "The key pair's resource name.",
 							Computed:            true,
 						},
 						"public_key": schema1.StringAttribute{
@@ -187,7 +190,7 @@ func keyPairListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"creator": schema1.StringAttribute{
-							MarkdownDescription: "The principal that created the key pair, such as `user:<id>` or `service_account:<id>`.",
+							MarkdownDescription: "The principal that created the key pair, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 							Computed:            true,
 						},
 						"tags": schema1.MapAttribute{

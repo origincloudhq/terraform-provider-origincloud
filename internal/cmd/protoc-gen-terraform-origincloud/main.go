@@ -387,6 +387,16 @@ func generateResource(g *protogen.GeneratedFile, t resourceType) error {
 	g.P("return ", g.QualifiedGoIdent(frameworkPackage.Ident("ResourceSpec")), "[", model, ", ", message, "]{")
 	g.P("TypeName: ", fmt.Sprintf("%q", typeName), ",")
 	g.P("Pattern: ", fmt.Sprintf("%q", t.pattern), ",")
+	g.P("Service: ", fmt.Sprintf("%q", t.shortcode), ",")
+	var references []string
+	for _, a := range attrs {
+		if service := referenceService(a); service != "" && a.kind == "String" && !a.inNested {
+			references = append(references, fmt.Sprintf("%q: %q", a.name, service))
+		}
+	}
+	if len(references) > 0 {
+		g.P("References: map[string]string{", strings.Join(references, ", "), "},")
+	}
 	if id := t.idField(); id != nil {
 		g.P("ClientID: func(m *", model, ") ", g.QualifiedGoIdent(typesPackage.Ident("String")), " { return m.", camel(string(id.Desc.Name())), " },")
 		g.P("IDAttribute: ", fmt.Sprintf("%q", string(id.Desc.Name())), ",")
@@ -756,7 +766,7 @@ func generateDataSource(g *protogen.GeneratedFile, t resourceType, name string) 
 // generateListDataSource writes the data source that reads everything a
 // resource type's List method returns. Its items are the data source's
 // attributes, all computed: a data source type's items reuse its model and
-// conversion, a resource type's get their own, without the resource's id,
+// conversion, a resource type's get their own, without the resource's
 // name variables and toggles.
 func generateListDataSource(g *protogen.GeneratedFile, t resourceType) error {
 	name := lowerFirst(t.message.GoIdent.GoName)

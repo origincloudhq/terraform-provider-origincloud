@@ -25,4 +25,5 @@ A person who signs in to the platform.
 - `email_verified` (Boolean) Whether the user has confirmed `email`.
 - `family_name` (String) The user's family name; empty when they haven't set one.
 - `given_name` (String) The user's given name; empty when they haven't set one.
-- `member` (String) How a role binding shows the user: `user:{email}` once `email` is verified, `userId:{user}` until then.
+- `id` (String) The user's full resource name, `//iam.origincloudapis.eu/users/{user}`: what an argument that refers to the user takes. `name` is the relative name, without the host.
+- `member` (String) The user's full name, `//iam.origincloudapis.eu/users/{user}`, which a role binding names them by as a member.

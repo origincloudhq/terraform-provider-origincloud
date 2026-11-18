@@ -30,5 +30,6 @@ Lists a VPC's DNS policy associations: none or one.
 
 Read-Only:
 
-- `dns_policy` (String) The DNS policy the VPC relays through, in the VPC's project and region.
+- `dns_policy` (String) The full name of the DNS policy the VPC relays through, in the VPC's project and region.
+- `id` (String) The dns policy association's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/vpcs/{vpc}/dnsPolicyAssociations/{dns_policy_association}`: what an argument that refers to the dns policy association takes. `name` is the relative name, without the host.
 - `name` (String) The association's resource name. Its last segment is the DNS policy's id.

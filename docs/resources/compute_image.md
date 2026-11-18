@@ -31,12 +31,11 @@ A project's own image, which an instance's boot volume can be created from.
 ### Read-Only
 
 - `architecture` (String) The CPU architecture it boots on. One of `X86_64`.
-- `creator` (String) The principal that created the image, such as `user:<id>`.
-- `id` (String) The image's resource name, the same as `name`.
+- `creator` (String) The principal that created the image, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.
+- `id` (String) The image's full resource name, `//compute.origincloudapis.eu/projects/{project}/zones/{zone}/images/{image}`: what an argument that refers to the image takes. `name` is the relative name, without the host.
 - `name` (String) The image's resource name.
 - `platform` (String) Its operating system family. One of `LINUX_UNIX`.
 - `state` (String) Where it is in its lifecycle. One of `AVAILABLE`.
-- `urn` (String) The image's URN, the identifier access policies and the audit log use.
 
 <a id="nestedatt--block_devices"></a>
 ### Nested Schema for `block_devices`
@@ -48,4 +47,4 @@ Required:
 
 Optional:
 
-- `source_snapshot` (String) The protected snapshot the disk is created from, in the image's project and zone; an empty disk when left empty.
+- `source_snapshot` (String) The full name of the protected snapshot the disk is created from, in the image's project and zone; an empty disk when left empty.

@@ -24,7 +24,6 @@ type dnsPolicyModel struct {
 	Project         types.String `tfsdk:"project"`
 	Region          types.String `tfsdk:"region"`
 	Name            types.String `tfsdk:"name"`
-	Urn             types.String `tfsdk:"urn"`
 	ProjectDefault  types.Bool   `tfsdk:"project_default"`
 	RelayEnabled    types.Bool   `tfsdk:"relay_enabled"`
 	UpstreamServers types.List   `tfsdk:"upstream_servers"`
@@ -38,7 +37,7 @@ func dnsPolicySchema() schema.Schema {
 		MarkdownDescription: "How a VPC's resolver answers names outside the platform's own.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The dns policy's resource name, the same as `name`.",
+				MarkdownDescription: "The dns policy's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/dnsPolicies/{dns_policy}`: what an argument that refers to the dns policy takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -56,10 +55,6 @@ func dnsPolicySchema() schema.Schema {
 				MarkdownDescription: "The policy's resource name.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The policy's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
 			},
 			"project_default": schema.BoolAttribute{
 				MarkdownDescription: "Whether this is the project's default policy in its region, which a VPC without a DNS policy association relays through. Change it with `SetDefaultDnsPolicy`.",
@@ -80,7 +75,7 @@ func dnsPolicySchema() schema.Schema {
 				Computed:            true,
 			},
 			"creator": schema.StringAttribute{
-				MarkdownDescription: "The principal that created the DNS policy, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.",
+				MarkdownDescription: "The principal that created the DNS policy, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 				Computed:            true,
 			},
 			"tags": schema.MapAttribute{
@@ -107,11 +102,14 @@ func dnsPolicyFromProto(p *v1beta1.DnsPolicy, m *dnsPolicyModel) error {
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Region = types.StringValue(values[1])
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.ProjectDefault = types.BoolValue(p.GetProjectDefault())
 	m.RelayEnabled = framework.Optional(m.RelayEnabled, types.BoolValue(p.GetRelayEnabled()), !p.GetRelayEnabled())
 	m.UpstreamServers = framework.Optional(m.UpstreamServers, framework.StringList(p.GetUpstreamServers()), len(p.GetUpstreamServers()) == 0)
@@ -125,6 +123,7 @@ func dnsPolicyResource() framework.ResourceSpec[dnsPolicyModel, *v1beta1.DnsPoli
 	return framework.ResourceSpec[dnsPolicyModel, *v1beta1.DnsPolicy]{
 		TypeName:  "_network_dns_policy",
 		Pattern:   "projects/{project}/regions/{region}/dnsPolicies/{dns_policy}",
+		Service:   "network",
 		Schema:    dnsPolicySchema(),
 		Name:      func(m *dnsPolicyModel) string { return m.Name.ValueString() },
 		ToProto:   dnsPolicyToProto,
@@ -171,8 +170,8 @@ func dnsPolicyResource() framework.ResourceSpec[dnsPolicyModel, *v1beta1.DnsPoli
 
 // dnsPolicyItemModel is an item of origincloud_network_dns_policies.
 type dnsPolicyItemModel struct {
+	ID              types.String `tfsdk:"id"`
 	Name            types.String `tfsdk:"name"`
-	Urn             types.String `tfsdk:"urn"`
 	ProjectDefault  types.Bool   `tfsdk:"project_default"`
 	RelayEnabled    types.Bool   `tfsdk:"relay_enabled"`
 	UpstreamServers types.List   `tfsdk:"upstream_servers"`
@@ -182,8 +181,12 @@ type dnsPolicyItemModel struct {
 }
 
 func dnsPolicyItemFromProto(p *v1beta1.DnsPolicy, m *dnsPolicyItemModel) error {
+	id, err := framework.FullName("network", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.ProjectDefault = types.BoolValue(p.GetProjectDefault())
 	m.RelayEnabled = types.BoolValue(p.GetRelayEnabled())
 	m.UpstreamServers = framework.StringList(p.GetUpstreamServers())
@@ -217,12 +220,12 @@ func dnsPolicyListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
-						"name": schema1.StringAttribute{
-							MarkdownDescription: "The policy's resource name.",
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The dns policy's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/dnsPolicies/{dns_policy}`: what an argument that refers to the dns policy takes. `name` is the relative name, without the host.",
 							Computed:            true,
 						},
-						"urn": schema1.StringAttribute{
-							MarkdownDescription: "The policy's URN, the identifier access policies and the audit log use.",
+						"name": schema1.StringAttribute{
+							MarkdownDescription: "The policy's resource name.",
 							Computed:            true,
 						},
 						"project_default": schema1.BoolAttribute{
@@ -243,7 +246,7 @@ func dnsPolicyListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"creator": schema1.StringAttribute{
-							MarkdownDescription: "The principal that created the DNS policy, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.",
+							MarkdownDescription: "The principal that created the DNS policy, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 							Computed:            true,
 						},
 						"tags": schema1.MapAttribute{

@@ -30,10 +30,10 @@ Lists the route tables in a region, oldest first.
 Read-Only:
 
 - `create_time` (String) When the route table was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `creator` (String) The principal that created the route table, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.
+- `creator` (String) The principal that created the route table, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.
+- `id` (String) The route table's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/routeTables/{route_table}`: what an argument that refers to the route table takes. `name` is the relative name, without the host.
 - `local_routes` (List of String) The VPC's own ranges, which every table reaches directly. Traffic within the VPC never needs a route.
 - `main` (Boolean) Whether the platform created the table with the VPC, as its main route table. Only the project's default VPC has such resources. It can't be deleted, and goes with its VPC. Like any other table, it routes only for the subnets a route table association names it for.
 - `name` (String) The route table's resource name.
 - `tags` (Map of String) Labels of your own, at most 50. The `origin:name` tag is the name the console shows.
-- `urn` (String) The route table's URN, the identifier access policies and the audit log use.
-- `vpc` (String) The VPC the table routes for, in the same project and region.
+- `vpc` (String) The full name of the VPC the table routes for, in the same project and region.

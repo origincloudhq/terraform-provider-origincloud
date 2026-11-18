@@ -25,6 +25,7 @@ Lists the countries a billing address may be in, in the order a form shows them,
 Read-Only:
 
 - `display_name` (String) The country's name in English.
+- `id` (String) The billing country's full resource name, `//billing.origincloudapis.eu/billingCountries/{billing_country}`: what an argument that refers to the billing country takes. `name` is the relative name, without the host.
 - `name` (String) The country's resource name, `billingCountries/{code}`.
 - `region_code` (String) The ISO 3166-1 alpha-2 code a billing address names it by, such as `DE`.
 - `vat_id_required` (Boolean) Whether a billing account with an address in this country needs a `vat_id`. Customers in every country but Germany are invoiced without VAT, as businesses under the reverse-charge rule, which needs one.

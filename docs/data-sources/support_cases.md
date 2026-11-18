@@ -30,11 +30,11 @@ Read-Only:
 
 - `contact_email` (String) The email address every notification about the case is sent to, for as long as the case exists: when support replies, and when its state changes.
 - `create_time` (String) When the case was opened. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `creator` (String) The principal that opened the case, such as `user:<id>` or `service_account:<id>`.
+- `creator` (String) The principal that opened the case, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.
 - `description` (String) What the case is about, in full. Not empty.
+- `id` (String) The case's full resource name, `//support.origincloudapis.eu/organizations/{organization}/cases/{case}`: what an argument that refers to the case takes. `name` is the relative name, without the host.
 - `name` (String) The case's resource name, `organizations/{organization}/cases/{case}`.
-- `project` (String) The project the case is about, `projects/{project}`, one of the organization's. Empty for a case about the organization as a whole.
+- `project` (String) The full name of the project the case is about, one of the organization's: `//resourcemanager.origincloudapis.eu/projects/{project}`. Empty for a case about the organization as a whole.
 - `state` (String) Where the case stands. Changed by support, and by `CloseCase` and `ReopenCase`. One of `OPEN`, `IN_PROGRESS`, `RESOLVED`, `CLOSED`.
 - `subject` (String) A one-line summary. Not empty.
 - `update_time` (String) When the case last changed: a message added, or its state changed. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `urn` (String) The case's URN, the identifier access policies and the audit log use.

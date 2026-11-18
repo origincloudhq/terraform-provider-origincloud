@@ -19,7 +19,7 @@ A volume an instance holds.
 
 - `instance` (String) The instance the volume attachment is in. Changing it replaces the volume attachment.
 - `project` (String) The project the volume attachment is in. Changing it replaces the volume attachment.
-- `volume` (String) The volume, in the instance's project and zone. Changing it replaces the volume attachment.
+- `volume` (String) The volume's full name, in the instance's project and zone. Changing it replaces the volume attachment.
 - `zone` (String) The zone the volume attachment is in. Changing it replaces the volume attachment.
 
 ### Optional
@@ -29,7 +29,6 @@ A volume an instance holds.
 ### Read-Only
 
 - `boot` (Boolean) Whether this is the instance's boot volume, which was attached at launch and can't be detached.
-- `id` (String) The volume attachment's resource name, the same as `name`.
+- `id` (String) The volume attachment's full resource name, `//compute.origincloudapis.eu/projects/{project}/zones/{zone}/instances/{instance}/volumeAttachments/{volume_attachment}`: what an argument that refers to the volume attachment takes. `name` is the relative name, without the host.
 - `name` (String) The attachment's resource name.
 - `state` (String) Where the attachment is. One of `CREATING`, `ATTACHING`, `ATTACHED`, `DETACHING`, `RELEASING`, `RELEASE_ABANDONED`, `FAILED`.
-- `urn` (String) The attachment's URN, the identifier access policies and the audit log use.

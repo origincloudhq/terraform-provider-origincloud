@@ -30,8 +30,8 @@ Lists the internet gateways in a region, oldest first.
 Read-Only:
 
 - `create_time` (String) When the internet gateway was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `creator` (String) The principal that created the internet gateway, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.
+- `creator` (String) The principal that created the internet gateway, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.
+- `id` (String) The internet gateway's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/internetGateways/{internet_gateway}`: what an argument that refers to the internet gateway takes. `name` is the relative name, without the host.
 - `name` (String) The gateway's resource name.
 - `tags` (Map of String) Labels of your own, at most 50. The `origin:name` tag is the name the console shows.
-- `urn` (String) The gateway's URN, the identifier access policies and the audit log use.
-- `vpc` (String) The VPC the gateway connects, in the same project and region.
+- `vpc` (String) The full name of the VPC the gateway connects, in the same project and region.

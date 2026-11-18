@@ -31,15 +31,15 @@ Read-Only:
 
 - `architecture` (String) The CPU architecture it boots on. One of `X86_64`.
 - `block_devices` (Attributes List) The image's disks, each created for an instance launched from it. (see [below for nested schema](#nestedatt--images--block_devices))
-- `creator` (String) The principal that created the image, such as `user:<id>`.
+- `creator` (String) The principal that created the image, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.
 - `default_user` (String) The account an instance launched from the image logs in as, unless the launch names another: a POSIX user name of at most 32 lowercase letters, digits, underscores and hyphens, starting with a letter or an underscore, and not `root`. `cloud` when left empty.
 - `description` (String) What the image holds, as you describe it.
+- `id` (String) The image's full resource name, `//compute.origincloudapis.eu/projects/{project}/zones/{zone}/images/{image}`: what an argument that refers to the image takes. `name` is the relative name, without the host.
 - `name` (String) The image's resource name.
 - `platform` (String) Its operating system family. One of `LINUX_UNIX`.
 - `root_device` (String) The device name of the disk the image boots from: one of the `block_devices`' `device`.
 - `state` (String) Where it is in its lifecycle. One of `AVAILABLE`.
 - `tags` (Map of String) Labels of your own, at most 50. The `origin:name` tag is the name the console shows.
-- `urn` (String) The image's URN, the identifier access policies and the audit log use.
 
 <a id="nestedatt--images--block_devices"></a>
 ### Nested Schema for `images.block_devices`
@@ -48,4 +48,4 @@ Read-Only:
 
 - `device` (String) The device name the disk appears under on every instance launched from the image: `vda` to `vdz` but `vdc`, unique within the image.
 - `size_gib` (Number) The disk's size in GiB, at least the snapshot's.
-- `source_snapshot` (String) The protected snapshot the disk is created from, in the image's project and zone; an empty disk when left empty.
+- `source_snapshot` (String) The full name of the protected snapshot the disk is created from, in the image's project and zone; an empty disk when left empty.

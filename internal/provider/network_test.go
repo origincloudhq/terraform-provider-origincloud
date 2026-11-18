@@ -48,7 +48,7 @@ resource "origincloud_network_vpc" "main" {
 resource "origincloud_network_subnet" "web" {
   project = local.project
   zone    = local.zone
-  vpc     = origincloud_network_vpc.main.name
+  vpc     = origincloud_network_vpc.main.id
 }
 `, fake.URL)
 }
@@ -62,13 +62,13 @@ func topologyConfig(fake *fakeNetwork, vpcTags, sshFrom string) string {
 resource "origincloud_network_internet_gateway" "main" {
   project = local.project
   region  = local.region
-  vpc     = origincloud_network_vpc.main.name
+  vpc     = origincloud_network_vpc.main.id
 }
 
 resource "origincloud_network_route_table" "public" {
   project = local.project
   region  = local.region
-  vpc     = origincloud_network_vpc.main.name
+  vpc     = origincloud_network_vpc.main.id
 }
 
 resource "origincloud_network_route" "default" {
@@ -76,20 +76,20 @@ resource "origincloud_network_route" "default" {
   region           = local.region
   route_table      = basename(origincloud_network_route_table.public.name)
   destination      = "0.0.0.0/0"
-  internet_gateway = origincloud_network_internet_gateway.main.name
+  internet_gateway = origincloud_network_internet_gateway.main.id
 }
 
 resource "origincloud_network_route_table_association" "web" {
   project     = local.project
   zone        = local.zone
   subnet      = basename(origincloud_network_subnet.web.name)
-  route_table = origincloud_network_route_table.public.name
+  route_table = origincloud_network_route_table.public.id
 }
 
 resource "origincloud_network_security_group" "web" {
   project = local.project
   region  = local.region
-  vpc     = origincloud_network_vpc.main.name
+  vpc     = origincloud_network_vpc.main.id
 }
 
 resource "origincloud_network_security_group_rule" "ssh" {
@@ -106,7 +106,7 @@ resource "origincloud_network_security_group_rule" "ssh" {
 resource "origincloud_network_acl" "web" {
   project = local.project
   region  = local.region
-  vpc     = origincloud_network_vpc.main.name
+  vpc     = origincloud_network_vpc.main.id
 }
 
 resource "origincloud_network_acl_rule" "https" {
@@ -125,7 +125,7 @@ resource "origincloud_network_acl_association" "web" {
   project = local.project
   zone    = local.zone
   subnet  = basename(origincloud_network_subnet.web.name)
-  acl     = origincloud_network_acl.web.name
+  acl     = origincloud_network_acl.web.id
 }
 `, sshFrom)
 }
@@ -176,18 +176,18 @@ func TestANetworkIsCreatedUpdatedReplacedAndDestroyedInDependencyOrder(t *testin
 				Config: topologyConfig(fake, `{ env = "test" }`, "198.51.100.0/24"),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestMatchResourceAttr("origincloud_network_vpc.main", "name", regexp.MustCompile("^"+networkRegion+"/vpcs/vpc-[0-9]+$")),
-					resource.TestCheckResourceAttrPair("origincloud_network_vpc.main", "id", "origincloud_network_vpc.main", "name"),
+					checkFullName("origincloud_network_vpc.main"),
 					// Left out, the range is the one the API chose.
 					resource.TestCheckResourceAttr("origincloud_network_vpc.main", "ipv4_cidr_block", "172.16.0.0/16"),
 					resource.TestCheckResourceAttr("origincloud_network_vpc.main", "subnet_ipv4_prefix_length", "20"),
 					resource.TestCheckResourceAttr("origincloud_network_vpc.main", "create_time", "2026-11-01T12:00:00Z"),
 					resource.TestMatchResourceAttr("origincloud_network_subnet.web", "name", regexp.MustCompile("^"+networkZone+"/subnets/subnet-[0-9]+$")),
-					resource.TestCheckResourceAttrPair("origincloud_network_subnet.web", "vpc", "origincloud_network_vpc.main", "name"),
+					resource.TestCheckResourceAttrPair("origincloud_network_subnet.web", "vpc", "origincloud_network_vpc.main", "id"),
 					resource.TestCheckResourceAttr("origincloud_network_subnet.web", "ipv4_cidr_block", "172.16.0.0/20"),
 					resource.TestCheckResourceAttr("origincloud_network_subnet.web", "ipv4_gateway", "172.16.0.1"),
 					resource.TestCheckResourceAttr("origincloud_network_subnet.web", "ipv4_dns_servers.0", "172.16.0.1"),
 					resource.TestCheckResourceAttr("origincloud_network_route_table.public", "local_routes.0", "172.16.0.0/16"),
-					resource.TestCheckResourceAttrPair("origincloud_network_route.default", "internet_gateway", "origincloud_network_internet_gateway.main", "name"),
+					resource.TestCheckResourceAttrPair("origincloud_network_route.default", "internet_gateway", "origincloud_network_internet_gateway.main", "id"),
 					resource.TestCheckResourceAttr("origincloud_network_route.default", "nat_gateway", ""),
 					checkNetworkAssociationName("origincloud_network_route_table_association.web", "origincloud_network_subnet.web", "routeTableAssociations", "origincloud_network_route_table.public"),
 					resource.TestCheckResourceAttr("origincloud_network_security_group_rule.ssh", "cidr_block", "198.51.100.0/24"),
@@ -203,10 +203,10 @@ func TestANetworkIsCreatedUpdatedReplacedAndDestroyedInDependencyOrder(t *testin
 			{
 				RefreshState: true,
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttrPair("origincloud_network_vpc.main", "internet_gateway", "origincloud_network_internet_gateway.main", "name"),
+					resource.TestCheckResourceAttrPair("origincloud_network_vpc.main", "internet_gateway", "origincloud_network_internet_gateway.main", "id"),
 					resource.TestCheckResourceAttr("origincloud_network_vpc.main", "available_subnet_count", "15"),
-					resource.TestCheckResourceAttrPair("origincloud_network_subnet.web", "route_table", "origincloud_network_route_table.public", "name"),
-					resource.TestCheckResourceAttrPair("origincloud_network_subnet.web", "acl", "origincloud_network_acl.web", "name"),
+					resource.TestCheckResourceAttrPair("origincloud_network_subnet.web", "route_table", "origincloud_network_route_table.public", "id"),
+					resource.TestCheckResourceAttrPair("origincloud_network_subnet.web", "acl", "origincloud_network_acl.web", "id"),
 				),
 			},
 			// A tag is updated in place, and nothing else changes.
@@ -281,7 +281,7 @@ provider "origincloud" {
 resource "origincloud_network_subnet" "web" {
   project = "p-1"
   zone    = "eu-central1-az1"
-  vpc     = "%s/vpcs/vpc-1"
+  vpc     = "//network.origincloudapis.eu/%s/vpcs/vpc-1"
   %s
 }
 `, fake.URL, networkRegion, dependsOn)
@@ -326,13 +326,13 @@ func peersConfig(fake *fakeNetwork, fromLB, extra string) string {
 resource "origincloud_network_security_group" "web" {
   project = local.project
   region  = local.region
-  vpc     = origincloud_network_vpc.main.name
+  vpc     = origincloud_network_vpc.main.id
 }
 
 resource "origincloud_network_security_group" "lb" {
   project = local.project
   region  = local.region
-  vpc     = origincloud_network_vpc.main.name
+  vpc     = origincloud_network_vpc.main.id
 }
 
 resource "origincloud_network_security_group_rule" "from_lb" {
@@ -374,7 +374,7 @@ resource "origincloud_network_security_group_rule" "extra" {
 func TestASecurityGroupRuleHasExactlyOnePeer(t *testing.T) {
 	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
 	fake := newFakeNetwork(t)
-	fromGroup := `peer_security_group = origincloud_network_security_group.lb.name`
+	fromGroup := `peer_security_group = origincloud_network_security_group.lb.id`
 	fromRange := `cidr_block = "10.0.0.0/8"`
 	exactlyOne := regexp.MustCompile(`set exactly one of cidr_block,\s+peer_security_group and same_group`)
 
@@ -385,7 +385,7 @@ func TestASecurityGroupRuleHasExactlyOnePeer(t *testing.T) {
 			{
 				Config: peersConfig(fake, fromGroup, ""),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttrPair("origincloud_network_security_group_rule.from_lb", "peer_security_group", "origincloud_network_security_group.lb", "name"),
+					resource.TestCheckResourceAttrPair("origincloud_network_security_group_rule.from_lb", "peer_security_group", "origincloud_network_security_group.lb", "id"),
 					resource.TestCheckResourceAttr("origincloud_network_security_group_rule.from_lb", "cidr_block", ""),
 					resource.TestCheckResourceAttr("origincloud_network_security_group_rule.from_lb", "same_group", "false"),
 					resource.TestCheckResourceAttr("origincloud_network_security_group_rule.from_lb", "description", ""),
@@ -405,7 +405,7 @@ func TestASecurityGroupRuleHasExactlyOnePeer(t *testing.T) {
 				ExpectError: exactlyOne,
 			},
 			{
-				Config:      peersConfig(fake, fromGroup, extraSecurityGroupRule(`peer_security_group = origincloud_network_security_group.web.name`)),
+				Config:      peersConfig(fake, fromGroup, extraSecurityGroupRule(`peer_security_group = origincloud_network_security_group.web.id`)),
 				ExpectError: regexp.MustCompile(`peer_security_group is the rule's own group:\s+set same_group`),
 			},
 			// Switching to another peer replaces the rule, and the new one
@@ -435,7 +435,7 @@ func TestASecurityGroupRuleHasExactlyOnePeer(t *testing.T) {
 			// referring to it.
 			{
 				Config: peersConfig(fake, fromGroup, ""),
-				Check:  resource.TestCheckResourceAttrPair("origincloud_network_security_group_rule.from_lb", "peer_security_group", "origincloud_network_security_group.lb", "name"),
+				Check:  resource.TestCheckResourceAttrPair("origincloud_network_security_group_rule.from_lb", "peer_security_group", "origincloud_network_security_group.lb", "id"),
 			},
 		},
 		CheckDestroy: checkNetworkDestroyed(fake),
@@ -450,7 +450,7 @@ func floatingIPConfig(fake *fakeNetwork, iface string, associated bool) string {
 resource "origincloud_network_network_interface" "web" {
   project = local.project
   zone    = local.zone
-  subnet  = origincloud_network_subnet.web.name
+  subnet  = origincloud_network_subnet.web.id
   %s
 }
 
@@ -466,7 +466,7 @@ resource "origincloud_network_floating_ip_association" "web" {
   project           = local.project
   zone              = local.zone
   floating_ip       = basename(origincloud_network_floating_ip.web.name)
-  network_interface = origincloud_network_network_interface.web.name
+  network_interface = origincloud_network_network_interface.web.id
 }
 `
 	}
@@ -490,7 +490,7 @@ func TestAFloatingIPIsAssociatedWithANetworkInterface(t *testing.T) {
 					// Left out, the API chooses it.
 					resource.TestCheckResourceAttr("origincloud_network_network_interface.web", "source_address_check", "true"),
 					resource.TestCheckResourceAttrPair("origincloud_network_floating_ip_association.web", "private_address", "origincloud_network_network_interface.web", "ipv4_address"),
-					resource.TestCheckResourceAttrPair("origincloud_network_floating_ip_association.web", "network_interface", "origincloud_network_network_interface.web", "name"),
+					resource.TestCheckResourceAttrPair("origincloud_network_floating_ip_association.web", "network_interface", "origincloud_network_network_interface.web", "id"),
 					checkNetworkAssociationName("origincloud_network_floating_ip_association.web", "origincloud_network_floating_ip.web", "associations", "origincloud_network_network_interface.web"),
 				),
 				ConfigStateChecks: []statecheck.StateCheck{
@@ -502,7 +502,7 @@ func TestAFloatingIPIsAssociatedWithANetworkInterface(t *testing.T) {
 			{
 				RefreshState: true,
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttrPair("origincloud_network_floating_ip.web", "network_interface", "origincloud_network_network_interface.web", "name"),
+					resource.TestCheckResourceAttrPair("origincloud_network_floating_ip.web", "network_interface", "origincloud_network_network_interface.web", "id"),
 					resource.TestCheckResourceAttr("origincloud_network_floating_ip.web", "private_address", "172.16.0.4"),
 					resource.TestCheckResourceAttr("origincloud_network_subnet.web", "available_ipv4_address_count", "4090"),
 				),
@@ -545,7 +545,7 @@ func TestNetworkListDataSourcesReadEveryPage(t *testing.T) {
 resource "origincloud_network_security_group" "web" {
   project = local.project
   region  = local.region
-  vpc     = origincloud_network_vpc.main.name
+  vpc     = origincloud_network_vpc.main.id
 }
 
 resource "origincloud_network_security_group_rule" "https" {
@@ -622,7 +622,7 @@ data "origincloud_network_subnets" "az2" {
 					resource.TestCheckResourceAttr("data.origincloud_network_vpcs.central", "vpcs.#", "1"),
 					resource.TestCheckResourceAttr("data.origincloud_network_vpcs.central", "vpcs.0.tags.env", "test"),
 					resource.TestCheckResourceAttr("data.origincloud_network_subnets.az1", "subnets.#", "1"),
-					resource.TestCheckResourceAttrPair("data.origincloud_network_subnets.az1", "subnets.0.vpc", "origincloud_network_vpc.main", "name"),
+					resource.TestCheckResourceAttrPair("data.origincloud_network_subnets.az1", "subnets.0.vpc", "origincloud_network_vpc.main", "id"),
 				),
 				// A zone without subnets lists none: an empty list, not null.
 				ConfigStateChecks: []statecheck.StateCheck{
@@ -659,7 +659,7 @@ data "origincloud_network_vpcs" "central" {
 }
 `,
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttrPair("origincloud_network_subnet.web", "vpc", "origincloud_network_vpc.main", "name"),
+					resource.TestCheckResourceAttrPair("origincloud_network_subnet.web", "vpc", "origincloud_network_vpc.main", "id"),
 					resource.TestCheckResourceAttr("data.origincloud_network_vpcs.central", "vpcs.#", "1"),
 					func(*terraform.State) error {
 						calls := h.calls()

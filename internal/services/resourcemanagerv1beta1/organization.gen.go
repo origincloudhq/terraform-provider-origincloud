@@ -20,7 +20,6 @@ import (
 type organizationModel struct {
 	ID          types.String `tfsdk:"id"`
 	Name        types.String `tfsdk:"name"`
-	Urn         types.String `tfsdk:"urn"`
 	DisplayName types.String `tfsdk:"display_name"`
 	State       types.String `tfsdk:"state"`
 	CreateTime  types.String `tfsdk:"create_time"`
@@ -32,7 +31,7 @@ func organizationSchema() schema.Schema {
 		MarkdownDescription: "An organization: the account its projects, members and billing belong to.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The organization's resource name, the same as `name`.",
+				MarkdownDescription: "The organization's full resource name, `//resourcemanager.origincloudapis.eu/organizations/{organization}`: what an argument that refers to the organization takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -40,10 +39,6 @@ func organizationSchema() schema.Schema {
 				MarkdownDescription: "The organization's resource name, `organizations/{organization}`.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The organization's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
 			},
 			"display_name": schema.StringAttribute{
 				MarkdownDescription: "The name the console shows, typically the company's name. Not empty.",
@@ -58,7 +53,7 @@ func organizationSchema() schema.Schema {
 				Computed:            true,
 			},
 			"creator": schema.StringAttribute{
-				MarkdownDescription: "The principal that created the organization, such as `user:<id>` or `service_account:<id>`.",
+				MarkdownDescription: "The principal that created the organization, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 				Computed:            true,
 			},
 		},
@@ -76,9 +71,12 @@ func organizationFromProto(p *v1beta1.Organization, m *organizationModel) error 
 	if _, err := framework.NameValues("organizations/{organization}", p.GetName()); err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("resourcemanager", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.DisplayName = types.StringValue(p.GetDisplayName())
 	m.State = types.StringValue(p.GetState().String())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
@@ -90,6 +88,7 @@ func organizationResource() framework.ResourceSpec[organizationModel, *v1beta1.O
 	return framework.ResourceSpec[organizationModel, *v1beta1.Organization]{
 		TypeName:  "_resourcemanager_organization",
 		Pattern:   "organizations/{organization}",
+		Service:   "resourcemanager",
 		Schema:    organizationSchema(),
 		Name:      func(m *organizationModel) string { return m.Name.ValueString() },
 		ToProto:   organizationToProto,
@@ -121,8 +120,8 @@ func organizationResource() framework.ResourceSpec[organizationModel, *v1beta1.O
 
 // organizationItemModel is an item of origincloud_resourcemanager_organizations.
 type organizationItemModel struct {
+	ID          types.String `tfsdk:"id"`
 	Name        types.String `tfsdk:"name"`
-	Urn         types.String `tfsdk:"urn"`
 	DisplayName types.String `tfsdk:"display_name"`
 	State       types.String `tfsdk:"state"`
 	CreateTime  types.String `tfsdk:"create_time"`
@@ -130,8 +129,12 @@ type organizationItemModel struct {
 }
 
 func organizationItemFromProto(p *v1beta1.Organization, m *organizationItemModel) error {
+	id, err := framework.FullName("resourcemanager", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.DisplayName = types.StringValue(p.GetDisplayName())
 	m.State = types.StringValue(p.GetState().String())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
@@ -153,12 +156,12 @@ func organizationListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
-						"name": schema1.StringAttribute{
-							MarkdownDescription: "The organization's resource name, `organizations/{organization}`.",
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The organization's full resource name, `//resourcemanager.origincloudapis.eu/organizations/{organization}`: what an argument that refers to the organization takes. `name` is the relative name, without the host.",
 							Computed:            true,
 						},
-						"urn": schema1.StringAttribute{
-							MarkdownDescription: "The organization's URN, the identifier access policies and the audit log use.",
+						"name": schema1.StringAttribute{
+							MarkdownDescription: "The organization's resource name, `organizations/{organization}`.",
 							Computed:            true,
 						},
 						"display_name": schema1.StringAttribute{
@@ -174,7 +177,7 @@ func organizationListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"creator": schema1.StringAttribute{
-							MarkdownDescription: "The principal that created the organization, such as `user:<id>` or `service_account:<id>`.",
+							MarkdownDescription: "The principal that created the organization, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 							Computed:            true,
 						},
 					},

@@ -24,7 +24,6 @@ type snapshotModel struct {
 	Project          types.String `tfsdk:"project"`
 	Zone             types.String `tfsdk:"zone"`
 	Name             types.String `tfsdk:"name"`
-	Urn              types.String `tfsdk:"urn"`
 	SourceVolume     types.String `tfsdk:"source_volume"`
 	SourceSizeGib    types.Int64  `tfsdk:"source_size_gib"`
 	State            types.String `tfsdk:"state"`
@@ -41,7 +40,7 @@ func snapshotSchema() schema.Schema {
 		MarkdownDescription: "A point-in-time copy of a volume.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The snapshot's resource name, the same as `name`.",
+				MarkdownDescription: "The snapshot's full resource name, `//pvs.origincloudapis.eu/projects/{project}/zones/{zone}/snapshots/{snapshot}`: what an argument that refers to the snapshot takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -60,13 +59,10 @@ func snapshotSchema() schema.Schema {
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The snapshot's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
-			},
 			"source_volume": schema.StringAttribute{
-				MarkdownDescription: "The volume copied, in the same project and zone. Changing it replaces the snapshot.",
+				MarkdownDescription: "The full name of the volume copied, in the same project and zone. Changing it replaces the snapshot.",
 				Required:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"source_size_gib": schema.Int64Attribute{
@@ -90,7 +86,7 @@ func snapshotSchema() schema.Schema {
 				Computed:            true,
 			},
 			"creator": schema.StringAttribute{
-				MarkdownDescription: "The principal that took the snapshot, such as `user:<id>` or `service_account:<id>`.",
+				MarkdownDescription: "The principal that took the snapshot, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform took it.",
 				Computed:            true,
 			},
 			"tags": schema.MapAttribute{
@@ -122,11 +118,14 @@ func snapshotFromProto(p *v1beta1.Snapshot, m *snapshotModel) error {
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("pvs", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Zone = types.StringValue(values[1])
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.SourceVolume = types.StringValue(p.GetSourceVolume())
 	m.SourceSizeGib = types.Int64Value(int64(p.GetSourceSizeGib()))
 	m.State = types.StringValue(p.GetState().String())
@@ -141,12 +140,14 @@ func snapshotFromProto(p *v1beta1.Snapshot, m *snapshotModel) error {
 
 func snapshotResource() framework.ResourceSpec[snapshotModel, *v1beta1.Snapshot] {
 	return framework.ResourceSpec[snapshotModel, *v1beta1.Snapshot]{
-		TypeName:  "_pvs_snapshot",
-		Pattern:   "projects/{project}/zones/{zone}/snapshots/{snapshot}",
-		Schema:    snapshotSchema(),
-		Name:      func(m *snapshotModel) string { return m.Name.ValueString() },
-		ToProto:   snapshotToProto,
-		FromProto: snapshotFromProto,
+		TypeName:   "_pvs_snapshot",
+		Pattern:    "projects/{project}/zones/{zone}/snapshots/{snapshot}",
+		Service:    "pvs",
+		References: map[string]string{"source_volume": "pvs"},
+		Schema:     snapshotSchema(),
+		Name:       func(m *snapshotModel) string { return m.Name.ValueString() },
+		ToProto:    snapshotToProto,
+		FromProto:  snapshotFromProto,
 		UpdateMask: func(plan, state *snapshotModel) []string {
 			var mask []string
 			if !plan.Tags.Equal(state.Tags) {
@@ -194,8 +195,8 @@ func snapshotResource() framework.ResourceSpec[snapshotModel, *v1beta1.Snapshot]
 
 // snapshotItemModel is an item of origincloud_pvs_snapshots.
 type snapshotItemModel struct {
+	ID               types.String `tfsdk:"id"`
 	Name             types.String `tfsdk:"name"`
-	Urn              types.String `tfsdk:"urn"`
 	SourceVolume     types.String `tfsdk:"source_volume"`
 	SourceSizeGib    types.Int64  `tfsdk:"source_size_gib"`
 	State            types.String `tfsdk:"state"`
@@ -207,8 +208,12 @@ type snapshotItemModel struct {
 }
 
 func snapshotItemFromProto(p *v1beta1.Snapshot, m *snapshotItemModel) error {
+	id, err := framework.FullName("pvs", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.SourceVolume = types.StringValue(p.GetSourceVolume())
 	m.SourceSizeGib = types.Int64Value(int64(p.GetSourceSizeGib()))
 	m.State = types.StringValue(p.GetState().String())
@@ -244,16 +249,16 @@ func snapshotListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The snapshot's full resource name, `//pvs.origincloudapis.eu/projects/{project}/zones/{zone}/snapshots/{snapshot}`: what an argument that refers to the snapshot takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "The snapshot's resource name.",
 							Computed:            true,
 						},
-						"urn": schema1.StringAttribute{
-							MarkdownDescription: "The snapshot's URN, the identifier access policies and the audit log use.",
-							Computed:            true,
-						},
 						"source_volume": schema1.StringAttribute{
-							MarkdownDescription: "The volume copied, in the same project and zone.",
+							MarkdownDescription: "The full name of the volume copied, in the same project and zone.",
 							Computed:            true,
 						},
 						"source_size_gib": schema1.Int64Attribute{
@@ -277,7 +282,7 @@ func snapshotListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"creator": schema1.StringAttribute{
-							MarkdownDescription: "The principal that took the snapshot, such as `user:<id>` or `service_account:<id>`.",
+							MarkdownDescription: "The principal that took the snapshot, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform took it.",
 							Computed:            true,
 						},
 						"tags": schema1.MapAttribute{

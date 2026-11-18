@@ -27,6 +27,7 @@ Read-Only:
 - `available` (Boolean) Whether an instance can be launched from the family now. Instances launched from a family no longer offered are unaffected.
 - `description` (String) What the family's images hold.
 - `display_name` (String) The name the console shows.
+- `id` (String) The image family's full resource name, `//compute.origincloudapis.eu/imageFamilies/{image_family}`: what an argument that refers to the image family takes. `name` is the relative name, without the host.
 - `name` (String) The family's resource name, `imageFamilies/ubuntu-24-04-minimal`. Never renamed, and never reused for another release.
 - `os` (String) The operating system, such as `ubuntu`.
 - `os_version` (String) The release, such as `24.04`.

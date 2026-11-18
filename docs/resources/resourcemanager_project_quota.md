@@ -34,7 +34,7 @@ Every project has its project quota, which exists with it: creating this resourc
 
 ### Read-Only
 
-- `id` (String) The project quota's resource name, the same as `name`.
+- `id` (String) The project quota's full resource name, `//resourcemanager.origincloudapis.eu/projects/{project}/quota`: what an argument that refers to the project quota takes. `name` is the relative name, without the host.
 - `name` (String) The quota's resource name, `projects/{project}/quota`.
 - `usage` (Attributes) How much of each budget the project uses. (see [below for nested schema](#nestedatt--usage))
 

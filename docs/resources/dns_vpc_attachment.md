@@ -29,7 +29,7 @@ resource "origincloud_dns_hosted_zone" "corp" {
 resource "origincloud_dns_vpc_attachment" "main" {
   project     = "my-project-123"
   hosted_zone = basename(origincloud_dns_hosted_zone.corp.name)
-  vpc         = origincloud_network_vpc.main.name
+  vpc         = origincloud_network_vpc.main.id
 }
 ```
 
@@ -40,14 +40,13 @@ resource "origincloud_dns_vpc_attachment" "main" {
 
 - `hosted_zone` (String) The hosted zone the vpc attachment is in. Changing it replaces the vpc attachment.
 - `project` (String) The project the vpc attachment is in. Changing it replaces the vpc attachment.
-- `vpc` (String) The VPC the zone answers in, in the zone's project. Changing it replaces the vpc attachment.
+- `vpc` (String) The full name of the VPC the zone answers in, in the zone's project. Changing it replaces the vpc attachment.
 
 ### Read-Only
 
 - `create_time` (String) When the zone was attached. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `id` (String) The vpc attachment's resource name, the same as `name`.
+- `id` (String) The vpc attachment's full resource name, `//dns.origincloudapis.eu/projects/{project}/hostedZones/{hosted_zone}/vpcAttachments/{vpc_attachment}`: what an argument that refers to the vpc attachment takes. `name` is the relative name, without the host.
 - `name` (String) The attachment's resource name. Its last segment is the VPC's id.
-- `urn` (String) The attachment's URN, the identifier access policies and the audit log use.
 
 ## Import
 
@@ -56,7 +55,7 @@ Import is supported using the following syntax:
 The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
-# A VPC attachment is imported by its resource name, whose last segment is
+# A VPC attachment is imported by its full resource name, or its relative one, whose last segment is
 # the VPC's id.
-terraform import origincloud_dns_vpc_attachment.main projects/my-project-123/hostedZones/hz-XEkE66gA3ma/vpcAttachments/vpc-1a2b3c
+terraform import origincloud_dns_vpc_attachment.main //dns.origincloudapis.eu/projects/my-project-123/hostedZones/hz-XEkE66gA3ma/vpcAttachments/vpc-1a2b3c
 ```

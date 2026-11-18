@@ -25,7 +25,6 @@ type recordSetModel struct {
 	Project    types.String `tfsdk:"project"`
 	HostedZone types.String `tfsdk:"hosted_zone"`
 	Name       types.String `tfsdk:"name"`
-	Urn        types.String `tfsdk:"urn"`
 	DnsName    types.String `tfsdk:"dns_name"`
 	Type       types.String `tfsdk:"type"`
 	Ttl        types.String `tfsdk:"ttl"`
@@ -40,7 +39,7 @@ func recordSetSchema() schema.Schema {
 		MarkdownDescription: "Every record of one name and type in a hosted zone.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The record set's resource name, the same as `name`.",
+				MarkdownDescription: "The record set's full resource name, `//dns.origincloudapis.eu/projects/{project}/hostedZones/{hosted_zone}/recordSets/{record_set}`: what an argument that refers to the record set takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -58,10 +57,6 @@ func recordSetSchema() schema.Schema {
 				MarkdownDescription: "The record set's resource name.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The record set's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
 			},
 			"dns_name": schema.StringAttribute{
 				MarkdownDescription: "The name the records answer for: the zone's `dns_name` or a name below it, written in full, such as `www.example.com`, without the final dot; answered in lowercase. Labels may hold `_` (`_dmarc.example.com`), and `*` only as the whole leftmost label, for a wildcard. Changing it replaces the record set, unless it is the same name in another case.",
@@ -100,8 +95,9 @@ func recordSetSchema() schema.Schema {
 				Validators:          []validator.Object{framework.Oneof{Others: []string{"basic"}}},
 				Attributes: map[string]schema.Attribute{
 					"floating_ip": schema.StringAttribute{
-						MarkdownDescription: "The Floating IP whose address the record set answers with, in the zone's project. A Floating IP's address is an IPv4 address, so the record set is of type `A`; an `AAAA` alias is refused.",
+						MarkdownDescription: "The full name of the Floating IP whose address the record set answers with, in the zone's project. A Floating IP's address is an IPv4 address, so the record set is of type `A`; an `AAAA` alias is refused.",
 						Required:            true,
+						Validators:          []validator.String{framework.FullNameReference()},
 					},
 				},
 			},
@@ -180,11 +176,14 @@ func recordSetFromProto(p *v1beta1.RecordSet, m *recordSetModel) error {
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("dns", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.HostedZone = types.StringValue(values[1])
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.DnsName = types.StringValue(p.GetDnsName())
 	m.Type = types.StringValue(p.GetType().String())
 	m.Ttl = framework.Duration(p.GetTtl(), m.Ttl)
@@ -199,6 +198,7 @@ func recordSetResource() framework.ResourceSpec[recordSetModel, *v1beta1.RecordS
 	return framework.ResourceSpec[recordSetModel, *v1beta1.RecordSet]{
 		TypeName:  "_dns_record_set",
 		Pattern:   "projects/{project}/hostedZones/{hosted_zone}/recordSets/{record_set}",
+		Service:   "dns",
 		Schema:    recordSetSchema(),
 		Name:      func(m *recordSetModel) string { return m.Name.ValueString() },
 		ToProto:   recordSetToProto,
@@ -244,8 +244,8 @@ func recordSetResource() framework.ResourceSpec[recordSetModel, *v1beta1.RecordS
 
 // recordSetItemModel is an item of origincloud_dns_record_sets.
 type recordSetItemModel struct {
+	ID         types.String `tfsdk:"id"`
 	Name       types.String `tfsdk:"name"`
-	Urn        types.String `tfsdk:"urn"`
 	DnsName    types.String `tfsdk:"dns_name"`
 	Type       types.String `tfsdk:"type"`
 	Ttl        types.String `tfsdk:"ttl"`
@@ -294,8 +294,12 @@ func recordSetItem_AliasToProto(o types.Object) *v1beta1.AliasRecordData {
 }
 
 func recordSetItemFromProto(p *v1beta1.RecordSet, m *recordSetItemModel) error {
+	id, err := framework.FullName("dns", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.DnsName = types.StringValue(p.GetDnsName())
 	m.Type = types.StringValue(p.GetType().String())
 	m.Ttl = framework.Duration(p.GetTtl(), types.StringNull())
@@ -330,12 +334,12 @@ func recordSetListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
-						"name": schema1.StringAttribute{
-							MarkdownDescription: "The record set's resource name.",
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The record set's full resource name, `//dns.origincloudapis.eu/projects/{project}/hostedZones/{hosted_zone}/recordSets/{record_set}`: what an argument that refers to the record set takes. `name` is the relative name, without the host.",
 							Computed:            true,
 						},
-						"urn": schema1.StringAttribute{
-							MarkdownDescription: "The record set's URN, the identifier access policies and the audit log use.",
+						"name": schema1.StringAttribute{
+							MarkdownDescription: "The record set's resource name.",
 							Computed:            true,
 						},
 						"dns_name": schema1.StringAttribute{
@@ -366,7 +370,7 @@ func recordSetListSchema() schema1.Schema {
 							Computed:            true,
 							Attributes: map[string]schema1.Attribute{
 								"floating_ip": schema1.StringAttribute{
-									MarkdownDescription: "The Floating IP whose address the record set answers with, in the zone's project. A Floating IP's address is an IPv4 address, so the record set is of type `A`; an `AAAA` alias is refused.",
+									MarkdownDescription: "The full name of the Floating IP whose address the record set answers with, in the zone's project. A Floating IP's address is an IPv4 address, so the record set is of type `A`; an `AAAA` alias is refused.",
 									Computed:            true,
 								},
 							},

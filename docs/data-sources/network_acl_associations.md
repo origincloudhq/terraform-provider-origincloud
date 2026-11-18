@@ -30,5 +30,6 @@ Lists a subnet's ACL associations: none or one.
 
 Read-Only:
 
-- `acl` (String) The ACL that filters the subnet's traffic, in the subnet's VPC.
+- `acl` (String) The full name of the ACL that filters the subnet's traffic, in the subnet's VPC.
+- `id` (String) The acl association's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/subnets/{subnet}/aclAssociations/{acl_association}`: what an argument that refers to the acl association takes. `name` is the relative name, without the host.
 - `name` (String) The association's resource name. Its last segment is the ACL's id.

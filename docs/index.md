@@ -30,6 +30,25 @@ provider "origincloud" {
 }
 ```
 
+## Names
+
+A resource is identified by its full resource name,
+`//{service}.origincloudapis.eu/{relative name}`, which is its `id`. An
+argument that refers to another resource, in any service or project, takes
+that resource's `id`, not its `name`, which is relative:
+
+```terraform
+resource "origincloud_pvs_snapshot" "data" {
+  project       = "my-project-123"
+  zone          = "eu-central1-az1"
+  source_volume = origincloud_pvs_volume.data.id
+}
+```
+
+An import takes either form. After v0.18, the state of a resource holds its
+full name as `id`, and has no `urn`: Terraform upgrades an older state the
+first time it reads it.
+
 ## Authentication from CI
 
 A CI job can act as a `WORKLOAD` service account with the OIDC token its CI

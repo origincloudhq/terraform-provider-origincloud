@@ -14,6 +14,7 @@ import (
 
 // zoneModel is origincloud_location_zone's state.
 type zoneModel struct {
+	ID          types.String `tfsdk:"id"`
 	Name        types.String `tfsdk:"name"`
 	DisplayName types.String `tfsdk:"display_name"`
 	Region      types.String `tfsdk:"region"`
@@ -24,6 +25,10 @@ func zoneSchema() schema.Schema {
 	return schema.Schema{
 		MarkdownDescription: "A part of a region whose failures are independent of its other zones'. A zonal resource is in exactly one zone.",
 		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				MarkdownDescription: "The zone's full resource name, `//location.origincloudapis.eu/zones/{zone}`: what an argument that refers to the zone takes. `name` is the relative name, without the host.",
+				Computed:            true,
+			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "The zone's resource name, `zones/eu-central1-az1`. Its last segment is the zone in a zonal resource's name, `projects/{project}/zones/{zone}/volumes/{volume}`.",
 				Required:            true,
@@ -33,7 +38,7 @@ func zoneSchema() schema.Schema {
 				Computed:            true,
 			},
 			"region": schema.StringAttribute{
-				MarkdownDescription: "The region the zone is in, `regions/{region}`.",
+				MarkdownDescription: "The full name of the region the zone is in, `//location.origincloudapis.eu/regions/{region}`.",
 				Computed:            true,
 			},
 			"services": schema.ListAttribute{
@@ -46,6 +51,11 @@ func zoneSchema() schema.Schema {
 }
 
 func zoneFromProto(p *v1beta1.Zone, m *zoneModel) error {
+	id, err := framework.FullName("location", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
 	m.DisplayName = types.StringValue(p.GetDisplayName())
 	m.Region = types.StringValue(p.GetRegion())
@@ -79,6 +89,10 @@ func zoneListSchema() schema.Schema {
 				Computed:            true,
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
+						"id": schema.StringAttribute{
+							MarkdownDescription: "The zone's full resource name, `//location.origincloudapis.eu/zones/{zone}`: what an argument that refers to the zone takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema.StringAttribute{
 							MarkdownDescription: "The zone's resource name, `zones/eu-central1-az1`. Its last segment is the zone in a zonal resource's name, `projects/{project}/zones/{zone}/volumes/{volume}`.",
 							Computed:            true,
@@ -88,7 +102,7 @@ func zoneListSchema() schema.Schema {
 							Computed:            true,
 						},
 						"region": schema.StringAttribute{
-							MarkdownDescription: "The region the zone is in, `regions/{region}`.",
+							MarkdownDescription: "The full name of the region the zone is in, `//location.origincloudapis.eu/regions/{region}`.",
 							Computed:            true,
 						},
 						"services": schema.ListAttribute{

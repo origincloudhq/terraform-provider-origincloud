@@ -29,10 +29,10 @@ A security group rule: the traffic it allows in one direction, to or from one pe
 - `description` (String) What the rule is for. Changing it replaces the security group rule.
 - `first_port` (Number) The first port the rule matches, for `TCP` and `UDP`. Each set of ports has one spelling, and the rule reads back in it: `first_port` 0 and `last_port` 0 match every port, a `last_port` of 0 the single port `first_port`, and a `first_port` below `last_port` the range between them. Any other spelling of a set is refused with `INVALID_ARGUMENT` naming the one to use: `first_port` 22 and `last_port` 22 is `first_port` 22 and `last_port` 0, and 0 or 1 to 65535 is 0 and 0. Changing it replaces the security group rule.
 - `last_port` (Number) The last port the rule matches, above `first_port`; 0 for the single port `first_port`, or with `first_port` 0 for every port. Changing it replaces the security group rule.
-- `peer_security_group` (String) The peer as another security group of the same VPC: its members' addresses. The rule's own group is refused here with `INVALID_ARGUMENT`: it is `same_group`. Changing it replaces the security group rule.
+- `peer_security_group` (String) The peer as another security group of the same VPC, by its full name: its members' addresses. The rule's own group is refused here with `INVALID_ARGUMENT`: it is `same_group`. Changing it replaces the security group rule.
 - `same_group` (Boolean) The peer as the rule's own group's members. Changing it replaces the security group rule.
 
 ### Read-Only
 
-- `id` (String) The security group rule's resource name, the same as `name`.
+- `id` (String) The security group rule's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/securityGroups/{security_group}/rules/{rule}`: what an argument that refers to the security group rule takes. `name` is the relative name, without the host.
 - `name` (String) The rule's resource name.

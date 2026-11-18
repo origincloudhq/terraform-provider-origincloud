@@ -30,5 +30,6 @@ Lists a network interface's security group associations, oldest first.
 
 Read-Only:
 
+- `id` (String) The security group association's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/networkInterfaces/{network_interface}/securityGroupAssociations/{security_group_association}`: what an argument that refers to the security group association takes. `name` is the relative name, without the host.
 - `name` (String) The association's resource name. Its last segment is the security group's id.
-- `security_group` (String) The security group, in the interface's VPC.
+- `security_group` (String) The security group's full name, in the interface's VPC.

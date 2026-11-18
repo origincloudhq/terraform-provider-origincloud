@@ -41,13 +41,13 @@ output "protected" {
 
 Read-Only:
 
-- `creator` (String) The principal that took the snapshot, such as `user:<id>` or `service_account:<id>`.
+- `creator` (String) The principal that took the snapshot, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform took it.
+- `id` (String) The snapshot's full resource name, `//pvs.origincloudapis.eu/projects/{project}/zones/{zone}/snapshots/{snapshot}`: what an argument that refers to the snapshot takes. `name` is the relative name, without the host.
 - `name` (String) The snapshot's resource name.
 - `protection_reason` (String) Why the last protection change failed, when `protection_state` is `PROTECTION_FAILED`.
 - `protection_state` (String) Whether it is protected. One of `UNPROTECTED`, `PROTECTING`, `PROTECTED`, `UNPROTECTING`, `PROTECTION_FAILED`.
 - `source_size_gib` (Number) The source volume's size in GiB when it was copied: the least a volume created from the snapshot holds.
-- `source_volume` (String) The volume copied, in the same project and zone.
+- `source_volume` (String) The full name of the volume copied, in the same project and zone.
 - `state` (String) Where the copy is. One of `PENDING`, `COMPLETED`, `DELETING`, `DELETED`, `ERROR`.
 - `state_reason` (String) Why the snapshot is in `ERROR`; empty otherwise.
 - `tags` (Map of String) Labels of your own, at most 50. The `origin:name` tag is the name the console shows.
-- `urn` (String) The snapshot's URN, the identifier access policies and the audit log use.

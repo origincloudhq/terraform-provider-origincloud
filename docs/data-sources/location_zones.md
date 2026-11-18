@@ -41,6 +41,7 @@ data "origincloud_pvs_volumes" "each" {
 Read-Only:
 
 - `display_name` (String) The name the console shows, such as `EU Central 1, zone 1`.
+- `id` (String) The zone's full resource name, `//location.origincloudapis.eu/zones/{zone}`: what an argument that refers to the zone takes. `name` is the relative name, without the host.
 - `name` (String) The zone's resource name, `zones/eu-central1-az1`. Its last segment is the zone in a zonal resource's name, `projects/{project}/zones/{zone}/volumes/{volume}`.
-- `region` (String) The region the zone is in, `regions/{region}`.
+- `region` (String) The full name of the region the zone is in, `//location.origincloudapis.eu/regions/{region}`.
 - `services` (List of String) The services whose zonal resources the zone holds, by the name of their API, such as `pvs`: the host `{service}.origincloudapis.eu` serves them. Empty for a zone that holds none yet. A service is added here when its API is published.

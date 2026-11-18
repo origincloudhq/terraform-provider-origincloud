@@ -110,7 +110,7 @@ func TestRemovingAPresenceFieldKeepsItsValue(t *testing.T) {
 		return []resource.TestStep{
 			keyStep(fake, `algorithm = "rsa"`, plancheck.ResourceActionCreate),
 			keyStep(fake, ``, plancheck.ResourceActionNoop, func(s *terraform.State) error {
-				if got := fake.key(s.RootModule().Resources[key].Primary.ID).GetAlgorithm(); got != "rsa" {
+				if got := fake.key(s.RootModule().Resources[key].Primary.Attributes["name"]).GetAlgorithm(); got != "rsa" {
 					return fmt.Errorf("the API's algorithm is %q", got)
 				}
 				return nil

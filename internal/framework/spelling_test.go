@@ -2,6 +2,8 @@ package framework
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -40,44 +42,38 @@ func TestDomainsAreTheSameInAnyCase(t *testing.T) {
 	}
 }
 
-func TestMembersAreTheSameInAnyCaseOfTheirAddress(t *testing.T) {
-	for _, tc := range []struct {
-		a, b string
-		same bool
-	}{
-		{"user:Mail@Example.com", "user:mail@example.com", true},
-		{"user:mail@example.com", "user:mail@example.com", true},
-		{"serviceAccount:sa-1", "serviceAccount:sa-1", true},
-		{"serviceAccount:SA-1", "serviceAccount:sa-1", false},
-		{"user:ana@example.com", "user:bo@example.com", false},
-		{"user:u-1", "userId:u-1", false},
-		{"user:ana@example.com", "deleted:user:u-1", false},
-	} {
-		if got := MemberSpelling.Equal(tc.a, tc.b); got != tc.same {
-			t.Errorf("Equal(%q, %q) = %v", tc.a, tc.b, got)
-		}
+// memberSpelling is a spelling that can be renamed, as a role binding's
+// member once was: `user:{email}` is the same in any case, and answered with
+// the account's new address, or as `userId:{user}`, still names it.
+var memberSpelling = Spelling{Equal: sameMember, Renamed: renamedMember}
+
+func sameMember(a, b string) bool {
+	if a == b {
+		return true
 	}
+	ea, aUser := strings.CutPrefix(a, "user:")
+	eb, bUser := strings.CutPrefix(b, "user:")
+	return aUser && bUser && strings.EqualFold(ea, eb)
 }
 
-// A binding created for a user still grants the role to their account
-// under a new address, or without a verified one; not once it is gone, or
-// for another kind of member.
-func TestAMemberIsRenamedOnlyWhileItsAccountExists(t *testing.T) {
-	for _, tc := range []struct {
-		prior, answer string
-		renamed       bool
-	}{
-		{"user:ana@example.com", "user:ana@new.example", true},
-		{"user:ana@example.com", "userId:u-1", true},
-		{"user:ana@example.com", "deleted:user:u-1", false},
-		{"userId:u-1", "user:ana@example.com", false},
-		{"serviceAccount:sa-1", "serviceAccount:sa-2", false},
-		{"deleted:user:u-1", "user:ana@example.com", false},
-	} {
-		if got := MemberSpelling.Renamed(tc.prior, tc.answer) != ""; got != tc.renamed {
-			t.Errorf("Renamed(%q, %q): %v", tc.prior, tc.answer, got)
-		}
+func renamedMember(prior, answer string) string {
+	if !strings.HasPrefix(prior, "user:") {
+		return ""
 	}
+	// A binding created from the configuration as it is written would
+	// name whichever account has the address now, or be refused.
+	switch {
+	case strings.HasPrefix(answer, "user:"):
+		return fmt.Sprintf("The binding still grants the role to the account %s named, whose verified address is now %s. "+
+			"The state keeps %[1]s. Write the member as %[3]s, which doesn't replace the binding: "+
+			"a binding created for %[1]s would be refused, or grant the role to another account.",
+			prior, strings.TrimPrefix(answer, "user:"), answer)
+	case strings.HasPrefix(answer, "userId:"):
+		return fmt.Sprintf("The binding still grants the role to the account %s named, which has no verified address now. "+
+			"The state keeps %[1]s until it has one again: meanwhile, a binding created for %[1]s would be refused, "+
+			"or grant the role to another account.", prior)
+	}
+	return ""
 }
 
 type bindingModel struct{ Member types.String }
@@ -90,7 +86,7 @@ func spelledResource() *Resource[bindingModel, *wrapperspb.StringValue] {
 		},
 		Spelled: []Spelled[bindingModel]{{
 			Attribute: "member",
-			Spelling:  MemberSpelling,
+			Spelling:  memberSpelling,
 			Value:     func(m *bindingModel) *types.String { return &m.Member },
 		}},
 	}}

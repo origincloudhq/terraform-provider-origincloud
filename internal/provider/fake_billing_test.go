@@ -55,7 +55,7 @@ func newFakeBilling(t *testing.T) *fakeBilling {
 	f := &fakeBilling{
 		next: 1,
 		accounts: map[string]*billingv1beta1.BillingAccount{defaultAccount: {
-			Name: defaultAccount, Urn: "urn:origincloud:billing:billing-account/" + defaultAccount,
+			Name:        defaultAccount,
 			DisplayName: "default", DefaultAccount: true,
 			PaymentMethod: &billingv1beta1.PaymentMethod{State: billingv1beta1.PaymentMethod_NOT_REQUIRED},
 			Creator:       "user:test", CreateTime: timestamppb.New(time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)),
@@ -116,7 +116,7 @@ func (f *fakeBilling) serve(w http.ResponseWriter, r *http.Request) {
 		serveSynchronous(w, r, path, body, f.spendLimits, "limit", "alertThresholdsPercent", "notificationEmails")
 	case len(s) == 3 && s[0] == "projects" && s[2] == "billingInfo" && r.Method == http.MethodPatch:
 		info := new(billingv1beta1.ProjectBillingInfo)
-		if err := protojson.Unmarshal(body, info); err == nil && f.accounts[info.GetBillingAccount()] == nil {
+		if err := protojson.Unmarshal(body, info); err == nil && f.accounts[relativeName(info.GetBillingAccount())] == nil {
 			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", info.GetBillingAccount()+" isn't a billing account of the project's organization")
 			return
 		}
@@ -144,7 +144,6 @@ func (f *fakeBilling) createAccount(w http.ResponseWriter, r *http.Request, pare
 	}
 	f.next++
 	account.Name = fmt.Sprintf("%s/ba-%d", parent, f.next)
-	account.Urn = "urn:origincloud:billing:billing-account/" + account.Name
 	account.PaymentMethod = &billingv1beta1.PaymentMethod{State: billingv1beta1.PaymentMethod_MISSING}
 	account.Creator = "user:test"
 	account.CreateTime = timestamppb.New(time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))
@@ -188,7 +187,7 @@ func (f *fakeBilling) deleteAccount(w http.ResponseWriter, name string) {
 		return
 	}
 	for _, info := range f.infos {
-		if info.GetBillingAccount() == name {
+		if relativeName(info.GetBillingAccount()) == name {
 			writeError(w, http.StatusConflict, "CONFLICT", name+" pays for "+strings.TrimSuffix(info.GetName(), "/billingInfo")+": link it to another account first")
 			return
 		}

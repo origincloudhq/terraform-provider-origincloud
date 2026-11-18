@@ -31,6 +31,7 @@ Lists a route table's routes, oldest first. Its local routes aren't listed: they
 Read-Only:
 
 - `destination` (String) The destination: the IPv4 default route, written with an all-zero address and prefix length 0, or the IPv6 one, `::/0`. A route table decides only where traffic to the internet goes.
-- `internet_gateway` (String) The internet gateway of the table's VPC to send the traffic to.
+- `id` (String) The route's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/routeTables/{route_table}/routes/{route}`: what an argument that refers to the route takes. `name` is the relative name, without the host.
+- `internet_gateway` (String) The full name of the internet gateway of the table's VPC to send the traffic to.
 - `name` (String) The route's resource name.
-- `nat_gateway` (String) The NAT gateway in the table's VPC to send the traffic to, for the IPv4 default route only: a NAT gateway translates IPv4 only. Named in the gateway's own zone; a name with another zone is refused with `INVALID_ARGUMENT`.
+- `nat_gateway` (String) The full name of the NAT gateway in the table's VPC to send the traffic to, for the IPv4 default route only: a NAT gateway translates IPv4 only. Named in the gateway's own zone; a name with another zone is refused with `INVALID_ARGUMENT`.

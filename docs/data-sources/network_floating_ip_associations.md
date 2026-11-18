@@ -30,6 +30,7 @@ Lists a floating IP's associations: none or one.
 
 Read-Only:
 
+- `id` (String) The floating ip association's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/floatingIps/{floating_ip}/associations/{association}`: what an argument that refers to the floating ip association takes. `name` is the relative name, without the host.
 - `name` (String) The association's resource name. Its last segment is the network interface's id.
-- `network_interface` (String) The network interface the address reaches, in the floating IP's project and zone.
+- `network_interface` (String) The full name of the network interface the address reaches, in the floating IP's project and zone.
 - `private_address` (String) The interface's private IPv4 address the public one translates to.

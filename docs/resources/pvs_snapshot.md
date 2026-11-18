@@ -22,7 +22,7 @@ resource "origincloud_pvs_volume" "data" {
 resource "origincloud_pvs_snapshot" "data" {
   project       = "my-project-123"
   zone          = "eu-central1-az1"
-  source_volume = origincloud_pvs_volume.data.name
+  source_volume = origincloud_pvs_volume.data.id
   # Only a protected snapshot is the source of new volumes.
   protected = true
 }
@@ -31,7 +31,7 @@ resource "origincloud_pvs_volume" "restored" {
   project         = "my-project-123"
   zone            = "eu-central1-az1"
   size_gib        = 20
-  source_snapshot = origincloud_pvs_snapshot.data.name
+  source_snapshot = origincloud_pvs_snapshot.data.id
 }
 ```
 
@@ -41,7 +41,7 @@ resource "origincloud_pvs_volume" "restored" {
 ### Required
 
 - `project` (String) The project the snapshot is in. Changing it replaces the snapshot.
-- `source_volume` (String) The volume copied, in the same project and zone. Changing it replaces the snapshot.
+- `source_volume` (String) The full name of the volume copied, in the same project and zone. Changing it replaces the snapshot.
 - `zone` (String) The zone the snapshot is in. Changing it replaces the snapshot.
 
 ### Optional
@@ -51,15 +51,14 @@ resource "origincloud_pvs_volume" "restored" {
 
 ### Read-Only
 
-- `creator` (String) The principal that took the snapshot, such as `user:<id>` or `service_account:<id>`.
-- `id` (String) The snapshot's resource name, the same as `name`.
+- `creator` (String) The principal that took the snapshot, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform took it.
+- `id` (String) The snapshot's full resource name, `//pvs.origincloudapis.eu/projects/{project}/zones/{zone}/snapshots/{snapshot}`: what an argument that refers to the snapshot takes. `name` is the relative name, without the host.
 - `name` (String) The snapshot's resource name.
 - `protection_reason` (String) Why the last protection change failed, when `protection_state` is `PROTECTION_FAILED`.
 - `protection_state` (String) Whether it is protected. One of `UNPROTECTED`, `PROTECTING`, `PROTECTED`, `UNPROTECTING`, `PROTECTION_FAILED`.
 - `source_size_gib` (Number) The source volume's size in GiB when it was copied: the least a volume created from the snapshot holds.
 - `state` (String) Where the copy is. One of `PENDING`, `COMPLETED`, `DELETING`, `DELETED`, `ERROR`.
 - `state_reason` (String) Why the snapshot is in `ERROR`; empty otherwise.
-- `urn` (String) The snapshot's URN, the identifier access policies and the audit log use.
 
 ## Import
 
@@ -68,6 +67,6 @@ Import is supported using the following syntax:
 The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
-# A snapshot is imported by its resource name.
-terraform import origincloud_pvs_snapshot.data projects/my-project-123/zones/eu-central1-az1/snapshots/snapshot-4d5e6f
+# A snapshot is imported by its full resource name, or its relative one.
+terraform import origincloud_pvs_snapshot.data //pvs.origincloudapis.eu/projects/my-project-123/zones/eu-central1-az1/snapshots/snapshot-4d5e6f
 ```

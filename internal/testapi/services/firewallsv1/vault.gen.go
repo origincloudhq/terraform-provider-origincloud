@@ -31,7 +31,7 @@ func vaultSchema() schema.Schema {
 		MarkdownDescription: "",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The vault's resource name, the same as `name`.",
+				MarkdownDescription: "The vault's full resource name, `//vaults.origincloudapis.eu/vaults/{vault}`: what an argument that refers to the vault takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -75,7 +75,11 @@ func vaultFromProto(p *firewallsv1.Vault, m *vaultModel) error {
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("vaults", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.VaultId = types.StringValue(values[0])
 	m.Name = types.StringValue(p.GetName())
 	m.Owner = types.StringValue(p.GetOwner())
@@ -88,6 +92,7 @@ func vaultResource() framework.ResourceSpec[vaultModel, *firewallsv1.Vault] {
 	return framework.ResourceSpec[vaultModel, *firewallsv1.Vault]{
 		TypeName:    "_vaults_vault",
 		Pattern:     "vaults/{vault}",
+		Service:     "vaults",
 		ClientID:    func(m *vaultModel) types.String { return m.VaultId },
 		IDAttribute: "vault_id",
 		Singular:    "vault",
@@ -130,6 +135,7 @@ func vaultResource() framework.ResourceSpec[vaultModel, *firewallsv1.Vault] {
 
 // vaultItemModel is an item of origincloud_vaults_vaults.
 type vaultItemModel struct {
+	ID          types.String `tfsdk:"id"`
 	Name        types.String `tfsdk:"name"`
 	Owner       types.String `tfsdk:"owner"`
 	DisplayName types.String `tfsdk:"display_name"`
@@ -137,6 +143,11 @@ type vaultItemModel struct {
 }
 
 func vaultItemFromProto(p *firewallsv1.Vault, m *vaultItemModel) error {
+	id, err := framework.FullName("vaults", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
 	m.Owner = types.StringValue(p.GetOwner())
 	m.DisplayName = types.StringValue(p.GetDisplayName())
@@ -163,6 +174,10 @@ func vaultListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The vault's full resource name, `//vaults.origincloudapis.eu/vaults/{vault}`: what an argument that refers to the vault takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "",
 							Computed:            true,

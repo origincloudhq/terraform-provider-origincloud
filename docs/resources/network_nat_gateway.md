@@ -17,9 +17,9 @@ Shared IPv4 egress through one floating IP.
 
 ### Required
 
-- `floating_ip` (String) The floating IP instances behind the gateway appear as, in the same project and zone. It stays allocated when the gateway is deleted. Changing it replaces the nat gateway.
+- `floating_ip` (String) The full name of the floating IP instances behind the gateway appear as, in the same project and zone. It stays allocated when the gateway is deleted. Changing it replaces the nat gateway.
 - `project` (String) The project the nat gateway is in. Changing it replaces the nat gateway.
-- `subnet` (String) The public subnet the gateway lives in, in the same project and zone. Changing it replaces the nat gateway.
+- `subnet` (String) The full name of the public subnet the gateway lives in, in the same project and zone. Changing it replaces the nat gateway.
 - `zone` (String) The zone the nat gateway is in. Changing it replaces the nat gateway.
 
 ### Optional
@@ -29,8 +29,7 @@ Shared IPv4 egress through one floating IP.
 ### Read-Only
 
 - `create_time` (String) When the NAT gateway was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `creator` (String) The principal that created the NAT gateway, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.
-- `id` (String) The nat gateway's resource name, the same as `name`.
+- `creator` (String) The principal that created the NAT gateway, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.
+- `id` (String) The nat gateway's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/natGateways/{nat_gateway}`: what an argument that refers to the nat gateway takes. `name` is the relative name, without the host.
 - `name` (String) The gateway's resource name.
-- `urn` (String) The gateway's URN, the identifier access policies and the audit log use.
-- `vpc` (String) The subnet's VPC.
+- `vpc` (String) The full name of the subnet's VPC.

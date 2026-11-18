@@ -29,9 +29,8 @@ A public IPv4 address of your own.
 - `address` (String) The public address.
 - `auto_assigned` (Boolean) Whether the platform assigned the address at launch, to an interface the launch created in a subnet with `auto_assign_public_ip`. Such an address is part of that interface: its association can't be removed nor the address deleted, and it is released with the interface when its instance is terminated.
 - `create_time` (String) When the floating IP was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `creator` (String) The principal that created the floating IP, such as `user:<id>` or `service_account:<id>`; empty for one the platform created.
-- `id` (String) The floating ip's resource name, the same as `name`.
+- `creator` (String) The principal that created the floating IP, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.
+- `id` (String) The floating ip's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/floatingIps/{floating_ip}`: what an argument that refers to the floating ip takes. `name` is the relative name, without the host.
 - `name` (String) The floating IP's resource name.
-- `network_interface` (String) The network interface the address reaches, as the floating IP's association (a `FloatingIpAssociation`) sets it; empty while it has none.
+- `network_interface` (String) The full name of the network interface the address reaches, as the floating IP's association (a `FloatingIpAssociation`) sets it; empty while it has none.
 - `private_address` (String) The interface's private IPv4 address the public one translates to, as the floating IP's association sets it; empty while it has none.
-- `urn` (String) The floating IP's URN, the identifier access policies and the audit log use.

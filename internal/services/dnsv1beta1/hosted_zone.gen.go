@@ -23,7 +23,6 @@ type hostedZoneModel struct {
 	ID          types.String `tfsdk:"id"`
 	Project     types.String `tfsdk:"project"`
 	Name        types.String `tfsdk:"name"`
-	Urn         types.String `tfsdk:"urn"`
 	DnsName     types.String `tfsdk:"dns_name"`
 	Visibility  types.String `tfsdk:"visibility"`
 	State       types.String `tfsdk:"state"`
@@ -39,7 +38,7 @@ func hostedZoneSchema() schema.Schema {
 		MarkdownDescription: "A domain a project's records are answered for.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The hosted zone's resource name, the same as `name`.",
+				MarkdownDescription: "The hosted zone's full resource name, `//dns.origincloudapis.eu/projects/{project}/hostedZones/{hosted_zone}`: what an argument that refers to the hosted zone takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -53,12 +52,8 @@ func hostedZoneSchema() schema.Schema {
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The zone's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
-			},
 			"dns_name": schema.StringAttribute{
-				MarkdownDescription: "The domain, such as `example.com`, without the final dot; answered in lowercase. A public zone's has at least two labels and at most 235 characters, so its challenge name fits. A private zone's may have one label, but isn't `internal` or a name below it, which answer each instance's own name. Neither is one of the platform's own domains or a name below one. Changing it replaces the hosted zone, unless it is the same name in another case.",
+				MarkdownDescription: "The domain, such as `example.com`, without the final dot; answered in lowercase. A public zone's has at least two labels and at most 235 characters, so its challenge name fits, and isn't a special-use domain or below one, as none is delegated on the internet: `test`, `localhost`, `invalid`, `example`, `local`, `onion`, `alt`, `internal` and `home.arpa`. A private zone's may have one label, but isn't `internal` or a name below it, which answer each instance's own name. Neither is one of the platform's own domains or a name below one. Changing it replaces the hosted zone, unless it is the same name in another case.",
 				Required:            true,
 				PlanModifiers:       []planmodifier.String{framework.StringReplaceSpelled(framework.DomainSpelling)},
 			},
@@ -73,7 +68,7 @@ func hostedZoneSchema() schema.Schema {
 				Computed:            true,
 			},
 			"name_servers": schema.ListAttribute{
-				MarkdownDescription: "The name servers to delegate a public zone to at its registrar, as NS records of its name. Fixed when the zone is created. Empty for a private zone.",
+				MarkdownDescription: "The name servers to delegate a public zone to at its registrar, as NS records of its name. They are the zone's own: no other zone is given them, so a delegation to them proves control of the name and verifies the zone, as the challenge does. Fixed when the zone is created. Empty for a private zone.",
 				Computed:            true,
 				ElementType:         types.StringType,
 			},
@@ -116,7 +111,7 @@ func hostedZoneSchema() schema.Schema {
 				Computed:            true,
 			},
 			"creator": schema.StringAttribute{
-				MarkdownDescription: "The principal that created the zone, such as `user:<id>` or `service_account:<id>`.",
+				MarkdownDescription: "The principal that created the zone, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 				Computed:            true,
 			},
 			"tags": schema.MapAttribute{
@@ -174,10 +169,13 @@ func hostedZoneFromProto(p *v1beta1.HostedZone, m *hostedZoneModel) error {
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("dns", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.DnsName = types.StringValue(p.GetDnsName())
 	m.Visibility = types.StringValue(p.GetVisibility().String())
 	m.State = types.StringValue(p.GetState().String())
@@ -193,6 +191,7 @@ func hostedZoneResource() framework.ResourceSpec[hostedZoneModel, *v1beta1.Hoste
 	return framework.ResourceSpec[hostedZoneModel, *v1beta1.HostedZone]{
 		TypeName:  "_dns_hosted_zone",
 		Pattern:   "projects/{project}/hostedZones/{hosted_zone}",
+		Service:   "dns",
 		Schema:    hostedZoneSchema(),
 		Name:      func(m *hostedZoneModel) string { return m.Name.ValueString() },
 		ToProto:   hostedZoneToProto,
@@ -232,8 +231,8 @@ func hostedZoneResource() framework.ResourceSpec[hostedZoneModel, *v1beta1.Hoste
 
 // hostedZoneItemModel is an item of origincloud_dns_hosted_zones.
 type hostedZoneItemModel struct {
+	ID          types.String `tfsdk:"id"`
 	Name        types.String `tfsdk:"name"`
-	Urn         types.String `tfsdk:"urn"`
 	DnsName     types.String `tfsdk:"dns_name"`
 	Visibility  types.String `tfsdk:"visibility"`
 	State       types.String `tfsdk:"state"`
@@ -276,8 +275,12 @@ func hostedZoneItem_ChallengeToProto(o types.Object) *v1beta1.OwnershipChallenge
 }
 
 func hostedZoneItemFromProto(p *v1beta1.HostedZone, m *hostedZoneItemModel) error {
+	id, err := framework.FullName("dns", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.DnsName = types.StringValue(p.GetDnsName())
 	m.Visibility = types.StringValue(p.GetVisibility().String())
 	m.State = types.StringValue(p.GetState().String())
@@ -308,16 +311,16 @@ func hostedZoneListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The hosted zone's full resource name, `//dns.origincloudapis.eu/projects/{project}/hostedZones/{hosted_zone}`: what an argument that refers to the hosted zone takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "The zone's resource name.",
 							Computed:            true,
 						},
-						"urn": schema1.StringAttribute{
-							MarkdownDescription: "The zone's URN, the identifier access policies and the audit log use.",
-							Computed:            true,
-						},
 						"dns_name": schema1.StringAttribute{
-							MarkdownDescription: "The domain, such as `example.com`, without the final dot; answered in lowercase. A public zone's has at least two labels and at most 235 characters, so its challenge name fits. A private zone's may have one label, but isn't `internal` or a name below it, which answer each instance's own name. Neither is one of the platform's own domains or a name below one.",
+							MarkdownDescription: "The domain, such as `example.com`, without the final dot; answered in lowercase. A public zone's has at least two labels and at most 235 characters, so its challenge name fits, and isn't a special-use domain or below one, as none is delegated on the internet: `test`, `localhost`, `invalid`, `example`, `local`, `onion`, `alt`, `internal` and `home.arpa`. A private zone's may have one label, but isn't `internal` or a name below it, which answer each instance's own name. Neither is one of the platform's own domains or a name below one.",
 							Computed:            true,
 						},
 						"visibility": schema1.StringAttribute{
@@ -329,7 +332,7 @@ func hostedZoneListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"name_servers": schema1.ListAttribute{
-							MarkdownDescription: "The name servers to delegate a public zone to at its registrar, as NS records of its name. Fixed when the zone is created. Empty for a private zone.",
+							MarkdownDescription: "The name servers to delegate a public zone to at its registrar, as NS records of its name. They are the zone's own: no other zone is given them, so a delegation to them proves control of the name and verifies the zone, as the challenge does. Fixed when the zone is created. Empty for a private zone.",
 							Computed:            true,
 							ElementType:         types.StringType,
 						},
@@ -372,7 +375,7 @@ func hostedZoneListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"creator": schema1.StringAttribute{
-							MarkdownDescription: "The principal that created the zone, such as `user:<id>` or `service_account:<id>`.",
+							MarkdownDescription: "The principal that created the zone, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
 							Computed:            true,
 						},
 						"tags": schema1.MapAttribute{

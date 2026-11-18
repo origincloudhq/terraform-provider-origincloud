@@ -112,18 +112,17 @@ func (f *fakePVS) createVolume(w http.ResponseWriter, parent string, body []byte
 		return
 	}
 	if volume.StorageClass == "" {
-		volume.StorageClass = "storageClasses/gp1"
+		volume.StorageClass = "//pvs.origincloudapis.eu/storageClasses/gp1"
 	}
 	f.next++
 	if source := volume.GetSourceSnapshot(); source != "" {
-		snapshot, ok := f.snapshots[source]
+		snapshot, ok := f.snapshots[relativeName(source)]
 		if !ok || snapshot.GetProtectionState() != pvsv1beta1.Snapshot_PROTECTED {
 			writeError(w, http.StatusBadRequest, "FAILED_PRECONDITION", source+" isn't protected")
 			return
 		}
 	}
 	volume.Name = fmt.Sprintf("%s/volumes/vol-%d", parent, f.next)
-	volume.Urn = "urn:origincloud:pvs:volume/" + volume.Name
 	volume.Creator = "user:test"
 	volume.State = pvsv1beta1.Volume_AVAILABLE
 	volume.ResizeState = pvsv1beta1.Volume_RESIZE_COMPLETED
@@ -180,14 +179,13 @@ func (f *fakePVS) createSnapshot(w http.ResponseWriter, parent string, body []by
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
 		return
 	}
-	source, ok := f.volumes[snapshot.GetSourceVolume()]
+	source, ok := f.volumes[relativeName(snapshot.GetSourceVolume())]
 	if !ok || source.GetState() == pvsv1beta1.Volume_DELETED {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", snapshot.GetSourceVolume()+" doesn't exist")
 		return
 	}
 	f.next++
 	snapshot.Name = fmt.Sprintf("%s/snapshots/snap-%d", parent, f.next)
-	snapshot.Urn = "urn:origincloud:pvs:snapshot/" + snapshot.Name
 	snapshot.Creator = "user:test"
 	snapshot.SourceSizeGib = source.GetSizeGib()
 	snapshot.State = pvsv1beta1.Snapshot_COMPLETED
@@ -214,7 +212,7 @@ func (f *fakePVS) snapshot(w http.ResponseWriter, r *http.Request, name string, 
 			return
 		}
 		for _, volume := range f.volumes {
-			if volume.GetSourceSnapshot() == name && volume.GetState() != pvsv1beta1.Volume_DELETED {
+			if relativeName(volume.GetSourceSnapshot()) == name && volume.GetState() != pvsv1beta1.Volume_DELETED {
 				writeError(w, http.StatusBadRequest, "FAILED_PRECONDITION", "volumes are created from "+name)
 				return
 			}

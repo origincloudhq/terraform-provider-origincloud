@@ -18,18 +18,19 @@ import (
 
 // serviceAccountModel is origincloud_iam_service_account's state.
 type serviceAccountModel struct {
-	ID           types.String `tfsdk:"id"`
-	Organization types.String `tfsdk:"organization"`
-	Name         types.String `tfsdk:"name"`
-	DisplayName  types.String `tfsdk:"display_name"`
-	Member       types.String `tfsdk:"member"`
-	ClientId     types.String `tfsdk:"client_id"`
-	ClientSecret types.String `tfsdk:"client_secret"`
-	State        types.String `tfsdk:"state"`
-	Creator      types.String `tfsdk:"creator"`
-	CreateTime   types.String `tfsdk:"create_time"`
-	DeleteTime   types.String `tfsdk:"delete_time"`
-	Type         types.String `tfsdk:"type"`
+	ID               types.String `tfsdk:"id"`
+	Organization     types.String `tfsdk:"organization"`
+	Name             types.String `tfsdk:"name"`
+	DisplayName      types.String `tfsdk:"display_name"`
+	Member           types.String `tfsdk:"member"`
+	ClientId         types.String `tfsdk:"client_id"`
+	ClientSecret     types.String `tfsdk:"client_secret"`
+	State            types.String `tfsdk:"state"`
+	Creator          types.String `tfsdk:"creator"`
+	CreateTime       types.String `tfsdk:"create_time"`
+	DeleteTime       types.String `tfsdk:"delete_time"`
+	Type             types.String `tfsdk:"type"`
+	SecretExpireTime types.String `tfsdk:"secret_expire_time"`
 }
 
 func serviceAccountSchema() schema.Schema {
@@ -37,7 +38,7 @@ func serviceAccountSchema() schema.Schema {
 		MarkdownDescription: "A credential of an organization for software.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The service account's resource name, the same as `name`.",
+				MarkdownDescription: "The service account's full resource name, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`: what an argument that refers to the service account takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -57,7 +58,7 @@ func serviceAccountSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"member": schema.StringAttribute{
-				MarkdownDescription: "The member a role binding names it by, `serviceAccount:{service_account}`.",
+				MarkdownDescription: "The service account's full name, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, which a role binding names it by as a member.",
 				Computed:            true,
 			},
 			"client_id": schema.StringAttribute{
@@ -65,7 +66,7 @@ func serviceAccountSchema() schema.Schema {
 				Computed:            true,
 			},
 			"client_secret": schema.StringAttribute{
-				MarkdownDescription: "The OAuth 2.0 client secret it authenticates with. Set only in the response that created an `EXTERNAL` service account, and empty everywhere else: it can't be read again.",
+				MarkdownDescription: "The OAuth 2.0 client secret it authenticates with. Set only in the response that created an `EXTERNAL` service account or rotated its secret, and empty everywhere else: it can't be read again.",
 				Computed:            true,
 				Sensitive:           true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
@@ -75,7 +76,7 @@ func serviceAccountSchema() schema.Schema {
 				Computed:            true,
 			},
 			"creator": schema.StringAttribute{
-				MarkdownDescription: "Who created the service account, written as a role binding's member is.",
+				MarkdownDescription: "The full name of who created the service account: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, `//iam.origincloudapis.eu/serviceAgents/{service_agent}` for a platform service agent, or `//iam.origincloudapis.eu/services/{service}` for a change the platform made itself.",
 				Computed:            true,
 			},
 			"create_time": schema.StringAttribute{
@@ -92,6 +93,10 @@ func serviceAccountSchema() schema.Schema {
 				Computed:            true,
 				Validators:          []validator.String{framework.OneOf("EXTERNAL", "WORKLOAD")},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()},
+			},
+			"secret_expire_time": schema.StringAttribute{
+				MarkdownDescription: "When the client secret expires. From then on the secret is refused, so no new access token is issued with it, until RotateServiceAccountSecret issues a new one. Unset when the service account has no secret that expires, such as a `WORKLOAD` one. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.",
+				Computed:            true,
 			},
 		},
 	}
@@ -110,7 +115,11 @@ func serviceAccountFromProto(p *v1beta1.ServiceAccount, m *serviceAccountModel) 
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("iam", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Organization = types.StringValue(values[0])
 	m.Name = types.StringValue(p.GetName())
 	m.DisplayName = types.StringValue(p.GetDisplayName())
@@ -122,17 +131,20 @@ func serviceAccountFromProto(p *v1beta1.ServiceAccount, m *serviceAccountModel) 
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
 	m.DeleteTime = framework.Timestamp(p.GetDeleteTime(), types.StringNull())
 	m.Type = types.StringValue(p.GetType().String())
+	m.SecretExpireTime = framework.Timestamp(p.GetSecretExpireTime(), types.StringNull())
 	return nil
 }
 
 func serviceAccountResource() framework.ResourceSpec[serviceAccountModel, *v1beta1.ServiceAccount] {
 	return framework.ResourceSpec[serviceAccountModel, *v1beta1.ServiceAccount]{
-		TypeName:  "_iam_service_account",
-		Pattern:   "organizations/{organization}/serviceAccounts/{service_account}",
-		Schema:    serviceAccountSchema(),
-		Name:      func(m *serviceAccountModel) string { return m.Name.ValueString() },
-		ToProto:   serviceAccountToProto,
-		FromProto: serviceAccountFromProto,
+		TypeName:   "_iam_service_account",
+		Pattern:    "organizations/{organization}/serviceAccounts/{service_account}",
+		Service:    "iam",
+		References: map[string]string{"member": "iam"},
+		Schema:     serviceAccountSchema(),
+		Name:       func(m *serviceAccountModel) string { return m.Name.ValueString() },
+		ToProto:    serviceAccountToProto,
+		FromProto:  serviceAccountFromProto,
 		UpdateMask: func(plan, state *serviceAccountModel) []string {
 			var mask []string
 			return mask
@@ -157,18 +169,25 @@ func serviceAccountResource() framework.ResourceSpec[serviceAccountModel, *v1bet
 
 // serviceAccountItemModel is an item of origincloud_iam_service_accounts.
 type serviceAccountItemModel struct {
-	Name        types.String `tfsdk:"name"`
-	DisplayName types.String `tfsdk:"display_name"`
-	Member      types.String `tfsdk:"member"`
-	ClientId    types.String `tfsdk:"client_id"`
-	State       types.String `tfsdk:"state"`
-	Creator     types.String `tfsdk:"creator"`
-	CreateTime  types.String `tfsdk:"create_time"`
-	DeleteTime  types.String `tfsdk:"delete_time"`
-	Type        types.String `tfsdk:"type"`
+	ID               types.String `tfsdk:"id"`
+	Name             types.String `tfsdk:"name"`
+	DisplayName      types.String `tfsdk:"display_name"`
+	Member           types.String `tfsdk:"member"`
+	ClientId         types.String `tfsdk:"client_id"`
+	State            types.String `tfsdk:"state"`
+	Creator          types.String `tfsdk:"creator"`
+	CreateTime       types.String `tfsdk:"create_time"`
+	DeleteTime       types.String `tfsdk:"delete_time"`
+	Type             types.String `tfsdk:"type"`
+	SecretExpireTime types.String `tfsdk:"secret_expire_time"`
 }
 
 func serviceAccountItemFromProto(p *v1beta1.ServiceAccount, m *serviceAccountItemModel) error {
+	id, err := framework.FullName("iam", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
 	m.DisplayName = types.StringValue(p.GetDisplayName())
 	m.Member = types.StringValue(p.GetMember())
@@ -178,6 +197,7 @@ func serviceAccountItemFromProto(p *v1beta1.ServiceAccount, m *serviceAccountIte
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
 	m.DeleteTime = framework.Timestamp(p.GetDeleteTime(), types.StringNull())
 	m.Type = types.StringValue(p.GetType().String())
+	m.SecretExpireTime = framework.Timestamp(p.GetSecretExpireTime(), types.StringNull())
 	return nil
 }
 
@@ -200,6 +220,10 @@ func serviceAccountListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The service account's full resource name, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`: what an argument that refers to the service account takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "The service account's resource name.",
 							Computed:            true,
@@ -209,7 +233,7 @@ func serviceAccountListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"member": schema1.StringAttribute{
-							MarkdownDescription: "The member a role binding names it by, `serviceAccount:{service_account}`.",
+							MarkdownDescription: "The service account's full name, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, which a role binding names it by as a member.",
 							Computed:            true,
 						},
 						"client_id": schema1.StringAttribute{
@@ -221,7 +245,7 @@ func serviceAccountListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"creator": schema1.StringAttribute{
-							MarkdownDescription: "Who created the service account, written as a role binding's member is.",
+							MarkdownDescription: "The full name of who created the service account: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, `//iam.origincloudapis.eu/serviceAgents/{service_agent}` for a platform service agent, or `//iam.origincloudapis.eu/services/{service}` for a change the platform made itself.",
 							Computed:            true,
 						},
 						"create_time": schema1.StringAttribute{
@@ -234,6 +258,10 @@ func serviceAccountListSchema() schema1.Schema {
 						},
 						"type": schema1.StringAttribute{
 							MarkdownDescription: "How the service account authenticates; `EXTERNAL` when the create leaves it unset. One of `EXTERNAL`, `WORKLOAD`.",
+							Computed:            true,
+						},
+						"secret_expire_time": schema1.StringAttribute{
+							MarkdownDescription: "When the client secret expires. From then on the secret is refused, so no new access token is issued with it, until RotateServiceAccountSecret issues a new one. Unset when the service account has no secret that expires, such as a `WORKLOAD` one. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.",
 							Computed:            true,
 						},
 					},

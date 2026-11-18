@@ -26,11 +26,11 @@ One of the platform's images, in one zone.
 - `default_user` (String) The account an instance launched from the image logs in as, unless the launch names another.
 - `description` (String) What the image holds.
 - `family_current` (Boolean) Whether `image_family` launches this image now.
-- `image_family` (String) The family the image belongs to, `imageFamilies/{image_family}`; empty for an image of none.
+- `id` (String) The public image's full resource name, `//compute.origincloudapis.eu/zones/{zone}/images/{image}`: what an argument that refers to the public image takes. `name` is the relative name, without the host.
+- `image_family` (String) The full name of the family the image belongs to, `//compute.origincloudapis.eu/imageFamilies/{image_family}`; empty for an image of none.
 - `platform` (String) Its operating system family. One of `LINUX_UNIX`.
 - `root_device` (String) The device name of the disk the image boots from.
 - `state` (String) Where it is in its lifecycle. One of `AVAILABLE`.
-- `urn` (String) The image's URN, the identifier access policies and the audit log use.
 
 <a id="nestedatt--block_devices"></a>
 ### Nested Schema for `block_devices`

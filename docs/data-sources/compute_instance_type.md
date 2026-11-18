@@ -24,6 +24,7 @@ A size an instance is launched as.
 - `available` (Boolean) Whether an instance can be launched as, or changed to, the type now. A type listed but not available is no longer offered; instances already of the type keep running.
 - `cpu_allocation_mode` (String) How its vCPUs are allocated, such as `core`: dedicated and guaranteed.
 - `display_name` (String) The name the console shows.
+- `id` (String) The instance type's full resource name, `//compute.origincloudapis.eu/instanceTypes/{instance_type}`: what an argument that refers to the instance type takes. `name` is the relative name, without the host.
 - `kind` (String) The hardware kind, such as `gp1`.
 - `memory_mib` (Number) The memory an instance of the type has, in MiB.
 - `storage_bandwidth_mbit` (Number) The most an instance of the type reads and writes across all its volumes together, in megabits per second; 0 when it isn't limited.

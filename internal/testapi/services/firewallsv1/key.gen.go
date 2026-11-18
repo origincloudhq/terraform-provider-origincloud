@@ -53,7 +53,7 @@ func keySchema() schema.Schema {
 		MarkdownDescription: "",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The key's resource name, the same as `name`.",
+				MarkdownDescription: "The key's full resource name, `//keys.origincloudapis.eu/projects/{project}/keys/{key}`: what an argument that refers to the key takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -370,7 +370,11 @@ func keyFromProto(p *firewallsv1.Key, m *keyModel) error {
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("keys", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Name = types.StringValue(p.GetName())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
@@ -398,6 +402,7 @@ func keyResource() framework.ResourceSpec[keyModel, *firewallsv1.Key] {
 	return framework.ResourceSpec[keyModel, *firewallsv1.Key]{
 		TypeName:  "_keys_key",
 		Pattern:   "projects/{project}/keys/{key}",
+		Service:   "keys",
 		Schema:    keySchema(),
 		Name:      func(m *keyModel) string { return m.Name.ValueString() },
 		ToProto:   keyToProto,
@@ -479,6 +484,7 @@ func keyResource() framework.ResourceSpec[keyModel, *firewallsv1.Key] {
 
 // keyByNameModel is origincloud_keys_key's state.
 type keyByNameModel struct {
+	ID             types.String `tfsdk:"id"`
 	Name           types.String `tfsdk:"name"`
 	CreateTime     types.String `tfsdk:"create_time"`
 	ExpireTime     types.String `tfsdk:"expire_time"`
@@ -502,6 +508,10 @@ func keyByNameSchema() schema1.Schema {
 	return schema1.Schema{
 		MarkdownDescription: "",
 		Attributes: map[string]schema1.Attribute{
+			"id": schema1.StringAttribute{
+				MarkdownDescription: "The key's full resource name, `//keys.origincloudapis.eu/projects/{project}/keys/{key}`: what an argument that refers to the key takes. `name` is the relative name, without the host.",
+				Computed:            true,
+			},
 			"name": schema1.StringAttribute{
 				MarkdownDescription: "",
 				Required:            true,
@@ -712,6 +722,11 @@ func keyByName_PrimaryToProto(o types.Object) *firewallsv1.Window {
 }
 
 func keyByNameFromProto(p *firewallsv1.Key, m *keyByNameModel) error {
+	id, err := framework.FullName("keys", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
 	m.ExpireTime = framework.Timestamp(p.GetExpireTime(), types.StringNull())
@@ -746,6 +761,7 @@ func keyByNameDataSource() framework.DataSourceSpec[keyByNameModel, *firewallsv1
 
 // keyItemModel is an item of origincloud_keys_keys.
 type keyItemModel struct {
+	ID             types.String `tfsdk:"id"`
 	Name           types.String `tfsdk:"name"`
 	CreateTime     types.String `tfsdk:"create_time"`
 	ExpireTime     types.String `tfsdk:"expire_time"`
@@ -859,6 +875,11 @@ func keyItem_PrimaryToProto(o types.Object) *firewallsv1.Window {
 }
 
 func keyItemFromProto(p *firewallsv1.Key, m *keyItemModel) error {
+	id, err := framework.FullName("keys", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
 	m.ExpireTime = framework.Timestamp(p.GetExpireTime(), types.StringNull())
@@ -898,6 +919,10 @@ func keyListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The key's full resource name, `//keys.origincloudapis.eu/projects/{project}/keys/{key}`: what an argument that refers to the key takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "",
 							Computed:            true,

@@ -8,8 +8,8 @@ resource "origincloud_iam_service_account" "deploy" {
 resource "origincloud_iam_role_binding" "deploy" {
   organization = "my-org-123"
   member       = origincloud_iam_service_account.deploy.member
-  role         = "roles/editor"
-  project      = "projects/my-project-123"
+  role         = "//iam.origincloudapis.eu/roles/editor"
+  project      = "//resourcemanager.origincloudapis.eu/projects/my-project-123"
 }
 
 # GitHub Actions jobs of one repository, on its main branch. repository_id

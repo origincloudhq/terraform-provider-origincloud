@@ -18,12 +18,12 @@ The network interface a floating IP reaches.
 ### Required
 
 - `floating_ip` (String) The floating ip the floating ip association is in. Changing it replaces the floating ip association.
-- `network_interface` (String) The network interface the address reaches, in the floating IP's project and zone. Changing it replaces the floating ip association.
+- `network_interface` (String) The full name of the network interface the address reaches, in the floating IP's project and zone. Changing it replaces the floating ip association.
 - `project` (String) The project the floating ip association is in. Changing it replaces the floating ip association.
 - `zone` (String) The zone the floating ip association is in. Changing it replaces the floating ip association.
 
 ### Read-Only
 
-- `id` (String) The floating ip association's resource name, the same as `name`.
+- `id` (String) The floating ip association's full resource name, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/floatingIps/{floating_ip}/associations/{association}`: what an argument that refers to the floating ip association takes. `name` is the relative name, without the host.
 - `name` (String) The association's resource name. Its last segment is the network interface's id.
 - `private_address` (String) The interface's private IPv4 address the public one translates to.

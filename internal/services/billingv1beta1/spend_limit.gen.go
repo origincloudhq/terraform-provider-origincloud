@@ -36,7 +36,7 @@ func spendLimitSchema() schema.Schema {
 		MarkdownDescription: "A billing account's spend limit: the most it means to spend in a calendar month, and when to be told. Each threshold alerts once a month, the first time the month's spend crosses it.\n\nEvery billing account has its spend limit, which exists with it: creating this resource updates the existing spend limit with the settings configured, and the rest keep their values. Destroying it unsets the settings Terraform set, leaving the others as they are; to stop managing it without unsetting them, remove it from the state instead (a `removed` block with `lifecycle { destroy = false }`, or `terraform state rm`). Manage each spend limit with one resource only: two would undo each other's settings.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The spend limit's resource name, the same as `name`.",
+				MarkdownDescription: "The spend limit's full resource name, `//billing.origincloudapis.eu/organizations/{organization}/billingAccounts/{billing_account}/spendLimit`: what an argument that refers to the spend limit takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -99,7 +99,11 @@ func spendLimitFromProto(p *v1beta1.SpendLimit, m *spendLimitModel) error {
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("billing", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Organization = types.StringValue(values[0])
 	m.BillingAccount = types.StringValue(values[1])
 	m.Name = types.StringValue(p.GetName())
@@ -114,6 +118,7 @@ func spendLimitResource() framework.ResourceSpec[spendLimitModel, *v1beta1.Spend
 	return framework.ResourceSpec[spendLimitModel, *v1beta1.SpendLimit]{
 		TypeName:  "_billing_spend_limit",
 		Pattern:   "organizations/{organization}/billingAccounts/{billing_account}/spendLimit",
+		Service:   "billing",
 		Schema:    spendLimitSchema(),
 		Name:      func(m *spendLimitModel) string { return m.Name.ValueString() },
 		ToProto:   spendLimitToProto,

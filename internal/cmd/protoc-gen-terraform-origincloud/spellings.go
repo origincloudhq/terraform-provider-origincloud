@@ -46,16 +46,6 @@ var spellings = []spelling{
 		framework: "DomainSpelling",
 		doc:       "Changing it replaces the record set, unless it is the same name in another case.",
 	},
-	{
-		resource:  "origincloud.iam.v1beta1.RoleBinding",
-		field:     "member",
-		framework: "MemberSpelling",
-		doc: "Changing it replaces the role binding, unless it names the same member another way: " +
-			"an address in another case, or the address the user's account has now. " +
-			"While the API answers with the same account under another address, or as `userId:{user}`, " +
-			"the state keeps the member as configured; answered as `deleted:user:{user}`, " +
-			"once the account is gone, the binding is replaced.",
-	},
 }
 
 // spellingsFound are the spellings whose fields were generated.

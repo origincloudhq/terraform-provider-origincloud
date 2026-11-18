@@ -14,8 +14,8 @@ import (
 
 // permissionModel is origincloud_iam_permission's state.
 type permissionModel struct {
+	ID           types.String `tfsdk:"id"`
 	Name         types.String `tfsdk:"name"`
-	Urn          types.String `tfsdk:"urn"`
 	Service      types.String `tfsdk:"service"`
 	ResourceType types.String `tfsdk:"resource_type"`
 	Action       types.String `tfsdk:"action"`
@@ -25,13 +25,13 @@ func permissionSchema() schema.Schema {
 	return schema.Schema{
 		MarkdownDescription: "One action on one kind of resource, which a role grants.",
 		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				MarkdownDescription: "The permission's full resource name, `//iam.origincloudapis.eu/permissions/{permission}`: what an argument that refers to the permission takes. `name` is the relative name, without the host.",
+				Computed:            true,
+			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "The permission's resource name, `permissions/{service}.{resource}.{action}`, such as `permissions/pvs.volume.create`.",
 				Required:            true,
-			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The permission's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
 			},
 			"service": schema.StringAttribute{
 				MarkdownDescription: "The service whose API checks it, such as `pvs`.",
@@ -50,8 +50,12 @@ func permissionSchema() schema.Schema {
 }
 
 func permissionFromProto(p *v1beta1.Permission, m *permissionModel) error {
+	id, err := framework.FullName("iam", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Service = types.StringValue(p.GetService())
 	m.ResourceType = types.StringValue(p.GetResourceType())
 	m.Action = types.StringValue(p.GetAction())
@@ -84,12 +88,12 @@ func permissionListSchema() schema.Schema {
 				Computed:            true,
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
-						"name": schema.StringAttribute{
-							MarkdownDescription: "The permission's resource name, `permissions/{service}.{resource}.{action}`, such as `permissions/pvs.volume.create`.",
+						"id": schema.StringAttribute{
+							MarkdownDescription: "The permission's full resource name, `//iam.origincloudapis.eu/permissions/{permission}`: what an argument that refers to the permission takes. `name` is the relative name, without the host.",
 							Computed:            true,
 						},
-						"urn": schema.StringAttribute{
-							MarkdownDescription: "The permission's URN, the identifier access policies and the audit log use.",
+						"name": schema.StringAttribute{
+							MarkdownDescription: "The permission's resource name, `permissions/{service}.{resource}.{action}`, such as `permissions/pvs.volume.create`.",
 							Computed:            true,
 						},
 						"service": schema.StringAttribute{

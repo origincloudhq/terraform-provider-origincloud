@@ -9,6 +9,7 @@ import (
 	schema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	planmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	stringplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	validator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	types "github.com/hashicorp/terraform-plugin-framework/types"
 	framework "github.com/origincloudhq/terraform-provider-origincloud/internal/framework"
 	core "go.origincloud.eu/sdk/core"
@@ -20,7 +21,6 @@ type roleBindingModel struct {
 	ID           types.String `tfsdk:"id"`
 	Organization types.String `tfsdk:"organization"`
 	Name         types.String `tfsdk:"name"`
-	Urn          types.String `tfsdk:"urn"`
 	Member       types.String `tfsdk:"member"`
 	Role         types.String `tfsdk:"role"`
 	Project      types.String `tfsdk:"project"`
@@ -33,7 +33,7 @@ func roleBindingSchema() schema.Schema {
 		MarkdownDescription: "One role granted to one member, organization-wide or in one project. A binding can't be changed: delete it and create another.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The role binding's resource name, the same as `name`.",
+				MarkdownDescription: "The role binding's full resource name, `//iam.origincloudapis.eu/organizations/{organization}/roleBindings/{role_binding}`: what an argument that refers to the role binding takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -47,28 +47,27 @@ func roleBindingSchema() schema.Schema {
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			"urn": schema.StringAttribute{
-				MarkdownDescription: "The binding's URN, the identifier access policies and the audit log use.",
-				Computed:            true,
-			},
 			"member": schema.StringAttribute{
-				MarkdownDescription: "Who holds the role: `user:{email}` or `serviceAccount:{service_account}`. A user is shown with their account's current verified address, as `userId:{user}` when it has none, or as `deleted:user:{user}` once the account is gone. Changing it replaces the role binding, unless it names the same member another way: an address in another case, or the address the user's account has now. While the API answers with the same account under another address, or as `userId:{user}`, the state keeps the member as configured; answered as `deleted:user:{user}`, once the account is gone, the binding is replaced.",
+				MarkdownDescription: "The full name of who holds the role: a user, `//iam.origincloudapis.eu/users/{user}`, one of the organization's service accounts, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent, `//iam.origincloudapis.eu/serviceAgents/{service_agent}`. Changing it replaces the role binding.",
 				Required:            true,
-				PlanModifiers:       []planmodifier.String{framework.StringReplaceSpelled(framework.MemberSpelling)},
+				Validators:          []validator.String{framework.FullNameReference()},
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"role": schema.StringAttribute{
-				MarkdownDescription: "The role granted, `roles/{role}`. Changing it replaces the role binding.",
+				MarkdownDescription: "The full name of the role granted, `//iam.origincloudapis.eu/roles/{role}`. Changing it replaces the role binding.",
 				Required:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"project": schema.StringAttribute{
-				MarkdownDescription: "The project the binding is limited to, `projects/{project}`, one of the organization's. Empty for a binding on the whole organization, which covers every project in it. Changing it replaces the role binding.",
+				MarkdownDescription: "The full name of the project the binding is limited to, one of the organization's: `//resourcemanager.origincloudapis.eu/projects/{project}`. Empty for a binding on the whole organization, which covers every project in it. Changing it replaces the role binding.",
 				Optional:            true,
 				Computed:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()},
 			},
 			"creator": schema.StringAttribute{
-				MarkdownDescription: "Who created the binding, written as a member is, or `platform` for a binding the platform made itself. Always `userId:{user}` for a user in a list of the caller's own bindings (`organizations/-`).",
+				MarkdownDescription: "The full name of who created the binding: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, `//iam.origincloudapis.eu/serviceAgents/{service_agent}` for a platform service agent, or `//iam.origincloudapis.eu/services/{service}` for a change the platform made itself.",
 				Computed:            true,
 			},
 			"create_time": schema.StringAttribute{
@@ -93,10 +92,13 @@ func roleBindingFromProto(p *v1beta1.RoleBinding, m *roleBindingModel) error {
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("iam", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Organization = types.StringValue(values[0])
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Member = types.StringValue(p.GetMember())
 	m.Role = types.StringValue(p.GetRole())
 	m.Project = types.StringValue(p.GetProject())
@@ -107,12 +109,14 @@ func roleBindingFromProto(p *v1beta1.RoleBinding, m *roleBindingModel) error {
 
 func roleBindingResource() framework.ResourceSpec[roleBindingModel, *v1beta1.RoleBinding] {
 	return framework.ResourceSpec[roleBindingModel, *v1beta1.RoleBinding]{
-		TypeName:  "_iam_role_binding",
-		Pattern:   "organizations/{organization}/roleBindings/{role_binding}",
-		Schema:    roleBindingSchema(),
-		Name:      func(m *roleBindingModel) string { return m.Name.ValueString() },
-		ToProto:   roleBindingToProto,
-		FromProto: roleBindingFromProto,
+		TypeName:   "_iam_role_binding",
+		Pattern:    "organizations/{organization}/roleBindings/{role_binding}",
+		Service:    "iam",
+		References: map[string]string{"role": "iam", "project": "resourcemanager"},
+		Schema:     roleBindingSchema(),
+		Name:       func(m *roleBindingModel) string { return m.Name.ValueString() },
+		ToProto:    roleBindingToProto,
+		FromProto:  roleBindingFromProto,
 		UpdateMask: func(plan, state *roleBindingModel) []string {
 			var mask []string
 			return mask
@@ -130,20 +134,13 @@ func roleBindingResource() framework.ResourceSpec[roleBindingModel, *v1beta1.Rol
 			_, err := v1beta1.NewRoleBindingClient(client).DeleteRoleBinding(ctx, &v1beta1.DeleteRoleBindingRequest{Name: name})
 			return err
 		},
-		Spelled: []framework.Spelled[roleBindingModel]{
-			{
-				Attribute: "member",
-				Spelling:  framework.MemberSpelling,
-				Value:     func(m *roleBindingModel) *types.String { return &m.Member },
-			},
-		},
 	}
 }
 
 // roleBindingItemModel is an item of origincloud_iam_role_bindings.
 type roleBindingItemModel struct {
+	ID         types.String `tfsdk:"id"`
 	Name       types.String `tfsdk:"name"`
-	Urn        types.String `tfsdk:"urn"`
 	Member     types.String `tfsdk:"member"`
 	Role       types.String `tfsdk:"role"`
 	Project    types.String `tfsdk:"project"`
@@ -152,8 +149,12 @@ type roleBindingItemModel struct {
 }
 
 func roleBindingItemFromProto(p *v1beta1.RoleBinding, m *roleBindingItemModel) error {
+	id, err := framework.FullName("iam", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Name = types.StringValue(p.GetName())
-	m.Urn = types.StringValue(p.GetUrn())
 	m.Member = types.StringValue(p.GetMember())
 	m.Role = types.StringValue(p.GetRole())
 	m.Project = types.StringValue(p.GetProject())
@@ -181,28 +182,28 @@ func roleBindingListSchema() schema1.Schema {
 				Computed:            true,
 				NestedObject: schema1.NestedAttributeObject{
 					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The role binding's full resource name, `//iam.origincloudapis.eu/organizations/{organization}/roleBindings/{role_binding}`: what an argument that refers to the role binding takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
 						"name": schema1.StringAttribute{
 							MarkdownDescription: "The binding's resource name.",
 							Computed:            true,
 						},
-						"urn": schema1.StringAttribute{
-							MarkdownDescription: "The binding's URN, the identifier access policies and the audit log use.",
-							Computed:            true,
-						},
 						"member": schema1.StringAttribute{
-							MarkdownDescription: "Who holds the role: `user:{email}` or `serviceAccount:{service_account}`. A user is shown with their account's current verified address, as `userId:{user}` when it has none, or as `deleted:user:{user}` once the account is gone.",
+							MarkdownDescription: "The full name of who holds the role: a user, `//iam.origincloudapis.eu/users/{user}`, one of the organization's service accounts, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent, `//iam.origincloudapis.eu/serviceAgents/{service_agent}`.",
 							Computed:            true,
 						},
 						"role": schema1.StringAttribute{
-							MarkdownDescription: "The role granted, `roles/{role}`.",
+							MarkdownDescription: "The full name of the role granted, `//iam.origincloudapis.eu/roles/{role}`.",
 							Computed:            true,
 						},
 						"project": schema1.StringAttribute{
-							MarkdownDescription: "The project the binding is limited to, `projects/{project}`, one of the organization's. Empty for a binding on the whole organization, which covers every project in it.",
+							MarkdownDescription: "The full name of the project the binding is limited to, one of the organization's: `//resourcemanager.origincloudapis.eu/projects/{project}`. Empty for a binding on the whole organization, which covers every project in it.",
 							Computed:            true,
 						},
 						"creator": schema1.StringAttribute{
-							MarkdownDescription: "Who created the binding, written as a member is, or `platform` for a binding the platform made itself. Always `userId:{user}` for a user in a list of the caller's own bindings (`organizations/-`).",
+							MarkdownDescription: "The full name of who created the binding: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, `//iam.origincloudapis.eu/serviceAgents/{service_agent}` for a platform service agent, or `//iam.origincloudapis.eu/services/{service}` for a change the platform made itself.",
 							Computed:            true,
 						},
 						"create_time": schema1.StringAttribute{

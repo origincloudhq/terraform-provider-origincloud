@@ -21,6 +21,7 @@ An organization's quota: the most of each kind of resource its projects may hold
 
 ### Read-Only
 
+- `id` (String) The organization quota's full resource name, `//resourcemanager.origincloudapis.eu/organizations/{organization}/quota`: what an argument that refers to the organization quota takes. `name` is the relative name, without the host.
 - `max_hosted_zones` (Number) The most DNS hosted zones, including those not yet verified.
 - `max_instances` (Number) The most instances that aren't terminated.
 - `max_public_ips` (Number) The most floating IPs.

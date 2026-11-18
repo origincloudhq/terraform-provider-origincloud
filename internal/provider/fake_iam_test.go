@@ -32,11 +32,11 @@ var (
 		iamPermission("pvs.volume.create"), iamPermission("pvs.volume.list"),
 	}
 	iamRoles = []*iamv1beta1.Role{
-		{Name: "roles/owner", Urn: "urn:origincloud:iam:role/owner", DisplayName: "Owner", Description: "Everything.",
+		{Name: "roles/owner", DisplayName: "Owner", Description: "Everything.",
 			IncludedPermissions: []string{"permissions/iam.member.list", "permissions/iam.role.assign", "permissions/iam.role.revoke", "permissions/pvs.volume.create", "permissions/pvs.volume.list"}},
-		{Name: "roles/editor", Urn: "urn:origincloud:iam:role/editor", DisplayName: "Editor", Description: "Changes resources.",
+		{Name: "roles/editor", DisplayName: "Editor", Description: "Changes resources.",
 			IncludedPermissions: []string{"permissions/pvs.volume.create", "permissions/pvs.volume.list"}},
-		{Name: "roles/viewer", Urn: "urn:origincloud:iam:role/viewer", DisplayName: "Viewer", Description: "Reads resources.",
+		{Name: "roles/viewer", DisplayName: "Viewer", Description: "Reads resources.",
 			IncludedPermissions: []string{"permissions/pvs.volume.list"}},
 	}
 )
@@ -44,7 +44,7 @@ var (
 func iamPermission(key string) *iamv1beta1.Permission {
 	parts := strings.Split(key, ".")
 	return &iamv1beta1.Permission{
-		Name: "permissions/" + key, Urn: "urn:origincloud:iam:permission/" + key,
+		Name:    "permissions/" + key,
 		Service: parts[0], ResourceType: parts[1], Action: parts[2],
 	}
 }
@@ -225,39 +225,28 @@ func (f *fakeIAM) user(w http.ResponseWriter, id string) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "users/"+id+" doesn't exist")
 		return
 	}
-	member := "userId:" + id
-	if u.verified {
-		member = "user:" + u.email
-	}
-	writeMessage(w, &iamv1beta1.User{Name: "users/" + id, Member: member, Email: u.email, EmailVerified: u.verified, GivenName: "Me"})
+	writeMessage(w, &iamv1beta1.User{Name: "users/" + id, Member: "//iam.origincloudapis.eu/users/" + id, Email: u.email, EmailVerified: u.verified, GivenName: "Me"})
 }
 
 // member returns how b's member is shown: by its user's verified address
 // when it has one and own is false, own being a list of the caller's own
 // bindings.
-func (f *fakeIAM) member(b *iamBinding, own bool) string {
+// member returns the full name of the member b is for, as the API names it.
+func (f *fakeIAM) member(b *iamBinding, _ bool) string {
 	if b.serviceAccount != "" {
-		return "serviceAccount:" + b.serviceAccount
+		return "//iam.origincloudapis.eu/" + strings.Join(strings.Split(b.name, "/")[:2], "/") + "/serviceAccounts/" + b.serviceAccount
 	}
-	u := f.users[b.user]
-	switch {
-	case u.deleted:
-		return "deleted:user:" + b.user
-	case !u.verified || own:
-		return "userId:" + b.user
-	default:
-		return "user:" + u.email
-	}
+	return "//iam.origincloudapis.eu/users/" + b.user
 }
 
 func (f *fakeIAM) bindingMessage(b *iamBinding, own bool) *iamv1beta1.RoleBinding {
-	creator := b.creator
-	if own && strings.HasPrefix(creator, "user:") {
-		creator = "userId:" + iamCaller
+	creator, role := b.creator, b.role
+	if !strings.HasPrefix(role, "//") {
+		role = "//iam.origincloudapis.eu/" + role
 	}
 	return &iamv1beta1.RoleBinding{
-		Name: b.name, Urn: "urn:origincloud:iam:role-binding/" + b.name,
-		Member: f.member(b, own), Role: b.role, Project: b.project, Creator: creator,
+		Name:   b.name,
+		Member: f.member(b, own), Role: role, Project: b.project, Creator: creator,
 		CreateTime: timestamppb.New(time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)),
 	}
 }
@@ -286,31 +275,28 @@ func (f *fakeIAM) createBinding(w http.ResponseWriter, organization, requestID s
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
 		return
 	}
-	if !slices.ContainsFunc(iamRoles, func(r *iamv1beta1.Role) bool { return r.GetName() == in.GetRole() }) {
+	if !slices.ContainsFunc(iamRoles, func(r *iamv1beta1.Role) bool { return r.GetName() == relativeName(in.GetRole()) }) {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "no role "+in.GetRole())
 		return
 	}
-	b := &iamBinding{role: in.GetRole(), project: in.GetProject(), creator: "user:me@example.com"}
-	switch kind, value, _ := strings.Cut(in.GetMember(), ":"); kind {
-	case "user":
-		for id, u := range f.users {
-			if !u.deleted && u.verified && strings.EqualFold(u.email, value) {
-				b.user = id
-			}
-		}
-		if b.user == "" {
-			writeError(w, http.StatusNotFound, "NOT_FOUND", "no account has the verified address "+value)
+	b := &iamBinding{role: in.GetRole(), project: in.GetProject(), creator: "//iam.origincloudapis.eu/users/" + iamCaller, name: "organizations/" + organization + "/"}
+	member := relativeName(in.GetMember())
+	switch segments := strings.Split(member, "/"); {
+	case len(segments) == 2 && segments[0] == "users":
+		if u, ok := f.users[segments[1]]; !ok || u.deleted {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", in.GetMember()+" doesn't exist")
 			return
 		}
-	case "serviceAccount":
-		a, ok := f.serviceAccounts["organizations/"+organization+"/serviceAccounts/"+value]
-		if !ok || a.GetState() == iamv1beta1.ServiceAccount_DELETED {
+		b.user = segments[1]
+	case len(segments) == 4 && segments[0] == "organizations" && segments[2] == "serviceAccounts":
+		a, ok := f.serviceAccounts[member]
+		if !ok || segments[1] != organization || a.GetState() == iamv1beta1.ServiceAccount_DELETED {
 			writeError(w, http.StatusBadRequest, "BAD_REQUEST", in.GetMember()+" isn't an active service account of organizations/"+organization)
 			return
 		}
-		b.serviceAccount = value
+		b.serviceAccount = segments[3]
 	default:
-		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "a member is user:{email} or serviceAccount:{service_account}, not "+in.GetMember())
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "a member is a user or a service account by its full name, not "+in.GetMember())
 		return
 	}
 	for _, other := range f.bindings {
@@ -343,7 +329,7 @@ func (f *fakeIAM) binding(w http.ResponseWriter, r *http.Request, name, requestI
 		writeMessage(w, f.bindingMessage(b, false))
 	case http.MethodDelete:
 		organization := strings.Split(name, "/")[1]
-		if b.role == "roles/owner" && b.project == "" && f.owners(organization) == 1 {
+		if relativeName(b.role) == "roles/owner" && b.project == "" && f.owners(organization) == 1 {
 			writeError(w, http.StatusConflict, "CONFLICT", "the organization's last owner can't be removed: bind another owner first")
 			return
 		}
@@ -361,7 +347,7 @@ func (f *fakeIAM) binding(w http.ResponseWriter, r *http.Request, name, requestI
 func (f *fakeIAM) owners(organization string) int {
 	n := 0
 	for _, b := range f.bindings {
-		if strings.HasPrefix(b.name, "organizations/"+organization+"/") && b.role == "roles/owner" && b.project == "" {
+		if strings.HasPrefix(b.name, "organizations/"+organization+"/") && relativeName(b.role) == "roles/owner" && b.project == "" {
 			n++
 		}
 	}
@@ -381,7 +367,7 @@ func (f *fakeIAM) createServiceAccount(w http.ResponseWriter, organization, requ
 	f.next++
 	id := fmt.Sprintf("sa-%d", f.next)
 	a.Name = "organizations/" + organization + "/serviceAccounts/" + id
-	a.Member = "serviceAccount:" + id
+	a.Member = "//iam.origincloudapis.eu/" + a.Name
 	if a.GetType() == iamv1beta1.ServiceAccount_TYPE_UNSPECIFIED {
 		a.Type = iamv1beta1.ServiceAccount_EXTERNAL
 	}
@@ -389,7 +375,7 @@ func (f *fakeIAM) createServiceAccount(w http.ResponseWriter, organization, requ
 		a.ClientId = "client-" + id
 	}
 	a.State = iamv1beta1.ServiceAccount_ACTIVE
-	a.Creator = "user:me@example.com"
+	a.Creator = "//iam.origincloudapis.eu/users/" + iamCaller
 	a.CreateTime = timestamppb.New(time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))
 	f.serviceAccounts[a.Name] = a
 	f.created[requestID] = a.Name
@@ -445,7 +431,7 @@ func (f *fakeIAM) serviceAccount(w http.ResponseWriter, r *http.Request, name st
 		if a.GetState() != iamv1beta1.ServiceAccount_DELETED {
 			a.State = iamv1beta1.ServiceAccount_DELETED
 			a.DeleteTime = timestamppb.New(time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC))
-			id := strings.TrimPrefix(a.GetMember(), "serviceAccount:")
+			id := a.GetMember()[strings.LastIndex(a.GetMember(), "/")+1:]
 			for n, b := range f.bindings {
 				if b.serviceAccount == id {
 					delete(f.bindings, n)
@@ -508,7 +494,7 @@ func (f *fakeIAM) createFederatedCredential(w http.ResponseWriter, account, requ
 	f.next++
 	c.Name = fmt.Sprintf("%s/federatedCredentials/fc-%d", account, f.next)
 	c.State = iamv1beta1.FederatedCredential_ACTIVE
-	c.Creator = "user:me@example.com"
+	c.Creator = "//iam.origincloudapis.eu/users/" + iamCaller
 	c.CreateTime = timestamppb.New(time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))
 	f.federated[c.Name] = c
 	f.created[requestID] = c.Name
@@ -553,7 +539,7 @@ func (f *fakeIAM) deleteFederatedCredential(name string) {
 func (f *fakeIAM) audit(organization, project, action, target string, details map[string]string) {
 	f.auditLog = append(f.auditLog, &iamv1beta1.AuditLogEntry{
 		Name:    fmt.Sprintf("organizations/%s/auditLogEntries/e-%d", organization, len(f.auditLog)+1),
-		Project: project, Actor: "user:me@example.com", Action: action, Target: target,
+		Project: project, Actor: "//iam.origincloudapis.eu/users/" + iamCaller, Action: action, Target: target,
 		Outcome:   iamv1beta1.AuditLogEntry_SUCCEEDED,
 		OccurTime: timestamppb.New(time.Date(2026, 11, 1, 12, 0, len(f.auditLog), 0, time.UTC)),
 		Details:   details,
@@ -587,6 +573,6 @@ func (f *fakeIAM) bind(organization, user, role string) string {
 	defer f.mu.Unlock()
 	f.next++
 	name := fmt.Sprintf("organizations/%s/roleBindings/rb-%d", organization, f.next)
-	f.bindings[name] = &iamBinding{name: name, role: role, creator: "user:me@example.com", user: user}
+	f.bindings[name] = &iamBinding{name: name, role: role, creator: "//iam.origincloudapis.eu/users/" + iamCaller, user: user}
 	return name
 }

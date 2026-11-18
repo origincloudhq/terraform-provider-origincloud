@@ -45,18 +45,18 @@ Read-Only:
 - `basic` (Attributes) Values of its own. (see [below for nested schema](#nestedatt--record_sets--basic))
 - `create_time` (String) When the record set was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
 - `dns_name` (String) The name the records answer for: the zone's `dns_name` or a name below it, written in full, such as `www.example.com`, without the final dot; answered in lowercase. Labels may hold `_` (`_dmarc.example.com`), and `*` only as the whole leftmost label, for a wildcard.
+- `id` (String) The record set's full resource name, `//dns.origincloudapis.eu/projects/{project}/hostedZones/{hosted_zone}/recordSets/{record_set}`: what an argument that refers to the record set takes. `name` is the relative name, without the host.
 - `name` (String) The record set's resource name.
 - `ttl` (String) How long resolvers may keep the answer, from 30 seconds to 7 days, in whole seconds. 300 seconds when left out. A duration in seconds, such as `90s` or `1.5s`.
 - `type` (String) The records' type. An alias is `A`. One of `A`, `AAAA`, `CNAME`, `TXT`, `MX`, `SRV`, `CAA`.
 - `update_time` (String) When the record set was last changed. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `urn` (String) The record set's URN, the identifier access policies and the audit log use.
 
 <a id="nestedatt--record_sets--alias"></a>
 ### Nested Schema for `record_sets.alias`
 
 Read-Only:
 
-- `floating_ip` (String) The Floating IP whose address the record set answers with, in the zone's project. A Floating IP's address is an IPv4 address, so the record set is of type `A`; an `AAAA` alias is refused.
+- `floating_ip` (String) The full name of the Floating IP whose address the record set answers with, in the zone's project. A Floating IP's address is an IPv4 address, so the record set is of type `A`; an `AAAA` alias is refused.
 
 
 <a id="nestedatt--record_sets--basic"></a>

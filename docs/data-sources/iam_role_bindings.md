@@ -29,9 +29,9 @@ Lists an organization's role bindings, oldest first, optionally only a member's 
 Read-Only:
 
 - `create_time` (String) When the binding was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `creator` (String) Who created the binding, written as a member is, or `platform` for a binding the platform made itself. Always `userId:{user}` for a user in a list of the caller's own bindings (`organizations/-`).
-- `member` (String) Who holds the role: `user:{email}` or `serviceAccount:{service_account}`. A user is shown with their account's current verified address, as `userId:{user}` when it has none, or as `deleted:user:{user}` once the account is gone.
+- `creator` (String) The full name of who created the binding: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, `//iam.origincloudapis.eu/serviceAgents/{service_agent}` for a platform service agent, or `//iam.origincloudapis.eu/services/{service}` for a change the platform made itself.
+- `id` (String) The role binding's full resource name, `//iam.origincloudapis.eu/organizations/{organization}/roleBindings/{role_binding}`: what an argument that refers to the role binding takes. `name` is the relative name, without the host.
+- `member` (String) The full name of who holds the role: a user, `//iam.origincloudapis.eu/users/{user}`, one of the organization's service accounts, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent, `//iam.origincloudapis.eu/serviceAgents/{service_agent}`.
 - `name` (String) The binding's resource name.
-- `project` (String) The project the binding is limited to, `projects/{project}`, one of the organization's. Empty for a binding on the whole organization, which covers every project in it.
-- `role` (String) The role granted, `roles/{role}`.
-- `urn` (String) The binding's URN, the identifier access policies and the audit log use.
+- `project` (String) The full name of the project the binding is limited to, one of the organization's: `//resourcemanager.origincloudapis.eu/projects/{project}`. Empty for a binding on the whole organization, which covers every project in it.
+- `role` (String) The full name of the role granted, `//iam.origincloudapis.eu/roles/{role}`.

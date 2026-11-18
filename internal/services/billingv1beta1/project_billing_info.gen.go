@@ -8,6 +8,7 @@ import (
 	schema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	planmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	stringplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	validator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	types "github.com/hashicorp/terraform-plugin-framework/types"
 	framework "github.com/origincloudhq/terraform-provider-origincloud/internal/framework"
 	v1beta1 "go.origincloud.eu/sdk/billing/v1beta1"
@@ -28,7 +29,7 @@ func projectBillingInfoSchema() schema.Schema {
 		MarkdownDescription: "Which billing account pays for a project.\n\nEvery project has its project billing info, which exists with it: creating this resource updates the existing project billing info with the settings configured, and the rest keep their values. Destroying it unsets the settings Terraform set, leaving the others as they are; to stop managing it without unsetting them, remove it from the state instead (a `removed` block with `lifecycle { destroy = false }`, or `terraform state rm`). Manage each project billing info with one resource only: two would undo each other's settings.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "The project billing info's resource name, the same as `name`.",
+				MarkdownDescription: "The project billing info's full resource name, `//billing.origincloudapis.eu/projects/{project}/billingInfo`: what an argument that refers to the project billing info takes. `name` is the relative name, without the host.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -43,8 +44,9 @@ func projectBillingInfoSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"billing_account": schema.StringAttribute{
-				MarkdownDescription: "The billing account that pays for the project's usage, one of its organization's.",
+				MarkdownDescription: "The full name of the billing account that pays for the project's usage, one of its organization's: `//billing.origincloudapis.eu/organizations/{organization}/billingAccounts/{billing_account}`.",
 				Required:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
 			},
 		},
 	}
@@ -62,7 +64,11 @@ func projectBillingInfoFromProto(p *v1beta1.ProjectBillingInfo, m *projectBillin
 	if err != nil {
 		return err
 	}
-	m.ID = types.StringValue(p.GetName())
+	id, err := framework.FullName("billing", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Name = types.StringValue(p.GetName())
 	m.BillingAccount = types.StringValue(p.GetBillingAccount())
@@ -71,12 +77,14 @@ func projectBillingInfoFromProto(p *v1beta1.ProjectBillingInfo, m *projectBillin
 
 func projectBillingInfoResource() framework.ResourceSpec[projectBillingInfoModel, *v1beta1.ProjectBillingInfo] {
 	return framework.ResourceSpec[projectBillingInfoModel, *v1beta1.ProjectBillingInfo]{
-		TypeName:  "_billing_project_billing_info",
-		Pattern:   "projects/{project}/billingInfo",
-		Schema:    projectBillingInfoSchema(),
-		Name:      func(m *projectBillingInfoModel) string { return m.Name.ValueString() },
-		ToProto:   projectBillingInfoToProto,
-		FromProto: projectBillingInfoFromProto,
+		TypeName:   "_billing_project_billing_info",
+		Pattern:    "projects/{project}/billingInfo",
+		Service:    "billing",
+		References: map[string]string{"billing_account": "billing"},
+		Schema:     projectBillingInfoSchema(),
+		Name:       func(m *projectBillingInfoModel) string { return m.Name.ValueString() },
+		ToProto:    projectBillingInfoToProto,
+		FromProto:  projectBillingInfoFromProto,
 		UpdateMask: func(plan, state *projectBillingInfoModel) []string {
 			var mask []string
 			if !plan.BillingAccount.Equal(state.BillingAccount) {
