@@ -40,12 +40,12 @@ data "origincloud_support_cases" "acme" {
 
 data "origincloud_support_case_messages" "unreachable" {
   organization = "acme"
-  case         = "c-1"
+  case         = "//support.origincloudapis.eu/organizations/acme/cases/c-1"
 }
 
 data "origincloud_support_case_messages" "invoice" {
   organization = "acme"
-  case         = "c-2"
+  case         = "//support.origincloudapis.eu/organizations/acme/cases/c-2"
 }
 
 output "open" {

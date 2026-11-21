@@ -49,8 +49,9 @@ func volumeAttachmentSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"instance": schema.StringAttribute{
-				MarkdownDescription: "The instance the volume attachment is in. Changing it replaces the volume attachment.",
+				MarkdownDescription: "The instance the volume attachment is in. Its `id`, the full resource name `//compute.origincloudapis.eu/projects/{project}/zones/{zone}/instances/{instance}`. `project` and `zone` must be the ones it is in. Changing it replaces the volume attachment.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("compute", "projects/{project}/zones/{zone}/instances/{instance}", "instance")},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"name": schema.StringAttribute{
@@ -102,7 +103,7 @@ func volumeAttachmentFromProto(p *v1beta1.VolumeAttachment, m *volumeAttachmentM
 	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Zone = types.StringValue(values[1])
-	m.Instance = types.StringValue(values[2])
+	m.Instance = framework.ParentOf("compute", p.GetName())
 	m.Name = types.StringValue(p.GetName())
 	m.Volume = types.StringValue(p.GetVolume())
 	m.Device = types.StringValue(p.GetDevice())
@@ -117,6 +118,7 @@ func volumeAttachmentResource() framework.ResourceSpec[volumeAttachmentModel, *v
 		Pattern:    "projects/{project}/zones/{zone}/instances/{instance}/volumeAttachments/{volume_attachment}",
 		Service:    "compute",
 		References: map[string]string{"volume": "pvs"},
+		Parent:     "instance",
 		Schema:     volumeAttachmentSchema(),
 		Name:       func(m *volumeAttachmentModel) string { return m.Name.ValueString() },
 		ToProto:    volumeAttachmentToProto,
@@ -127,7 +129,7 @@ func volumeAttachmentResource() framework.ResourceSpec[volumeAttachmentModel, *v
 		},
 		Create: func(ctx context.Context, client *core.Client, plan *volumeAttachmentModel) (*core.Operation[*v1beta1.VolumeAttachment], error) {
 			return v1beta1.NewVolumeAttachmentClient(client).CreateVolumeAttachment(ctx, &v1beta1.CreateVolumeAttachmentRequest{
-				Parent:           "projects/" + plan.Project.ValueString() + "/zones/" + plan.Zone.ValueString() + "/instances/" + plan.Instance.ValueString(),
+				Parent:           framework.ParentPath(plan.Instance),
 				VolumeAttachment: volumeAttachmentToProto(plan),
 			})
 		},
@@ -190,8 +192,9 @@ func volumeAttachmentListSchema() schema1.Schema {
 				Required:            true,
 			},
 			"instance": schema1.StringAttribute{
-				MarkdownDescription: "The instance whose volume attachments to list.",
+				MarkdownDescription: "The instance whose volume attachments to list. Its `id`, the full resource name `//compute.origincloudapis.eu/projects/{project}/zones/{zone}/instances/{instance}`. `project` and `zone` must be the ones it is in.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("compute", "projects/{project}/zones/{zone}/instances/{instance}", "instance")},
 			},
 			"volume_attachments": schema1.ListNestedAttribute{
 				MarkdownDescription: "The volume attachments listed, from every page.",
@@ -235,7 +238,7 @@ func volumeAttachmentListDataSource() framework.ListDataSourceSpec[volumeAttachm
 		Schema:   volumeAttachmentListSchema(),
 		List: func(ctx context.Context, client *core.Client, m *volumeAttachmentListModel) error {
 			m.VolumeAttachments = []volumeAttachmentItemModel{}
-			for p, err := range v1beta1.NewVolumeAttachmentClient(client).AllVolumeAttachments(ctx, &v1beta1.ListVolumeAttachmentsRequest{Parent: "projects/" + m.Project.ValueString() + "/zones/" + m.Zone.ValueString() + "/instances/" + m.Instance.ValueString()}) {
+			for p, err := range v1beta1.NewVolumeAttachmentClient(client).AllVolumeAttachments(ctx, &v1beta1.ListVolumeAttachmentsRequest{Parent: framework.ParentPath(m.Instance)}) {
 				if err != nil {
 					return err
 				}

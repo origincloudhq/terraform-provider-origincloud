@@ -3,11 +3,14 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"maps"
 	"os"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
+	"github.com/origincloudhq/terraform-provider-origincloud/internal/framework"
 	pvsv1beta1 "go.origincloud.eu/sdk/pvs/v1beta1"
 )
 
@@ -162,8 +165,8 @@ func TestAStateOfV0180UpgradesAndPlansNoChanges(t *testing.T) {
 				if schema == nil {
 					t.Fatalf("no schema of %s", r.Type)
 				}
-				if schema.Version != 1 {
-					t.Errorf("%s has schema version %d, not 1", r.Type, schema.Version)
+				if schema.Version != framework.StateVersion {
+					t.Errorf("%s has schema version %d, not the current", r.Type, schema.Version)
 				}
 				upgraded, err := provider.UpgradeResourceState(ctx, &tfprotov6.UpgradeResourceStateRequest{
 					TypeName: r.Type, Version: 0, RawState: &tfprotov6.RawState{JSON: raw},
@@ -223,4 +226,83 @@ func configuredFor(t *testing.T, configured map[string]map[string]bool, typeName
 		t.Fatalf("no configured arguments for %s", typeName)
 	}
 	return set
+}
+
+// A state of schema version 1, written before a child's parent attribute
+// took the parent's full name, holds the parent's bare id. It is upgraded
+// to the full name, which the configuration writes, and plans no changes,
+// without a refresh; one of version 0 gets there as well.
+//
+// The state is written by hand after the form of version 1: the parent is
+// a bare id, the id and the references are full names.
+func TestAStateWithABareParentIsUpgradedAndPlansNoChanges(t *testing.T) {
+	ctx := context.Background()
+	const (
+		group = "projects/p-1/regions/eu-central1/securityGroups/sg-1"
+		rule  = group + "/rules/rule-1"
+	)
+	attributes := map[string]any{
+		"id": full("network", rule), "name": rule,
+		"project": "p-1", "region": "eu-central1", "security_group": "sg-1",
+		"direction": "INGRESS", "protocol": "TCP", "first_port": 22, "last_port": 0,
+		"cidr_block": "10.0.0.0/8", "peer_security_group": "", "same_group": false, "description": "",
+	}
+	provider, err := factories()["origincloud"]()
+	if err != nil {
+		t.Fatal(err)
+	}
+	schemas, err := provider.GetProviderSchema(ctx, &tfprotov6.GetProviderSchemaRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const typeName = "origincloud_network_security_group_rule"
+	schema := schemas.ResourceSchemas[typeName]
+
+	for _, version := range []int64{0, 1} {
+		t.Run(fmt.Sprintf("from version %d", version), func(t *testing.T) {
+			old := maps.Clone(attributes)
+			if version == 0 {
+				old["id"] = rule
+				old["urn"] = "urn:origincloud:network:securityGroupRule/" + rule
+			}
+			raw, err := json.Marshal(old)
+			if err != nil {
+				t.Fatal(err)
+			}
+			upgraded, err := provider.UpgradeResourceState(ctx, &tfprotov6.UpgradeResourceStateRequest{
+				TypeName: typeName, Version: version, RawState: &tfprotov6.RawState{JSON: raw},
+			})
+			if err != nil || len(upgraded.Diagnostics) > 0 {
+				t.Fatalf("upgrading: %v %v", err, upgraded.Diagnostics)
+			}
+			state, err := upgraded.UpgradedState.Unmarshal(schema.ValueType())
+			if err != nil {
+				t.Fatal(err)
+			}
+			var attrs map[string]tftypes.Value
+			if err := state.As(&attrs); err != nil {
+				t.Fatal(err)
+			}
+			var parent string
+			if err := attrs["security_group"].As(&parent); err != nil || parent != full("network", group) {
+				t.Fatalf("the upgraded parent is %q (%v), not the group's full name", parent, err)
+			}
+
+			set := map[string]bool{"project": true, "region": true, "security_group": true, "direction": true, "protocol": true, "first_port": true, "cidr_block": true}
+			planned := plannedByTerraform(t, provider, typeName, schema, state, set, map[string]string{"security_group": full("network", group)})
+			if len(planned.Diagnostics) > 0 {
+				t.Fatalf("planning: %v", planned.Diagnostics)
+			}
+			if len(planned.RequiresReplace) > 0 {
+				t.Errorf("the rule would be replaced for %v", planned.RequiresReplace)
+			}
+			after, err := planned.PlannedState.Unmarshal(schema.ValueType())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !after.Equal(state) {
+				t.Errorf("the rule plans changes:\nstate: %v\nplan:  %v", state, after)
+			}
+		})
+	}
 }

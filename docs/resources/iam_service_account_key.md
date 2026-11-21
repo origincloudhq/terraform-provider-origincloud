@@ -18,7 +18,7 @@ A key pair an `EXTERNAL` service account authenticates with. The platform keeps 
 ### Required
 
 - `organization` (String) The organization the service account key is in. Changing it replaces the service account key.
-- `service_account` (String) The service account the service account key is in. Changing it replaces the service account key.
+- `service_account` (String) The service account the service account key is in. Its `id`, the full resource name `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`. `organization` must be the one it is in. Changing it replaces the service account key.
 
 ### Read-Only
 

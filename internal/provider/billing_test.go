@@ -298,7 +298,7 @@ data "origincloud_billing_legal_document_version" "terms" {
 }
 
 data "origincloud_billing_legal_document_versions" "terms" {
-  legal_document = "terms"
+  legal_document = "//billing.origincloudapis.eu/legalDocuments/terms"
 }
 
 data "origincloud_billing_legal_acceptance" "terms" {
@@ -307,7 +307,7 @@ data "origincloud_billing_legal_acceptance" "terms" {
 
 data "origincloud_billing_legal_acceptances" "default" {
   organization    = "acme"
-  billing_account = "ba-1"
+  billing_account = "//billing.origincloudapis.eu/organizations/acme/billingAccounts/ba-1"
 }
 `,
 				Check: resource.ComposeAggregateTestCheckFunc(

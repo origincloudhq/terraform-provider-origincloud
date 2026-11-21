@@ -295,6 +295,106 @@ func TestAnImmutableFieldsElementsMayBeImmutable(t *testing.T) {
 	)
 }
 
+// An INPUT_ONLY field is never read back: the state keeps what the plan
+// set, and it isn't computed, as nothing answers with it.
+func TestAnInputOnlyFieldIsKeptFromThePlan(t *testing.T) {
+	files, failure := run(t, withField("Widget", `name: "passphrase" number: 9 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: [INPUT_ONLY, REQUIRED] }`))
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	code := files["internal/services/widgetsv1/widget.gen.go"]
+	contains(t, "widget.gen.go", code,
+		`"passphrase": schema.StringAttribute{ MarkdownDescription: "The API never returns it: the state keeps the configured value, and an imported widget has none.", Required: true,`,
+	)
+	// Only the data source, whose attributes are all computed, reads it.
+	if n := strings.Count(code, "p.GetPassphrase()"); n != 1 {
+		t.Errorf("the input-only field is read %d times, not by the data source alone:\n%s", n, code)
+	}
+}
+
+// An enum's unset value can't be configured, so an optional enum left out
+// is the API's to choose: optional and computed, null while it has chosen
+// none.
+func TestAnOptionalEnumIsChosenByTheAPI(t *testing.T) {
+	files, failure := run(t, func(file *descriptorpb.FileDescriptorProto) {
+		e := new(descriptorpb.EnumDescriptorProto)
+		if err := prototext.Unmarshal([]byte(`name: "Phase" value { name: "PHASE_UNSPECIFIED" number: 0 } value { name: "ACTIVE" number: 1 }`), e); err != nil {
+			t.Fatal(err)
+		}
+		file.EnumType = append(file.EnumType, e)
+		withField("Widget", `name: "phase" number: 9 label: LABEL_OPTIONAL type: TYPE_ENUM type_name: ".test.widgets.v1.Phase" options { [google.api.field_behavior]: OPTIONAL }`)(file)
+	})
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	contains(t, "widget.gen.go", files["internal/services/widgetsv1/widget.gen.go"],
+		"Optional: true, Computed: true, Validators: []validator.String{framework.OneOf(\"ACTIVE\")}, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},",
+		"m.Phase = framework.ChosenEnum(p.GetPhase())",
+	)
+}
+
+// withParts gives Widget a child, Part, with the methods to create, read,
+// list and delete it.
+func withParts(file *descriptorpb.FileDescriptorProto) {
+	for _, text := range []string{
+		`name: "GetPart" input_type: ".test.widgets.v1.GetWidgetRequest" output_type: ".test.widgets.v1.Part"`,
+		`name: "ListParts" input_type: ".test.widgets.v1.ListWidgetsRequest" output_type: ".test.widgets.v1.ListPartsResponse"`,
+		`name: "CreatePart" input_type: ".test.widgets.v1.CreatePartRequest" output_type: ".test.widgets.v1.Part"`,
+		`name: "DeletePart" input_type: ".test.widgets.v1.NameRequest" output_type: ".google.protobuf.Empty"`,
+	} {
+		m := new(descriptorpb.MethodDescriptorProto)
+		if err := prototext.Unmarshal([]byte(text), m); err != nil {
+			panic(err)
+		}
+		file.Service[0].Method = append(file.Service[0].Method, m)
+	}
+	for _, text := range []string{
+		`name: "Part"
+		 options { [google.api.resource] { type: "widgets.origincloudapis.eu/Part" pattern: "projects/{project}/widgets/{widget}/parts/{part}" singular: "part" plural: "parts" } }
+		 field { name: "name" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: IDENTIFIER } }
+		 field { name: "size" number: 2 label: LABEL_OPTIONAL type: TYPE_INT64 options { [google.api.field_behavior]: REQUIRED [google.api.field_behavior]: IMMUTABLE } }`,
+		`name: "ListPartsResponse"
+		 field { name: "parts" number: 1 label: LABEL_REPEATED type: TYPE_MESSAGE type_name: ".test.widgets.v1.Part" }
+		 field { name: "next_page_token" number: 2 label: LABEL_OPTIONAL type: TYPE_STRING }`,
+		`name: "CreatePartRequest"
+		 field { name: "parent" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING }
+		 field { name: "part" number: 2 label: LABEL_OPTIONAL type: TYPE_MESSAGE type_name: ".test.widgets.v1.Part" }`,
+	} {
+		d := new(descriptorpb.DescriptorProto)
+		if err := prototext.Unmarshal([]byte(text), d); err != nil {
+			panic(err)
+		}
+		file.MessageType = append(file.MessageType, d)
+	}
+}
+
+// A resource whose parent is another resource of its service, as a rule is
+// a security group's, takes the parent's full name: it validates it, sends
+// the parent's relative name, and keeps the full name in its state. A
+// resource whose parent is only a place, a project, doesn't.
+func TestAChildTakesItsParentsFullName(t *testing.T) {
+	files, failure := run(t, withParts)
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	part := files["internal/services/widgetsv1/part.gen.go"]
+	contains(t, "part.gen.go", part,
+		`Validators: []validator.String{framework.ParentReference("widgets", "projects/{project}/widgets/{widget}", "widget")},`,
+		"m.Widget = framework.ParentOf(\"widgets\", p.GetName())",
+		`Parent: "widget",`,
+		"Parent: framework.ParentPath(plan.Widget),",
+		// The listing takes it too.
+		"Parent: framework.ParentPath(m.Widget)",
+		"`//widgets.origincloudapis.eu/projects/{project}/widgets/{widget}`. `project` must be the one it is in. Changing it replaces the part.",
+	)
+	// The project is a place: a bare id, as before.
+	widget := files["internal/services/widgetsv1/widget.gen.go"]
+	contains(t, "widget.gen.go", widget, `Parent: "projects/" + plan.Project.ValueString(),`, "m.Project = types.StringValue(values[0])")
+	if strings.Contains(widget, "ParentReference") || strings.Contains(widget, "Parent: \"project\"") {
+		t.Errorf("a project is taken for a parent resource:\n%s", widget)
+	}
+}
+
 // twoPatterns gives Widget a second pattern, before its own, and binds
 // CreateWidget's parent to parent when it isn't empty.
 func twoPatterns(parent string) func(*descriptorpb.FileDescriptorProto) {

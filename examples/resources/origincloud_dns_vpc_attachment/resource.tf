@@ -13,6 +13,6 @@ resource "origincloud_dns_hosted_zone" "corp" {
 # zone's project.
 resource "origincloud_dns_vpc_attachment" "main" {
   project     = "my-project-123"
-  hosted_zone = basename(origincloud_dns_hosted_zone.corp.name)
+  hosted_zone = origincloud_dns_hosted_zone.corp.id
   vpc         = origincloud_network_vpc.main.id
 }

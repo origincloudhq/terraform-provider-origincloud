@@ -20,7 +20,7 @@ The resolver policy a VPC's resolver relays through.
 - `project` (String) The project the resolver policy association is in. Changing it replaces the resolver policy association.
 - `region` (String) The region the resolver policy association is in. Changing it replaces the resolver policy association.
 - `resolver_policy` (String) The full name of the resolver policy the VPC relays through, in the VPC's project and region. Changing it replaces the resolver policy association.
-- `vpc` (String) The vpc the resolver policy association is in. Changing it replaces the resolver policy association.
+- `vpc` (String) The vpc the resolver policy association is in. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/regions/{region}/vpcs/{vpc}`. `project` and `region` must be the ones it is in. Changing it replaces the resolver policy association.
 
 ### Read-Only
 

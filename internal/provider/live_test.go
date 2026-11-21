@@ -326,7 +326,7 @@ resource "origincloud_dns_hosted_zone" "public" {
 
 resource "origincloud_dns_record_set" "www" {
   project     = %[1]q
-  hosted_zone = basename(origincloud_dns_hosted_zone.public.name)
+  hosted_zone = origincloud_dns_hosted_zone.public.id
   dns_name    = "www.terraform-provider.example.com"
   type        = "A"
   ttl         = %[3]q
@@ -335,7 +335,7 @@ resource "origincloud_dns_record_set" "www" {
 
 resource "origincloud_dns_record_set" "spf" {
   project     = %[1]q
-  hosted_zone = basename(origincloud_dns_hosted_zone.public.name)
+  hosted_zone = origincloud_dns_hosted_zone.public.id
   dns_name    = "terraform-provider.example.com"
   type        = "TXT"
   basic       = { values = ["v=spf1 -all"] }
@@ -349,7 +349,7 @@ resource "origincloud_dns_hosted_zone" "private" {
 
 resource "origincloud_dns_vpc_attachment" "dns" {
   project     = %[1]q
-  hosted_zone = basename(origincloud_dns_hosted_zone.private.name)
+  hosted_zone = origincloud_dns_hosted_zone.private.id
   vpc         = origincloud_network_vpc.dns.id
 }
 `, values[0], region, ttl, address)

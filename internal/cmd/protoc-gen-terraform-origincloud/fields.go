@@ -58,7 +58,13 @@ type attribute struct {
 	// kept is an output-only value the API answers with only once, kept
 	// from then on (secrets.go); sensitive hides it.
 	kept, sensitive bool
-	doc             string
+	// inputOnly is a field the API takes but never answers with
+	// (INPUT_ONLY): the state keeps what the plan set, and a read leaves it.
+	inputOnly bool
+	// chosenEnum is an optional enum the API chooses when it is left out: it
+	// is null while the API has chosen none.
+	chosenEnum bool
+	doc        string
 
 	required, optional, computed bool
 	// keep plans the state's value while it is unknown; a nested
@@ -85,10 +91,39 @@ type attribute struct {
 	// spelling is the attribute's spelling, when the API answers it in a
 	// form of its own (spellings.go).
 	spelling *spelling
+	// parent is set for the attribute of the resource a resource is a child
+	// of, such as a security group rule's security_group: it holds the
+	// parent's full name, which is its id.
+	parent *parentReference
 	// nameValue is the index, among the resource name's variable values,
 	// of an attribute that isn't a field but a part of the name: a parent's
 	// variable, or the id the client chooses.
 	nameValue int
+}
+
+// A parentReference is the resource a child resource is a child of.
+type parentReference struct {
+	service string // short code
+	pattern string // the parent's, such as projects/{project}/securityGroups/{security_group}
+	name    string // in words, such as "security group"
+}
+
+// sentence describes what the attribute takes, after what it is.
+func (p parentReference) sentence() string {
+	variables := patternVariables(p.pattern)
+	var place []string
+	for _, v := range variables[:len(variables)-1] {
+		place = append(place, "`"+v+"`")
+	}
+	text := fmt.Sprintf("Its `id`, the full resource name `//%s.%s/%s`.", p.service, apiDomain, p.pattern)
+	switch len(place) {
+	case 0:
+	case 1:
+		text += " " + place[0] + " must be the one it is in."
+	default:
+		text += " " + strings.Join(place[:len(place)-1], ", ") + " and " + place[len(place)-1] + " must be the ones it is in."
+	}
+	return text
 }
 
 // computedOnly says that the configuration can't set the attribute.
@@ -136,10 +171,15 @@ func attributes(t resourceType, forResource bool, prefix string) ([]attribute, e
 	})
 	if forResource {
 		for i, v := range t.parentVariables() {
-			attrs = append(attrs, attribute{
+			a := attribute{
 				name: v, goName: camel(v), kind: "String", required: true, replace: true, nameValue: i,
 				doc: fmt.Sprintf("The %s the %s is in. Changing it replaces the %s.", words(v), singular, singular),
-			})
+			}
+			if pattern, ok := t.parentResource(); ok && i == len(t.parentVariables())-1 {
+				a.parent = &parentReference{service: t.shortcode, pattern: pattern, name: words(v)}
+				a.doc = fmt.Sprintf("The %s the %s is in. %s Changing it replaces the %s.", words(v), singular, a.parent.sentence(), singular)
+			}
+			attrs = append(attrs, a)
 		}
 		if id := t.idField(); id != nil {
 			// The id the client chooses (AIP-133): its name's last segment.
@@ -335,6 +375,10 @@ func applyBehaviors(s scope, a *attribute, behaviors []annotations.FieldBehavior
 	}
 	updatable := s.t.update != nil
 	immutable := has(annotations.FieldBehavior_IMMUTABLE)
+	a.inputOnly = has(annotations.FieldBehavior_INPUT_ONLY)
+	if a.inputOnly && has(annotations.FieldBehavior_OUTPUT_ONLY) {
+		return fmt.Errorf("a field can't be both INPUT_ONLY and OUTPUT_ONLY")
+	}
 	switch {
 	case has(annotations.FieldBehavior_IDENTIFIER):
 		if s.nested {
@@ -381,7 +425,12 @@ func applyBehaviors(s scope, a *attribute, behaviors []annotations.FieldBehavior
 		// map field can't have presence, but is chosen the same way: left
 		// out (null), it isn't sent, while [] or {} is, empty.
 		singleton := s.t.managedSingleton() && !s.nested
-		chosen := a.presence || a.chosenObject || singleton && a.collection()
+		// An enum has no value for unset but the one the API reads as
+		// unset, which can't be configured: a left-out one is the API's to
+		// choose, as a new key's state is.
+		fills := !a.inputOnly && a.enum != nil && a.kind == "String" && a.oneof == nil && !s.inElements
+		chosen := a.presence || a.chosenObject || singleton && a.collection() || fills
+		a.chosenEnum = fills && !a.presence
 		a.computed, a.keep = chosen, chosen
 		switch {
 		case singleton && a.collection():
@@ -406,6 +455,12 @@ func applyBehaviors(s scope, a *attribute, behaviors []annotations.FieldBehavior
 		// Left out, the object is the API's, and Terraform plans each of its
 		// fields from the configuration's null unless it is computed.
 		a.required, a.optional, a.computed, a.keep, a.replace = false, true, true, false, false
+	}
+	if a.inputOnly {
+		// The API never answers with it, so there is nothing for it to
+		// choose, and the state keeps the configured value.
+		a.computed, a.keep = false, false
+		a.doc = strings.TrimSpace(a.doc + " The API never returns it: the state keeps the configured value, and an imported " + words(s.t.singular) + " has none.")
 	}
 	if a.replace {
 		a.doc = strings.TrimSpace(a.doc + " Changing it replaces the " + words(s.t.singular) + ".")
@@ -584,6 +639,8 @@ func attributeValidators(c conv, a attribute, attrs []attribute) []string {
 	settable := a.required || a.optional
 	var validators []string
 	switch {
+	case a.parent != nil:
+		validators = append(validators, c.framework("ParentReference")+"("+quoted([]string{a.parent.service, a.parent.pattern, a.parent.name})+")")
 	case a.kind == "Int64" && a.int32 && settable:
 		validators = append(validators, c.framework("Int32")+"()")
 	case a.kind == "String" && a.enum != nil && settable:
@@ -691,9 +748,17 @@ func generateConversions(g *protogen.GeneratedFile, t resourceType, name, model,
 				g.P("}")
 				g.P("m.ID = id")
 			} else {
-				g.P("m.", a.goName, " = ", c.types("StringValue"), "(values[", a.nameValue, "])")
+				if a.parent != nil {
+					// The parent's full name, which holds its place.
+					g.P("m.", a.goName, " = ", c.framework("ParentOf"), "(", fmt.Sprintf("%q", t.shortcode), ", p.GetName())")
+				} else {
+					g.P("m.", a.goName, " = ", c.types("StringValue"), "(values[", a.nameValue, "])")
+				}
 			}
 			continue
+		}
+		if a.inputOnly {
+			continue // not in the answer: the state keeps the plan's
 		}
 		g.P("m.", a.goName, " = ", c.fromProto(a, "p", "m."+a.goName))
 	}
@@ -933,6 +998,8 @@ func (c conv) fromProto(a attribute, p, prior string) string {
 	}
 	var value, zero string
 	switch {
+	case a.inputOnly:
+		value = prior
 	case a.kept:
 		value = c.framework("Kept") + "(" + prior + ", " + get + ")"
 	case a.wellKnown != "":
@@ -953,6 +1020,9 @@ func (c conv) fromProto(a attribute, p, prior string) string {
 		value = c.framework("String"+a.kind) + "(" + get + ")"
 	case a.kind == "List" || a.kind == "Set":
 		value = c.framework(a.kind+"Of") + "(" + c.elemType(a) + ", " + get + ", " + c.scalarFrom(a) + ")"
+	case a.chosenEnum:
+		// The API's choice, or null while it has made none.
+		value = c.framework("ChosenEnum") + "(" + get + ")"
 	case a.enum != nil:
 		value, zero = c.types("StringValue")+"("+get+".String())", get+" == 0"
 	case a.kind == "Int64":

@@ -20,7 +20,7 @@ A route: traffic to `destination` leaves through one gateway. Set exactly one of
 - `destination` (String) The destination: the IPv4 default route, written with an all-zero address and prefix length 0, or the IPv6 one, `::/0`. A route table decides only where traffic to the internet goes. Changing it replaces the route.
 - `project` (String) The project the route is in. Changing it replaces the route.
 - `region` (String) The region the route is in. Changing it replaces the route.
-- `route_table` (String) The route table the route is in. Changing it replaces the route.
+- `route_table` (String) The route table the route is in. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/regions/{region}/routeTables/{route_table}`. `project` and `region` must be the ones it is in. Changing it replaces the route.
 
 ### Optional
 

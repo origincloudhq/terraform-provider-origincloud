@@ -18,7 +18,7 @@ Lists a subnet's route table associations: none or one.
 ### Required
 
 - `project` (String) The project whose route table associations to list.
-- `subnet` (String) The subnet whose route table associations to list.
+- `subnet` (String) The subnet whose route table associations to list. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/zones/{zone}/subnets/{subnet}`. `project` and `zone` must be the ones it is in.
 - `zone` (String) The zone whose route table associations to list.
 
 ### Read-Only

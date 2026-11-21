@@ -46,8 +46,9 @@ func aclAssociationSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"subnet": schema.StringAttribute{
-				MarkdownDescription: "The subnet the acl association is in. Changing it replaces the acl association.",
+				MarkdownDescription: "The subnet the acl association is in. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/zones/{zone}/subnets/{subnet}`. `project` and `zone` must be the ones it is in. Changing it replaces the acl association.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("network", "projects/{project}/zones/{zone}/subnets/{subnet}", "subnet")},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"name": schema.StringAttribute{
@@ -84,7 +85,7 @@ func aclAssociationFromProto(p *v1beta1.AclAssociation, m *aclAssociationModel) 
 	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Zone = types.StringValue(values[1])
-	m.Subnet = types.StringValue(values[2])
+	m.Subnet = framework.ParentOf("network", p.GetName())
 	m.Name = types.StringValue(p.GetName())
 	m.Acl = types.StringValue(p.GetAcl())
 	return nil
@@ -96,6 +97,7 @@ func aclAssociationResource() framework.ResourceSpec[aclAssociationModel, *v1bet
 		Pattern:    "projects/{project}/zones/{zone}/subnets/{subnet}/aclAssociations/{acl_association}",
 		Service:    "network",
 		References: map[string]string{"acl": "network"},
+		Parent:     "subnet",
 		Schema:     aclAssociationSchema(),
 		Name:       func(m *aclAssociationModel) string { return m.Name.ValueString() },
 		ToProto:    aclAssociationToProto,
@@ -106,7 +108,7 @@ func aclAssociationResource() framework.ResourceSpec[aclAssociationModel, *v1bet
 		},
 		Create: func(ctx context.Context, client *core.Client, plan *aclAssociationModel) (*core.Operation[*v1beta1.AclAssociation], error) {
 			return v1beta1.NewAclAssociationClient(client).CreateAclAssociation(ctx, &v1beta1.CreateAclAssociationRequest{
-				Parent:         "projects/" + plan.Project.ValueString() + "/zones/" + plan.Zone.ValueString() + "/subnets/" + plan.Subnet.ValueString(),
+				Parent:         framework.ParentPath(plan.Subnet),
 				AclAssociation: aclAssociationToProto(plan),
 			})
 		},
@@ -163,8 +165,9 @@ func aclAssociationListSchema() schema1.Schema {
 				Required:            true,
 			},
 			"subnet": schema1.StringAttribute{
-				MarkdownDescription: "The subnet whose acl associations to list.",
+				MarkdownDescription: "The subnet whose acl associations to list. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/zones/{zone}/subnets/{subnet}`. `project` and `zone` must be the ones it is in.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("network", "projects/{project}/zones/{zone}/subnets/{subnet}", "subnet")},
 			},
 			"acl_associations": schema1.ListNestedAttribute{
 				MarkdownDescription: "The acl associations listed, from every page.",
@@ -196,7 +199,7 @@ func aclAssociationListDataSource() framework.ListDataSourceSpec[aclAssociationL
 		Schema:   aclAssociationListSchema(),
 		List: func(ctx context.Context, client *core.Client, m *aclAssociationListModel) error {
 			m.AclAssociations = []aclAssociationItemModel{}
-			for p, err := range v1beta1.NewAclAssociationClient(client).AllAclAssociations(ctx, &v1beta1.ListAclAssociationsRequest{Parent: "projects/" + m.Project.ValueString() + "/zones/" + m.Zone.ValueString() + "/subnets/" + m.Subnet.ValueString()}) {
+			for p, err := range v1beta1.NewAclAssociationClient(client).AllAclAssociations(ctx, &v1beta1.ListAclAssociationsRequest{Parent: framework.ParentPath(m.Subnet)}) {
 				if err != nil {
 					return err
 				}

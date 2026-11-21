@@ -82,11 +82,23 @@ to the plugin or `internal/framework`.
   one, so that a configuration written before can't replace a resource whose
   reference the API now answers in full. A reference that may take several
   patterns needs nothing of its own.
+- A resource whose parent is another resource of its service, such as a
+  security group's rule, has an attribute named after its last parent
+  variable (`security_group`), which takes the parent's `id`, its full
+  name: the other variables are the place both are in (`project`,
+  `region`), attributes of their own that must be the parent's, which the
+  plan checks. The request takes the parent's relative name, and the state
+  holds the full one. A resource whose parent is only a place, such as a
+  project, and a singleton, whose parent is its place, take a bare id. The
+  list data source takes the parent the same way, and `-` for its last
+  segment, to list across parents.
 - The state's schema has a version, `framework.StateVersion`, and a
   permanent upgrade from every earlier one, in `internal/framework/names.go`:
   version 0 held the relative name as `id` and a `urn`, and the references
   relative. It rewrites the `id`, and the references of the types the API
-  names, to full names, and drops what the schema no longer has. A change of
+  names, to full names, and drops what the schema no longer has. Version 1
+  held a child's parent as a bare id, which version 2 holds as the parent's
+  full name, derived from the child's own name. A change of
   a resource's state that needs its own upgrade raises the version and keeps
   this one. `testdata/v0.18.0` holds a state a release wrote, which the
   tests upgrade and plan.
@@ -102,7 +114,16 @@ to the plugin or `internal/framework`.
 - `REQUIRED` is required, `OUTPUT_ONLY` computed, `IMMUTABLE` replaces the
   resource when it changes. An `OPTIONAL` `IMMUTABLE` field is also computed,
   keeping the value the API chose when it was left out (the default storage
-  class); a mutable `OPTIONAL` field left out stays null.
+  class); a mutable `OPTIONAL` field left out stays null, except an enum,
+  whose unset value can't be configured: it is also computed, so a value
+  left out is the API's (a key's `state`, `ENABLED` for a new one), null
+  while the API has chosen none, and removing it from the configuration
+  keeps the current value.
+- An `INPUT_ONLY` field, such as a grant's `ttl`, is one the API takes but
+  never answers with: the state keeps the value the plan set, and no read
+  replaces it. It isn't computed. An imported resource has none, so the
+  first plan after an import shows it as a change, which replaces the
+  resource when the field does.
 - Creates, updates and deletes wait on their operation; a create, update or
   delete that answers with the resource, or with nothing, is done when it
   answers. A resource whose create failed after it existed (the operation's

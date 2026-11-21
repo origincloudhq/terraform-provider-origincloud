@@ -28,7 +28,7 @@ resource "origincloud_dns_hosted_zone" "corp" {
 # zone's project.
 resource "origincloud_dns_vpc_attachment" "main" {
   project     = "my-project-123"
-  hosted_zone = basename(origincloud_dns_hosted_zone.corp.name)
+  hosted_zone = origincloud_dns_hosted_zone.corp.id
   vpc         = origincloud_network_vpc.main.id
 }
 ```
@@ -38,7 +38,7 @@ resource "origincloud_dns_vpc_attachment" "main" {
 
 ### Required
 
-- `hosted_zone` (String) The hosted zone the vpc attachment is in. Changing it replaces the vpc attachment.
+- `hosted_zone` (String) The hosted zone the vpc attachment is in. Its `id`, the full resource name `//dns.origincloudapis.eu/projects/{project}/hostedZones/{hosted_zone}`. `project` must be the one it is in. Changing it replaces the vpc attachment.
 - `project` (String) The project the vpc attachment is in. Changing it replaces the vpc attachment.
 - `vpc` (String) The full name of the VPC the zone answers in, in the zone's project. Changing it replaces the vpc attachment.
 

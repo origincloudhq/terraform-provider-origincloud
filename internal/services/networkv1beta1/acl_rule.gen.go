@@ -53,8 +53,9 @@ func aclRuleSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"acl": schema.StringAttribute{
-				MarkdownDescription: "The acl the acl rule is in. Changing it replaces the acl rule.",
+				MarkdownDescription: "The acl the acl rule is in. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/regions/{region}/acls/{acl}`. `project` and `region` must be the ones it is in. Changing it replaces the acl rule.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("network", "projects/{project}/regions/{region}/acls/{acl}", "acl")},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"name": schema.StringAttribute{
@@ -134,7 +135,7 @@ func aclRuleFromProto(p *v1beta1.AclRule, m *aclRuleModel) error {
 	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Region = types.StringValue(values[1])
-	m.Acl = types.StringValue(values[2])
+	m.Acl = framework.ParentOf("network", p.GetName())
 	m.Name = types.StringValue(p.GetName())
 	m.Direction = types.StringValue(p.GetDirection().String())
 	m.Priority = types.Int64Value(int64(p.GetPriority()))
@@ -151,6 +152,7 @@ func aclRuleResource() framework.ResourceSpec[aclRuleModel, *v1beta1.AclRule] {
 		TypeName:  "_network_acl_rule",
 		Pattern:   "projects/{project}/regions/{region}/acls/{acl}/rules/{rule}",
 		Service:   "network",
+		Parent:    "acl",
 		Schema:    aclRuleSchema(),
 		Name:      func(m *aclRuleModel) string { return m.Name.ValueString() },
 		ToProto:   aclRuleToProto,
@@ -161,7 +163,7 @@ func aclRuleResource() framework.ResourceSpec[aclRuleModel, *v1beta1.AclRule] {
 		},
 		Create: func(ctx context.Context, client *core.Client, plan *aclRuleModel) (*core.Operation[*v1beta1.AclRule], error) {
 			return v1beta1.NewAclRuleClient(client).CreateAclRule(ctx, &v1beta1.CreateAclRuleRequest{
-				Parent:  "projects/" + plan.Project.ValueString() + "/regions/" + plan.Region.ValueString() + "/acls/" + plan.Acl.ValueString(),
+				Parent:  framework.ParentPath(plan.Acl),
 				AclRule: aclRuleToProto(plan),
 			})
 		},
@@ -230,8 +232,9 @@ func aclRuleListSchema() schema1.Schema {
 				Required:            true,
 			},
 			"acl": schema1.StringAttribute{
-				MarkdownDescription: "The acl whose acl rules to list.",
+				MarkdownDescription: "The acl whose acl rules to list. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/regions/{region}/acls/{acl}`. `project` and `region` must be the ones it is in.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("network", "projects/{project}/regions/{region}/acls/{acl}", "acl")},
 			},
 			"acl_rules": schema1.ListNestedAttribute{
 				MarkdownDescription: "The acl rules listed, from every page.",
@@ -287,7 +290,7 @@ func aclRuleListDataSource() framework.ListDataSourceSpec[aclRuleListModel] {
 		Schema:   aclRuleListSchema(),
 		List: func(ctx context.Context, client *core.Client, m *aclRuleListModel) error {
 			m.AclRules = []aclRuleItemModel{}
-			for p, err := range v1beta1.NewAclRuleClient(client).AllAclRules(ctx, &v1beta1.ListAclRulesRequest{Parent: "projects/" + m.Project.ValueString() + "/regions/" + m.Region.ValueString() + "/acls/" + m.Acl.ValueString()}) {
+			for p, err := range v1beta1.NewAclRuleClient(client).AllAclRules(ctx, &v1beta1.ListAclRulesRequest{Parent: framework.ParentPath(m.Acl)}) {
 				if err != nil {
 					return err
 				}

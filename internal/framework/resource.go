@@ -66,6 +66,10 @@ type ResourceSpec[M any, P proto.Message] struct {
 	// resource's name, and the short code of the service that resource is
 	// on, for the upgrade of a state that held them relative.
 	References map[string]string
+	// Parent is the attribute that holds the resource's parent's full name,
+	// for a child of another resource such as a security group's rule; the
+	// state of version 1 held the parent's bare id.
+	Parent string
 
 	// Pattern is the pattern of the resource's names, which an imported
 	// name must have, such as projects/{project}/zones/{zone}/volumes/{volume}.

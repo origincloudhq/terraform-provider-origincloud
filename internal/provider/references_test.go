@@ -67,7 +67,7 @@ resource "origincloud_compute_instance" "web" {
 resource "origincloud_compute_volume_attachment" "data" {
   project  = "p-1"
   zone     = "eu-central1-az1"
-  instance = basename(origincloud_compute_instance.web.name)
+  instance = origincloud_compute_instance.web.id
   volume   = %s
 }
 `, url, computeNetworkInterface, volume)

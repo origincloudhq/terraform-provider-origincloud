@@ -49,8 +49,9 @@ func recordSetSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"hosted_zone": schema.StringAttribute{
-				MarkdownDescription: "The hosted zone the record set is in. Changing it replaces the record set.",
+				MarkdownDescription: "The hosted zone the record set is in. Its `id`, the full resource name `//dns.origincloudapis.eu/projects/{project}/hostedZones/{hosted_zone}`. `project` must be the one it is in. Changing it replaces the record set.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("dns", "projects/{project}/hostedZones/{hosted_zone}", "hosted zone")},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"name": schema.StringAttribute{
@@ -182,7 +183,7 @@ func recordSetFromProto(p *v1beta1.RecordSet, m *recordSetModel) error {
 	}
 	m.ID = id
 	m.Project = types.StringValue(values[0])
-	m.HostedZone = types.StringValue(values[1])
+	m.HostedZone = framework.ParentOf("dns", p.GetName())
 	m.Name = types.StringValue(p.GetName())
 	m.DnsName = types.StringValue(p.GetDnsName())
 	m.Type = types.StringValue(p.GetType().String())
@@ -199,6 +200,7 @@ func recordSetResource() framework.ResourceSpec[recordSetModel, *v1beta1.RecordS
 		TypeName:  "_dns_record_set",
 		Pattern:   "projects/{project}/hostedZones/{hosted_zone}/recordSets/{record_set}",
 		Service:   "dns",
+		Parent:    "hosted_zone",
 		Schema:    recordSetSchema(),
 		Name:      func(m *recordSetModel) string { return m.Name.ValueString() },
 		ToProto:   recordSetToProto,
@@ -218,7 +220,7 @@ func recordSetResource() framework.ResourceSpec[recordSetModel, *v1beta1.RecordS
 		},
 		CreateSync: func(ctx context.Context, client *core.Client, plan *recordSetModel) (*v1beta1.RecordSet, error) {
 			return v1beta1.NewRecordSetClient(client).CreateRecordSet(ctx, &v1beta1.CreateRecordSetRequest{
-				Parent:    "projects/" + plan.Project.ValueString() + "/hostedZones/" + plan.HostedZone.ValueString(),
+				Parent:    framework.ParentPath(plan.HostedZone),
 				RecordSet: recordSetToProto(plan),
 			})
 		},
@@ -326,8 +328,9 @@ func recordSetListSchema() schema1.Schema {
 				Required:            true,
 			},
 			"hosted_zone": schema1.StringAttribute{
-				MarkdownDescription: "The hosted zone whose record sets to list.",
+				MarkdownDescription: "The hosted zone whose record sets to list. Its `id`, the full resource name `//dns.origincloudapis.eu/projects/{project}/hostedZones/{hosted_zone}`. `project` must be the one it is in.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("dns", "projects/{project}/hostedZones/{hosted_zone}", "hosted zone")},
 			},
 			"record_sets": schema1.ListNestedAttribute{
 				MarkdownDescription: "The record sets listed, from every page.",
@@ -396,7 +399,7 @@ func recordSetListDataSource() framework.ListDataSourceSpec[recordSetListModel] 
 		Schema:   recordSetListSchema(),
 		List: func(ctx context.Context, client *core.Client, m *recordSetListModel) error {
 			m.RecordSets = []recordSetItemModel{}
-			for p, err := range v1beta1.NewRecordSetClient(client).AllRecordSets(ctx, &v1beta1.ListRecordSetsRequest{Parent: "projects/" + m.Project.ValueString() + "/hostedZones/" + m.HostedZone.ValueString()}) {
+			for p, err := range v1beta1.NewRecordSetClient(client).AllRecordSets(ctx, &v1beta1.ListRecordSetsRequest{Parent: framework.ParentPath(m.HostedZone)}) {
 				if err != nil {
 					return err
 				}

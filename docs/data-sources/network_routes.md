@@ -19,7 +19,7 @@ Lists a route table's routes, oldest first. Its local routes aren't listed: they
 
 - `project` (String) The project whose routes to list.
 - `region` (String) The region whose routes to list.
-- `route_table` (String) The route table whose routes to list.
+- `route_table` (String) The route table whose routes to list. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/regions/{region}/routeTables/{route_table}`. `project` and `region` must be the ones it is in.
 
 ### Read-Only
 

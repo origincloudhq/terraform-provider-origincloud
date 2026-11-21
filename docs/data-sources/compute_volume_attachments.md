@@ -17,7 +17,7 @@ Lists an instance's volume attachments, the boot volume's first, then by device 
 
 ### Required
 
-- `instance` (String) The instance whose volume attachments to list.
+- `instance` (String) The instance whose volume attachments to list. Its `id`, the full resource name `//compute.origincloudapis.eu/projects/{project}/zones/{zone}/instances/{instance}`. `project` and `zone` must be the ones it is in.
 - `project` (String) The project whose volume attachments to list.
 - `zone` (String) The zone whose volume attachments to list.
 

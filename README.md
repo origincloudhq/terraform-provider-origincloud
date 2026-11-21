@@ -245,13 +245,22 @@ Credentials come from the environment, the first of:
   The platform refuses a reference to a resource of another project in the
   places a resource has to be in its own, such as the volume of an attachment,
   and says so.
+- **A child's parent.** The argument of a resource that names the resource
+  it is a child of, such as a security group rule's `security_group`, a
+  route's `route_table` or a volume attachment's `instance`, takes the
+  parent's `id`, like any other reference; the list data sources of such
+  resources take it too. The plan refuses the bare id, the relative `name`,
+  a resource of another type, and one in another `project`, `region` or
+  `zone` than the child says it is in. A listing takes `-` for the parent's
+  last segment, `.../instances/-`, to list across parents.
 - **Upgrading.** After v0.18, a resource's state has its `id` as the full
   name, and no `urn`. Terraform upgrades the state it holds the first time it
   reads it, without a change to apply; the upgrade stays in the provider for
   every state written before. Change the arguments that refer to another
   resource from its `name` to its `id`, and write `role`, `member` and the
   like as the full names the arguments' descriptions show; the plan refuses
-  one that isn't.
+  one that isn't. A child's state written before its parent took the
+  parent's full name holds the bare id; the upgrade rewrites it too.
 - **Domain names.** A hosted zone's or a record set's `dns_name` is the same
   name in any case: the API answers it in lowercase, and the state keeps it
   as configured, so neither plans a change. Names in a record set's values,

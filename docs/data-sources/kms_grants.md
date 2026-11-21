@@ -17,7 +17,7 @@ Lists a key's grants that haven't expired, in every zone, ordered by name. A gra
 
 ### Required
 
-- `key` (String) The key whose grants to list.
+- `key` (String) The key whose grants to list. Its `id`, the full resource name `//kms.origincloudapis.eu/projects/{project}/regions/{region}/keys/{key}`. `project` and `region` must be the ones it is in.
 - `project` (String) The project whose grants to list.
 - `region` (String) The region whose grants to list.
 
