@@ -23,7 +23,7 @@ A grant: one host may use one key for one operation, with exactly one encryption
 - `operation` (String) What the host may do with the key. One of `DECRYPT`. Changing it replaces the grant.
 - `project` (String) The project the grant is in. Changing it replaces the grant.
 - `region` (String) The region the grant is in. Changing it replaces the grant.
-- `ttl` (String) How long the grant lives from now: 1 to 60 minutes. A duration in seconds, such as `90s` or `1.5s`. Changing it replaces the grant.
+- `ttl` (String) How long the grant lives from now: 1 to 60 minutes. A duration in seconds, such as `90s` or `1.5s`. The API never returns it: the state keeps the configured value, and an imported grant has none. Changing it replaces the grant.
 
 ### Read-Only
 

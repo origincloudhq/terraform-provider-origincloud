@@ -295,6 +295,44 @@ func TestAnImmutableFieldsElementsMayBeImmutable(t *testing.T) {
 	)
 }
 
+// An INPUT_ONLY field is never read back: the state keeps what the plan
+// set, and it isn't computed, as nothing answers with it.
+func TestAnInputOnlyFieldIsKeptFromThePlan(t *testing.T) {
+	files, failure := run(t, withField("Widget", `name: "passphrase" number: 9 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: [INPUT_ONLY, REQUIRED] }`))
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	code := files["internal/services/widgetsv1/widget.gen.go"]
+	contains(t, "widget.gen.go", code,
+		`"passphrase": schema.StringAttribute{ MarkdownDescription: "The API never returns it: the state keeps the configured value, and an imported widget has none.", Required: true,`,
+	)
+	// Only the data source, whose attributes are all computed, reads it.
+	if n := strings.Count(code, "p.GetPassphrase()"); n != 1 {
+		t.Errorf("the input-only field is read %d times, not by the data source alone:\n%s", n, code)
+	}
+}
+
+// An enum's unset value can't be configured, so an optional enum left out
+// is the API's to choose: optional and computed, null while it has chosen
+// none.
+func TestAnOptionalEnumIsChosenByTheAPI(t *testing.T) {
+	files, failure := run(t, func(file *descriptorpb.FileDescriptorProto) {
+		e := new(descriptorpb.EnumDescriptorProto)
+		if err := prototext.Unmarshal([]byte(`name: "Phase" value { name: "PHASE_UNSPECIFIED" number: 0 } value { name: "ACTIVE" number: 1 }`), e); err != nil {
+			t.Fatal(err)
+		}
+		file.EnumType = append(file.EnumType, e)
+		withField("Widget", `name: "phase" number: 9 label: LABEL_OPTIONAL type: TYPE_ENUM type_name: ".test.widgets.v1.Phase" options { [google.api.field_behavior]: OPTIONAL }`)(file)
+	})
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	contains(t, "widget.gen.go", files["internal/services/widgetsv1/widget.gen.go"],
+		"Optional: true, Computed: true, Validators: []validator.String{framework.OneOf(\"ACTIVE\")}, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},",
+		"m.Phase = framework.ChosenEnum(p.GetPhase())",
+	)
+}
+
 // twoPatterns gives Widget a second pattern, before its own, and binds
 // CreateWidget's parent to parent when it isn't empty.
 func twoPatterns(parent string) func(*descriptorpb.FileDescriptorProto) {

@@ -84,7 +84,7 @@ func grantSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.Map{mapplanmodifier.RequiresReplace()},
 			},
 			"ttl": schema.StringAttribute{
-				MarkdownDescription: "How long the grant lives from now: 1 to 60 minutes. A duration in seconds, such as `90s` or `1.5s`. Changing it replaces the grant.",
+				MarkdownDescription: "How long the grant lives from now: 1 to 60 minutes. A duration in seconds, such as `90s` or `1.5s`. The API never returns it: the state keeps the configured value, and an imported grant has none. Changing it replaces the grant.",
 				Required:            true,
 				Validators:          []validator.String{framework.DurationFormat()},
 				PlanModifiers: []planmodifier.String{framework.StringReplaceIfSent(func(plan, state types.String) bool {
@@ -142,7 +142,6 @@ func grantFromProto(p *v1beta1.Grant, m *grantModel) error {
 	m.Operation = types.StringValue(p.GetOperation().String())
 	m.Grantee = types.StringValue(p.GetGrantee())
 	m.EncryptionContext = framework.StringMap(p.GetEncryptionContext())
-	m.Ttl = framework.Duration(p.GetTtl(), m.Ttl)
 	m.Zone = types.StringValue(p.GetZone())
 	m.Delegate = types.StringValue(p.GetDelegate())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())

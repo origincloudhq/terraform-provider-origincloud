@@ -23,7 +23,7 @@ A key: its versions' material is kept by the platform and never leaves it.
 
 ### Optional
 
-- `state` (String) Whether the key can be used. A new key is `ENABLED`; UpdateKey sets it to `ENABLED` or `DISABLED`, and DeleteKey makes it `DELETED`. One of `ENABLED`, `DISABLED`, `DELETED`.
+- `state` (String) Whether the key can be used. A new key is `ENABLED`; UpdateKey sets it to `ENABLED` or `DISABLED`, and DeleteKey makes it `DELETED`. One of `ENABLED`, `DISABLED`, `DELETED`. Left out, it keeps its current value; see the field's description.
 - `tags` (Map of String) Labels of your own, at most 50. The `origin:name` tag is the name the console shows.
 
 ### Read-Only

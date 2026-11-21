@@ -66,9 +66,11 @@ func keySchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"state": schema.StringAttribute{
-				MarkdownDescription: "Whether the key can be used. A new key is `ENABLED`; UpdateKey sets it to `ENABLED` or `DISABLED`, and DeleteKey makes it `DELETED`. One of `ENABLED`, `DISABLED`, `DELETED`.",
+				MarkdownDescription: "Whether the key can be used. A new key is `ENABLED`; UpdateKey sets it to `ENABLED` or `DISABLED`, and DeleteKey makes it `DELETED`. One of `ENABLED`, `DISABLED`, `DELETED`. Left out, it keeps its current value; see the field's description.",
 				Optional:            true,
+				Computed:            true,
 				Validators:          []validator.String{framework.OneOf("ENABLED", "DISABLED", "DELETED")},
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"primary_version": schema.StringAttribute{
 				MarkdownDescription: "The full name of the version new ciphertexts and signatures use.",
@@ -160,7 +162,7 @@ func keyFromProto(p *v1beta1.Key, m *keyModel) error {
 	m.Region = types.StringValue(values[1])
 	m.Name = types.StringValue(p.GetName())
 	m.Purpose = types.StringValue(p.GetPurpose().String())
-	m.State = framework.Optional(m.State, types.StringValue(p.GetState().String()), p.GetState() == 0)
+	m.State = framework.ChosenEnum(p.GetState())
 	m.PrimaryVersion = types.StringValue(p.GetPrimaryVersion())
 	m.Versions = framework.MessageList(key_VersionsAttrTypes(), p.GetVersions(), types.ListNull(types.ObjectType{AttrTypes: key_VersionsAttrTypes()}), key_VersionsFromProto)
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())

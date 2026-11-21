@@ -102,7 +102,16 @@ to the plugin or `internal/framework`.
 - `REQUIRED` is required, `OUTPUT_ONLY` computed, `IMMUTABLE` replaces the
   resource when it changes. An `OPTIONAL` `IMMUTABLE` field is also computed,
   keeping the value the API chose when it was left out (the default storage
-  class); a mutable `OPTIONAL` field left out stays null.
+  class); a mutable `OPTIONAL` field left out stays null, except an enum,
+  whose unset value can't be configured: it is also computed, so a value
+  left out is the API's (a key's `state`, `ENABLED` for a new one), null
+  while the API has chosen none, and removing it from the configuration
+  keeps the current value.
+- An `INPUT_ONLY` field, such as a grant's `ttl`, is one the API takes but
+  never answers with: the state keeps the value the plan set, and no read
+  replaces it. It isn't computed. An imported resource has none, so the
+  first plan after an import shows it as a change, which replaces the
+  resource when the field does.
 - Creates, updates and deletes wait on their operation; a create, update or
   delete that answers with the resource, or with nothing, is done when it
   answers. A resource whose create failed after it existed (the operation's

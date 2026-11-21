@@ -188,19 +188,21 @@ func TestNestedAndRepeatedFields(t *testing.T) {
 				),
 			},
 			// Empty and left out stay apart: [] stays [], and what is left
-			// out is null, though the API answers with nothing for both.
+			// out is null, though the API answers with nothing for both. An
+			// enum left out is the API's: it keeps its value, and isn't
+			// named in the mask.
 			{
 				Config: firewallConfig(fake, spec+`
   tags       = []
   priorities = []`),
-				Check: mask(fake, "rules,tags,priorities,modes,labels,defaultMode"),
+				Check: mask(fake, "rules,tags,priorities,modes,labels"),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue(firewall, tfjsonpath.New("tags"), knownvalue.SetSizeExact(0)),
 					statecheck.ExpectKnownValue(firewall, tfjsonpath.New("priorities"), knownvalue.ListSizeExact(0)),
 					statecheck.ExpectKnownValue(firewall, tfjsonpath.New("rules"), knownvalue.Null()),
 					statecheck.ExpectKnownValue(firewall, tfjsonpath.New("modes"), knownvalue.Null()),
 					statecheck.ExpectKnownValue(firewall, tfjsonpath.New("labels"), knownvalue.Null()),
-					statecheck.ExpectKnownValue(firewall, tfjsonpath.New("default_mode"), knownvalue.Null()),
+					statecheck.ExpectKnownValue(firewall, tfjsonpath.New("default_mode"), knownvalue.StringExact("OPEN")),
 				},
 			},
 			// From [] to left out: null.

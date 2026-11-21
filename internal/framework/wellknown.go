@@ -171,6 +171,15 @@ type enum interface {
 	String() string
 }
 
+// ChosenEnum returns an optional enum field the API may choose as a string
+// attribute: null while the API has chosen none (the zero value).
+func ChosenEnum[E enum](e E) types.String {
+	if e == 0 {
+		return types.StringNull()
+	}
+	return types.StringValue(e.String())
+}
+
 func PresentEnum[E enum](p *E) types.String {
 	if p == nil {
 		return types.StringNull()
