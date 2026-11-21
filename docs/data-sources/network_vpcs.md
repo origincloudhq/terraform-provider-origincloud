@@ -32,12 +32,12 @@ Read-Only:
 - `available_subnet_count` (Number) How many more subnets the VPC's address space holds.
 - `create_time` (String) When the VPC was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
 - `creator` (String) The principal that created the VPC, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.
-- `dns_policy` (String) The full name of the DNS policy the VPC's resolver relays through, as the VPC's DNS policy association (a `DnsPolicyAssociation`) sets it. Empty while it has none: the VPC then relays through the project's default DNS policy in its region.
 - `id` (String) The vpc's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/vpcs/{vpc}`: what an argument that refers to the vpc takes. `name` is the relative name, without the host.
 - `internet_gateway` (String) The full name of the VPC's internet gateway; empty while it has none.
 - `ipv4_cidr_block` (String) The private IPv4 range (RFC 1918), from `/16` to `/28`. A free `/16` of the `172.16` private block when left empty. Subnets are carved from it in equal sizes.
 - `ipv6_cidr_block` (String) The IPv6 range the platform assigned, a `/56`. Each subnet gets a `/72` of it.
 - `name` (String) The VPC's resource name.
 - `project_default` (Boolean) Whether this is the project's default VPC. Unlike a VPC you create, the platform creates it with defaults: an internet gateway, and a security group, an ACL and a main route table marked as created with the VPC (`vpc_default` on the group and the ACL, `main` on the route table).
+- `resolver_policy` (String) The full name of the resolver policy the VPC's resolver relays through, as the VPC's resolver policy association (a `ResolverPolicyAssociation`) sets it. Empty while it has none: the VPC then relays through the project's default resolver policy in its region.
 - `subnet_ipv4_prefix_length` (Number) The prefix length of every subnet's IPv4 range.
 - `tags` (Map of String) Labels of your own, at most 50. The `origin:name` tag is the name the console shows.

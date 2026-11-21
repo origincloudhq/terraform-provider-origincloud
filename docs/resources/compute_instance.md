@@ -19,7 +19,7 @@ A virtual machine in one zone.
 
 - `instance_type` (String) The instance type by its full name, `//compute.origincloudapis.eu/instanceTypes/{instance_type}`, such as `//compute.origincloudapis.eu/instanceTypes/gp1.core.2`: one whose `available` is true. Changing it needs the instance `STOPPED`.
 - `key_pair` (String) The full name of the key pair whose public key is installed for `login_user`, in the instance's project. Changing it replaces the instance.
-- `network_interfaces` (List of String) The network interfaces' full names, in device order, the boot interface first; exactly one today. Each is an existing interface in the instance's project and zone that nothing else holds, created with the network service: its subnet and security groups are the instance's. Terminating the instance releases it, and it stays. An instance launched before interfaces were named at launch shows the interface created for it, which is deleted with the instance. Changing it replaces the instance.
+- `network_interfaces` (List of String) The network interfaces' full names, in device order, the boot interface first; exactly one today. Each is an existing interface in the instance's project and zone that nothing else holds, created with the network service: its subnet and security groups are the instance's. Terminating the instance releases it, and it stays. An instance launched from a recipe with an interface spec, or before interfaces were named at launch, shows the interface created for it once it exists, which is deleted with the instance. Changing it replaces the instance.
 - `project` (String) The project the instance is in. Changing it replaces the instance.
 - `zone` (String) The zone the instance is in. Changing it replaces the instance.
 
@@ -39,6 +39,7 @@ A virtual machine in one zone.
 - `health` (Attributes) Whether the platform can currently confirm the instance is working, which `state` doesn't say: a `RUNNING` instance on a machine that stopped answering is still `RUNNING`. (see [below for nested schema](#nestedatt--health))
 - `id` (String) The instance's full resource name, `//compute.origincloudapis.eu/projects/{project}/zones/{zone}/instances/{instance}`: what an argument that refers to the instance takes. `name` is the relative name, without the host.
 - `interface_addresses` (Attributes List) Each network interface's private addresses, in the order of `network_interfaces`; an interface not attached yet has none. (see [below for nested schema](#nestedatt--interface_addresses))
+- `launch_template` (String) The full name of the launch template version the instance was launched from, `//compute.origincloudapis.eu/projects/{project}/launchTemplates/{launch_template}@{version}`, with the number the launch resolved `@default` or `@latest` to. Empty for an instance launched without a template. The template may since have been changed or deleted.
 - `name` (String) The instance's resource name.
 - `state` (String) Where the instance is in its lifecycle. One of `INITIALIZING`, `PENDING`, `RUNNING`, `STOPPING`, `STOPPED`, `SHUTTING_DOWN`, `TERMINATED`, `FAILED`.
 - `state_reason` (String) Why the instance is `FAILED`, or why a `STOPPED` instance went down when the machine it ran on failed; empty otherwise.

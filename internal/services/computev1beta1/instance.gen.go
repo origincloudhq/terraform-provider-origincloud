@@ -42,6 +42,7 @@ type instanceModel struct {
 	Tags               types.Map    `tfsdk:"tags"`
 	InterfaceAddresses types.List   `tfsdk:"interface_addresses"`
 	ServiceAccount     types.String `tfsdk:"service_account"`
+	LaunchTemplate     types.String `tfsdk:"launch_template"`
 }
 
 func instanceSchema() schema.Schema {
@@ -126,7 +127,7 @@ func instanceSchema() schema.Schema {
 				},
 			},
 			"network_interfaces": schema.ListAttribute{
-				MarkdownDescription: "The network interfaces' full names, in device order, the boot interface first; exactly one today. Each is an existing interface in the instance's project and zone that nothing else holds, created with the network service: its subnet and security groups are the instance's. Terminating the instance releases it, and it stays. An instance launched before interfaces were named at launch shows the interface created for it, which is deleted with the instance. Changing it replaces the instance.",
+				MarkdownDescription: "The network interfaces' full names, in device order, the boot interface first; exactly one today. Each is an existing interface in the instance's project and zone that nothing else holds, created with the network service: its subnet and security groups are the instance's. Terminating the instance releases it, and it stays. An instance launched from a recipe with an interface spec, or before interfaces were named at launch, shows the interface created for it once it exists, which is deleted with the instance. Changing it replaces the instance.",
 				Required:            true,
 				ElementType:         types.StringType,
 				Validators:          []validator.List{framework.ElementCheck{FullNames: true}},
@@ -212,6 +213,10 @@ func instanceSchema() schema.Schema {
 				MarkdownDescription: "The full name of the service account the instance runs as, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`: a `WORKLOAD` service account of the instance's organization that isn't deleted. Launching with one, or updating the instance to one, needs `iam.service_account.act_as` on the organization as well; an update that leaves it empty removes it, and a terminated instance's can't change. Empty for an instance that runs as none.",
 				Optional:            true,
 				Validators:          []validator.String{framework.FullNameReference()},
+			},
+			"launch_template": schema.StringAttribute{
+				MarkdownDescription: "The full name of the launch template version the instance was launched from, `//compute.origincloudapis.eu/projects/{project}/launchTemplates/{launch_template}@{version}`, with the number the launch resolved `@default` or `@latest` to. Empty for an instance launched without a template. The template may since have been changed or deleted.",
+				Computed:            true,
 			},
 		},
 	}
@@ -355,6 +360,7 @@ func instanceFromProto(p *v1beta1.Instance, m *instanceModel) error {
 	m.Tags = framework.Optional(m.Tags, framework.StringMap(p.GetTags()), len(p.GetTags()) == 0)
 	m.InterfaceAddresses = framework.MessageList(instance_InterfaceAddressesAttrTypes(), p.GetInterfaceAddresses(), types.ListNull(types.ObjectType{AttrTypes: instance_InterfaceAddressesAttrTypes()}), instance_InterfaceAddressesFromProto)
 	m.ServiceAccount = framework.Optional(m.ServiceAccount, types.StringValue(p.GetServiceAccount()), p.GetServiceAccount() == "")
+	m.LaunchTemplate = types.StringValue(p.GetLaunchTemplate())
 	return nil
 }
 
@@ -363,7 +369,7 @@ func instanceResource() framework.ResourceSpec[instanceModel, *v1beta1.Instance]
 		TypeName:   "_compute_instance",
 		Pattern:    "projects/{project}/zones/{zone}/instances/{instance}",
 		Service:    "compute",
-		References: map[string]string{"instance_type": "compute", "image": "compute", "image_family": "compute", "key_pair": "compute", "service_account": "iam"},
+		References: map[string]string{"instance_type": "compute", "image": "compute", "image_family": "compute", "key_pair": "compute", "service_account": "iam", "launch_template": "compute"},
 		Schema:     instanceSchema(),
 		Name:       func(m *instanceModel) string { return m.Name.ValueString() },
 		ToProto:    instanceToProto,
@@ -428,6 +434,7 @@ type instanceItemModel struct {
 	Tags               types.Map    `tfsdk:"tags"`
 	InterfaceAddresses types.List   `tfsdk:"interface_addresses"`
 	ServiceAccount     types.String `tfsdk:"service_account"`
+	LaunchTemplate     types.String `tfsdk:"launch_template"`
 }
 
 func instanceItem_BootVolumeAttrTypes() map[string]attr.Type {
@@ -544,6 +551,7 @@ func instanceItemFromProto(p *v1beta1.Instance, m *instanceItemModel) error {
 	m.Tags = framework.StringMap(p.GetTags())
 	m.InterfaceAddresses = framework.MessageList(instanceItem_InterfaceAddressesAttrTypes(), p.GetInterfaceAddresses(), types.ListNull(types.ObjectType{AttrTypes: instanceItem_InterfaceAddressesAttrTypes()}), instanceItem_InterfaceAddressesFromProto)
 	m.ServiceAccount = types.StringValue(p.GetServiceAccount())
+	m.LaunchTemplate = types.StringValue(p.GetLaunchTemplate())
 	return nil
 }
 
@@ -618,7 +626,7 @@ func instanceListSchema() schema1.Schema {
 							},
 						},
 						"network_interfaces": schema1.ListAttribute{
-							MarkdownDescription: "The network interfaces' full names, in device order, the boot interface first; exactly one today. Each is an existing interface in the instance's project and zone that nothing else holds, created with the network service: its subnet and security groups are the instance's. Terminating the instance releases it, and it stays. An instance launched before interfaces were named at launch shows the interface created for it, which is deleted with the instance.",
+							MarkdownDescription: "The network interfaces' full names, in device order, the boot interface first; exactly one today. Each is an existing interface in the instance's project and zone that nothing else holds, created with the network service: its subnet and security groups are the instance's. Terminating the instance releases it, and it stays. An instance launched from a recipe with an interface spec, or before interfaces were named at launch, shows the interface created for it once it exists, which is deleted with the instance.",
 							Computed:            true,
 							ElementType:         types.StringType,
 						},
@@ -699,6 +707,10 @@ func instanceListSchema() schema1.Schema {
 						},
 						"service_account": schema1.StringAttribute{
 							MarkdownDescription: "The full name of the service account the instance runs as, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`: a `WORKLOAD` service account of the instance's organization that isn't deleted. Launching with one, or updating the instance to one, needs `iam.service_account.act_as` on the organization as well; an update that leaves it empty removes it, and a terminated instance's can't change. Empty for an instance that runs as none.",
+							Computed:            true,
+						},
+						"launch_template": schema1.StringAttribute{
+							MarkdownDescription: "The full name of the launch template version the instance was launched from, `//compute.origincloudapis.eu/projects/{project}/launchTemplates/{launch_template}@{version}`, with the number the launch resolved `@default` or `@latest` to. Empty for an instance launched without a template. The template may since have been changed or deleted.",
 							Computed:            true,
 						},
 					},

@@ -27,7 +27,7 @@ type vpcModel struct {
 	Ipv6CidrBlock          types.String `tfsdk:"ipv6_cidr_block"`
 	SubnetIpv4PrefixLength types.Int64  `tfsdk:"subnet_ipv4_prefix_length"`
 	AvailableSubnetCount   types.Int64  `tfsdk:"available_subnet_count"`
-	DnsPolicy              types.String `tfsdk:"dns_policy"`
+	ResolverPolicy         types.String `tfsdk:"resolver_policy"`
 	InternetGateway        types.String `tfsdk:"internet_gateway"`
 	ProjectDefault         types.Bool   `tfsdk:"project_default"`
 	CreateTime             types.String `tfsdk:"create_time"`
@@ -77,8 +77,8 @@ func vpcSchema() schema.Schema {
 				MarkdownDescription: "How many more subnets the VPC's address space holds.",
 				Computed:            true,
 			},
-			"dns_policy": schema.StringAttribute{
-				MarkdownDescription: "The full name of the DNS policy the VPC's resolver relays through, as the VPC's DNS policy association (a `DnsPolicyAssociation`) sets it. Empty while it has none: the VPC then relays through the project's default DNS policy in its region.",
+			"resolver_policy": schema.StringAttribute{
+				MarkdownDescription: "The full name of the resolver policy the VPC's resolver relays through, as the VPC's resolver policy association (a `ResolverPolicyAssociation`) sets it. Empty while it has none: the VPC then relays through the project's default resolver policy in its region.",
 				Computed:            true,
 			},
 			"internet_gateway": schema.StringAttribute{
@@ -132,7 +132,7 @@ func vpcFromProto(p *v1beta1.Vpc, m *vpcModel) error {
 	m.Ipv6CidrBlock = types.StringValue(p.GetIpv6CidrBlock())
 	m.SubnetIpv4PrefixLength = types.Int64Value(int64(p.GetSubnetIpv4PrefixLength()))
 	m.AvailableSubnetCount = types.Int64Value(int64(p.GetAvailableSubnetCount()))
-	m.DnsPolicy = types.StringValue(p.GetDnsPolicy())
+	m.ResolverPolicy = types.StringValue(p.GetResolverPolicy())
 	m.InternetGateway = types.StringValue(p.GetInternetGateway())
 	m.ProjectDefault = types.BoolValue(p.GetProjectDefault())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
@@ -146,7 +146,7 @@ func vpcResource() framework.ResourceSpec[vpcModel, *v1beta1.Vpc] {
 		TypeName:   "_network_vpc",
 		Pattern:    "projects/{project}/regions/{region}/vpcs/{vpc}",
 		Service:    "network",
-		References: map[string]string{"dns_policy": "network", "internet_gateway": "network"},
+		References: map[string]string{"resolver_policy": "network", "internet_gateway": "network"},
 		Schema:     vpcSchema(),
 		Name:       func(m *vpcModel) string { return m.Name.ValueString() },
 		ToProto:    vpcToProto,
@@ -193,7 +193,7 @@ type vpcItemModel struct {
 	Ipv6CidrBlock          types.String `tfsdk:"ipv6_cidr_block"`
 	SubnetIpv4PrefixLength types.Int64  `tfsdk:"subnet_ipv4_prefix_length"`
 	AvailableSubnetCount   types.Int64  `tfsdk:"available_subnet_count"`
-	DnsPolicy              types.String `tfsdk:"dns_policy"`
+	ResolverPolicy         types.String `tfsdk:"resolver_policy"`
 	InternetGateway        types.String `tfsdk:"internet_gateway"`
 	ProjectDefault         types.Bool   `tfsdk:"project_default"`
 	CreateTime             types.String `tfsdk:"create_time"`
@@ -212,7 +212,7 @@ func vpcItemFromProto(p *v1beta1.Vpc, m *vpcItemModel) error {
 	m.Ipv6CidrBlock = types.StringValue(p.GetIpv6CidrBlock())
 	m.SubnetIpv4PrefixLength = types.Int64Value(int64(p.GetSubnetIpv4PrefixLength()))
 	m.AvailableSubnetCount = types.Int64Value(int64(p.GetAvailableSubnetCount()))
-	m.DnsPolicy = types.StringValue(p.GetDnsPolicy())
+	m.ResolverPolicy = types.StringValue(p.GetResolverPolicy())
 	m.InternetGateway = types.StringValue(p.GetInternetGateway())
 	m.ProjectDefault = types.BoolValue(p.GetProjectDefault())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
@@ -269,8 +269,8 @@ func vpcListSchema() schema1.Schema {
 							MarkdownDescription: "How many more subnets the VPC's address space holds.",
 							Computed:            true,
 						},
-						"dns_policy": schema1.StringAttribute{
-							MarkdownDescription: "The full name of the DNS policy the VPC's resolver relays through, as the VPC's DNS policy association (a `DnsPolicyAssociation`) sets it. Empty while it has none: the VPC then relays through the project's default DNS policy in its region.",
+						"resolver_policy": schema1.StringAttribute{
+							MarkdownDescription: "The full name of the resolver policy the VPC's resolver relays through, as the VPC's resolver policy association (a `ResolverPolicyAssociation`) sets it. Empty while it has none: the VPC then relays through the project's default resolver policy in its region.",
 							Computed:            true,
 						},
 						"internet_gateway": schema1.StringAttribute{

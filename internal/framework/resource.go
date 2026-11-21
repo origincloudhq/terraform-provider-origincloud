@@ -102,6 +102,9 @@ type ResourceSpec[M any, P proto.Message] struct {
 	// resource the first one created, as for a resource with a secret,
 	// which only the first answer carries.
 	RefusesReplays bool
+
+	// MovedFrom are the types this one replaces, as the API renamed them.
+	MovedFrom []Move
 }
 
 // A Toggle is a boolean attribute that a pair of custom methods (AIP-136)
@@ -137,6 +140,7 @@ var (
 	_ resource.ResourceWithImportState  = (*Resource[struct{}, proto.Message])(nil)
 	_ resource.ResourceWithModifyPlan   = (*Resource[struct{}, proto.Message])(nil)
 	_ resource.ResourceWithUpgradeState = (*Resource[struct{}, proto.Message])(nil)
+	_ resource.ResourceWithMoveState    = (*Resource[struct{}, proto.Message])(nil)
 )
 
 func (r *Resource[M, P]) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {

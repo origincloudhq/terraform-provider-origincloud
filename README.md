@@ -53,8 +53,8 @@ data sources are generated from the API definitions in
 | Resource | `origincloud_network_network_interface` | Private addresses in one subnet, filtered by security groups |
 | Resource | `origincloud_network_floating_ip` | A public IPv4 address of your own |
 | Resource | `origincloud_network_floating_ip_association` | The network interface a floating IP reaches |
-| Resource | `origincloud_network_dns_policy` | How a VPC's resolver answers names outside the platform's own |
-| Resource | `origincloud_network_dns_policy_association` | The DNS policy a VPC's resolver relays through |
+| Resource | `origincloud_network_resolver_policy` | How a VPC's resolver answers names outside the platform's own |
+| Resource | `origincloud_network_resolver_policy_association` | The resolver policy a VPC's resolver relays through |
 | Data source | `origincloud_network_vpcs` | The VPCs in a region |
 | Data source | `origincloud_network_subnets` | The subnets in a zone |
 | Data source | `origincloud_network_internet_gateways` | The internet gateways in a region |
@@ -71,9 +71,10 @@ data sources are generated from the API definitions in
 | Data source | `origincloud_network_network_interfaces` | The network interfaces in a zone |
 | Data source | `origincloud_network_floating_ips` | The floating IPs in a zone |
 | Data source | `origincloud_network_floating_ip_associations` | A floating IP's association |
-| Data source | `origincloud_network_dns_policies` | The DNS policies in a region |
-| Data source | `origincloud_network_dns_policy_associations` | A VPC's DNS policy association |
+| Data source | `origincloud_network_resolver_policies` | The resolver policies in a region |
+| Data source | `origincloud_network_resolver_policy_associations` | A VPC's resolver policy association |
 | Resource | `origincloud_iam_service_account` | A credential of an organization for software, and its client secret |
+| Resource | `origincloud_iam_service_account_key` | A key pair an `EXTERNAL` service account authenticates with, and its credentials file |
 | Resource | `origincloud_iam_role_binding` | One role granted to one member, organization-wide or in one project |
 | Resource | `origincloud_iam_federated_credential` | A `WORKLOAD` service account's trust in a CI provider's OIDC tokens |
 | Data source | `origincloud_iam_role` | A predefined set of permissions |
@@ -82,6 +83,7 @@ data sources are generated from the API definitions in
 | Data source | `origincloud_iam_permissions` | Every permission |
 | Data source | `origincloud_iam_role_bindings` | An organization's role bindings, or your own in every organization |
 | Data source | `origincloud_iam_service_accounts` | An organization's service accounts |
+| Data source | `origincloud_iam_service_account_keys` | A service account's keys |
 | Data source | `origincloud_iam_federated_credentials` | A service account's federated credentials |
 | Data source | `origincloud_iam_user` | You, as the platform knows you |
 | Data source | `origincloud_iam_audit_log_entry` | One recorded change to who may do what |

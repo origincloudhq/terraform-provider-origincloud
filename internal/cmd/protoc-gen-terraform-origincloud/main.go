@@ -90,6 +90,9 @@ func generate(gen *protogen.Plugin) error {
 	if err := checkSpellingsFound(gen.Files); err != nil {
 		return err
 	}
+	if err := checkMovesFound(gen.Files); err != nil {
+		return err
+	}
 	if err := checkOutsideFound(gen.Files); err != nil {
 		return err
 	}
@@ -462,6 +465,8 @@ func generateResource(g *protogen.GeneratedFile, t resourceType) error {
 	if slices.ContainsFunc(attrs, func(a attribute) bool { return a.kept }) {
 		g.P("RefusesReplays: true,")
 	}
+
+	generateMoves(g, t)
 
 	// Create
 	if t.create == nil {

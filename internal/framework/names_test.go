@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
@@ -208,6 +210,85 @@ func TestTheElementsOfAListOfReferencesMustBeFullNames(t *testing.T) {
 		ElementCheck{FullNames: true}.ValidateList(context.Background(), validator.ListRequest{ConfigValue: tc.list}, resp)
 		if resp.Diagnostics.HasError() == tc.valid {
 			t.Errorf("%v: %v", tc.list, resp.Diagnostics)
+		}
+	}
+}
+
+const (
+	oldPolicy = "//network.origincloudapis.eu/projects/p/regions/r/dnsPolicies/office"
+	newPolicy = "//network.origincloudapis.eu/projects/p/regions/r/resolverPolicies/office"
+)
+
+func TestAMovedStateIsRenamed(t *testing.T) {
+	move := Move{
+		TypeName:   "_network_dns_policy_association",
+		Attributes: map[string]string{"dns_policy": "resolver_policy"},
+		Segments:   map[string]string{"dnsPolicies": "resolverPolicies", "dnsPolicyAssociations": "resolverPolicyAssociations"},
+	}
+	raw := `{"id":"//network.origincloudapis.eu/projects/p/regions/r/vpcs/v/dnsPolicyAssociations/office","dns_policy":"` + oldPolicy + `","vpc":null,"count":3}`
+	moved, err := MoveRawState(move, []byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(moved, &got); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{
+		"id":              "//network.origincloudapis.eu/projects/p/regions/r/vpcs/v/resolverPolicyAssociations/office",
+		"resolver_policy": newPolicy,
+		"vpc":             nil,
+		"count":           float64(3),
+	}
+	if !equalJSON(got, want) {
+		t.Errorf("moved to %s", moved)
+	}
+}
+
+func TestAResourceTakesTheStateOfTheTypeItReplaces(t *testing.T) {
+	r := &Resource[struct{}, *wrapperspb.StringValue]{spec: ResourceSpec[struct{}, *wrapperspb.StringValue]{
+		TypeName: "_network_resolver_policy",
+		Schema: schema.Schema{Attributes: map[string]schema.Attribute{
+			"id":    schema.StringAttribute{Computed: true},
+			"added": schema.StringAttribute{Computed: true},
+		}},
+		MovedFrom: []Move{{TypeName: "_network_dns_policy", Segments: map[string]string{"dnsPolicies": "resolverPolicies"}}},
+	}}
+	movers := r.MoveState(context.Background())
+	if len(movers) != 1 {
+		t.Fatalf("%d movers", len(movers))
+	}
+	move := func(typeName, provider string) *resource.MoveStateResponse {
+		req := resource.MoveStateRequest{
+			SourceTypeName:        typeName,
+			SourceProviderAddress: provider,
+			SourceRawState:        &tfprotov6.RawState{JSON: []byte(`{"id":"` + oldPolicy + `","gone":"x"}`)},
+		}
+		resp := &resource.MoveStateResponse{TargetState: tfsdk.State{Schema: r.spec.Schema}}
+		movers[0].StateMover(context.Background(), req, resp)
+		return resp
+	}
+	resp := move("origincloud_network_dns_policy", "registry.terraform.io/origincloudhq/origincloud")
+	if resp.Diagnostics.HasError() {
+		t.Fatal(resp.Diagnostics)
+	}
+	var id types.String
+	resp.Diagnostics.Append(resp.TargetState.GetAttribute(context.Background(), path.Root("id"), &id)...)
+	if id.ValueString() != newPolicy {
+		t.Errorf("moved to %q", id.ValueString())
+	}
+	var added types.String
+	resp.Diagnostics.Append(resp.TargetState.GetAttribute(context.Background(), path.Root("added"), &added)...)
+	if !added.IsNull() {
+		t.Errorf("the attribute the old type didn't have is %q", added.ValueString())
+	}
+	// Another type, or another provider's, isn't this mover's to take.
+	for _, other := range [][2]string{
+		{"origincloud_network_vpc", "registry.terraform.io/origincloudhq/origincloud"},
+		{"origincloud_network_dns_policy", "registry.terraform.io/example/other"},
+	} {
+		if resp := move(other[0], other[1]); !resp.TargetState.Raw.IsNull() {
+			t.Errorf("%v was moved", other)
 		}
 	}
 }

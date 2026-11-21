@@ -12,6 +12,7 @@ import (
 func Resources() []func() resource.Resource {
 	return []func() resource.Resource{
 		framework.NewResource(imageResource()),
+		framework.NewResource(launchTemplateResource()),
 		framework.NewResource(instanceResource()),
 		framework.NewResource(keyPairResource()),
 		framework.NewResource(volumeAttachmentResource()),
@@ -26,6 +27,7 @@ func DataSources() []func() datasource.DataSource {
 		framework.NewDataSource(imageFamilyDataSource()),
 		framework.NewListDataSource(imageFamilyListDataSource()),
 		framework.NewListDataSource(imageListDataSource()),
+		framework.NewListDataSource(launchTemplateListDataSource()),
 		framework.NewListDataSource(instanceListDataSource()),
 		framework.NewListDataSource(keyPairListDataSource()),
 		framework.NewDataSource(publicImageDataSource()),

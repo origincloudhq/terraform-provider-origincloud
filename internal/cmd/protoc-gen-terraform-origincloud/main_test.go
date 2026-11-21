@@ -974,3 +974,39 @@ func TestAReferenceIsValidatedAsAFullName(t *testing.T) {
 		t.Errorf("%d references are validated, want 2 (gadget and owner, not label)", n)
 	}
 }
+
+// A resource the API renamed takes the state of the old type, when a moved
+// block says so; a rename declared for a type the API doesn't have fails
+// generation.
+func TestARenamedResourceTakesTheStateOfTheTypeItReplaces(t *testing.T) {
+	files, failure := run(t, nil)
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	if code := files["internal/services/widgetsv1/widget.gen.go"]; strings.Contains(code, "MovedFrom") {
+		t.Error("a widget moved from nothing")
+	}
+	saved := moves
+	t.Cleanup(func() { moves = saved })
+	moves = []move{{
+		resource:   "test.widgets.v1.Widget",
+		typeName:   "_widgets_gizmo",
+		attributes: map[string]string{"size": "label"},
+		segments:   map[string]string{"gizmos": "widgets"},
+	}}
+	movesFound = map[protoreflect.FullName]bool{}
+	files, failure = run(t, nil)
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	code := files["internal/services/widgetsv1/widget.gen.go"]
+	contains(t, "widget.gen.go", code, `"_widgets_gizmo"`)
+	contains(t, "widget.gen.go", code, `map[string]string{"size": "label"}`)
+	contains(t, "widget.gen.go", code, `map[string]string{"gizmos": "widgets"}`)
+
+	moves = []move{{resource: "test.widgets.v1.Missing", typeName: "_widgets_old"}}
+	movesFound = map[protoreflect.FullName]bool{}
+	if _, failure := run(t, nil); !strings.Contains(failure, "no resource type test.widgets.v1.Missing") {
+		t.Errorf("failed with %q", failure)
+	}
+}
