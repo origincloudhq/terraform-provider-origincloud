@@ -187,7 +187,10 @@ Credentials come from the environment, the first of:
    access tokens, so that no secret is stored in the CI system: the token in
    the file `ORIGINCLOUD_OIDC_TOKEN_FILE` names, or else the token
    `ORIGINCLOUD_OIDC_TOKEN` holds, as GitLab CI's `id_tokens` set it, or
-   else, in a GitHub Actions job with `permissions: id-token: write`, the
+   else an HCP Terraform run's workload identity token,
+   `TFC_WORKLOAD_IDENTITY_TOKEN` (`TFC_WORKLOAD_IDENTITY_TOKEN_<TAG>` when
+   `ORIGINCLOUD_TFC_WORKLOAD_IDENTITY_TAG` names the tag of a tagged
+   audience), or else, in a GitHub Actions job with `permissions: id-token: write`, the
    job's. The service account needs a federated credential that trusts the
    CI provider, such as an `origincloud_iam_federated_credential`.
    `ORIGINCLOUD_OIDC_DISABLED=true` leaves this step out. The provider's

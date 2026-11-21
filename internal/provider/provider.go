@@ -41,7 +41,9 @@ func (p *originCloud) Schema(_ context.Context, _ provider.SchemaRequest, resp *
 		MarkdownDescription: "Manages Origin Cloud resources.\n\n" +
 			"Credentials come from the environment, the first of: `ORIGINCLOUD_ACCESS_TOKEN`, an access token; " +
 			"`ORIGINCLOUD_CLIENT_ID` and `ORIGINCLOUD_CLIENT_SECRET`, a service account; " +
-			"a CI job's OIDC token, exchanged at the security token service for a `WORKLOAD` service account's access tokens; " +
+			"a CI job's OIDC token, exchanged at the security token service for a `WORKLOAD` service account's access tokens " +
+			"(`ORIGINCLOUD_OIDC_TOKEN_FILE`, `ORIGINCLOUD_OIDC_TOKEN`, an HCP Terraform run's `TFC_WORKLOAD_IDENTITY_TOKEN`, " +
+			"or a GitHub Actions job's token); " +
 			"the session the `origin` CLI stored at its last `origin id login`; " +
 			"on an instance that runs as a service account, the instance's metadata service.",
 		Attributes: map[string]schema.Attribute{
