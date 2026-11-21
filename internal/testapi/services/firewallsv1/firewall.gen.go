@@ -199,9 +199,11 @@ func firewallSchema() schema.Schema {
 				},
 			},
 			"default_mode": schema.StringAttribute{
-				MarkdownDescription: "One of `OPEN`, `CLOSED`.",
+				MarkdownDescription: "One of `OPEN`, `CLOSED`. Left out, it keeps its current value; see the field's description.",
 				Optional:            true,
+				Computed:            true,
 				Validators:          []validator.String{framework.OneOf("OPEN", "CLOSED")},
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"placement": schema.SingleNestedAttribute{
 				MarkdownDescription: "Changing it replaces the firewall.",
@@ -574,7 +576,7 @@ func firewallFromProto(p *firewallsv1.Firewall, m *firewallModel) error {
 	m.Modes = framework.Optional(m.Modes, framework.SetOf(types.StringType, p.GetModes(), func(v firewallsv1.Mode) types.String { return types.StringValue(v.String()) }), len(p.GetModes()) == 0)
 	m.Status = framework.Object(p.GetStatus(), types.ObjectNull(firewall_StatusAttrTypes()), firewall_StatusAttrTypes(), firewall_StatusFromProto)
 	m.Labels = framework.Optional(m.Labels, framework.MessageMap(firewall_LabelsAttrTypes(), p.GetLabels(), m.Labels, firewall_LabelsFromProto), len(p.GetLabels()) == 0)
-	m.DefaultMode = framework.Optional(m.DefaultMode, types.StringValue(p.GetDefaultMode().String()), p.GetDefaultMode() == 0)
+	m.DefaultMode = framework.ChosenEnum(p.GetDefaultMode())
 	m.Placement = framework.Object(p.GetPlacement(), m.Placement, firewall_PlacementAttrTypes(), firewall_PlacementFromProto)
 	m.Options = framework.Object(p.GetOptions(), m.Options, firewall_OptionsAttrTypes(), firewall_OptionsFromProto)
 	m.Peers = framework.MessageList(firewall_PeersAttrTypes(), p.GetPeers(), m.Peers, firewall_PeersFromProto)

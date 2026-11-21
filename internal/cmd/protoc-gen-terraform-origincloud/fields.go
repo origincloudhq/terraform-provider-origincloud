@@ -58,7 +58,13 @@ type attribute struct {
 	// kept is an output-only value the API answers with only once, kept
 	// from then on (secrets.go); sensitive hides it.
 	kept, sensitive bool
-	doc             string
+	// inputOnly is a field the API takes but never answers with
+	// (INPUT_ONLY): the state keeps what the plan set, and a read leaves it.
+	inputOnly bool
+	// chosenEnum is an optional enum the API chooses when it is left out: it
+	// is null while the API has chosen none.
+	chosenEnum bool
+	doc        string
 
 	required, optional, computed bool
 	// keep plans the state's value while it is unknown; a nested
@@ -335,6 +341,10 @@ func applyBehaviors(s scope, a *attribute, behaviors []annotations.FieldBehavior
 	}
 	updatable := s.t.update != nil
 	immutable := has(annotations.FieldBehavior_IMMUTABLE)
+	a.inputOnly = has(annotations.FieldBehavior_INPUT_ONLY)
+	if a.inputOnly && has(annotations.FieldBehavior_OUTPUT_ONLY) {
+		return fmt.Errorf("a field can't be both INPUT_ONLY and OUTPUT_ONLY")
+	}
 	switch {
 	case has(annotations.FieldBehavior_IDENTIFIER):
 		if s.nested {
@@ -381,7 +391,12 @@ func applyBehaviors(s scope, a *attribute, behaviors []annotations.FieldBehavior
 		// map field can't have presence, but is chosen the same way: left
 		// out (null), it isn't sent, while [] or {} is, empty.
 		singleton := s.t.managedSingleton() && !s.nested
-		chosen := a.presence || a.chosenObject || singleton && a.collection()
+		// An enum has no value for unset but the one the API reads as
+		// unset, which can't be configured: a left-out one is the API's to
+		// choose, as a new key's state is.
+		fills := !a.inputOnly && a.enum != nil && a.kind == "String" && a.oneof == nil && !s.inElements
+		chosen := a.presence || a.chosenObject || singleton && a.collection() || fills
+		a.chosenEnum = fills && !a.presence
 		a.computed, a.keep = chosen, chosen
 		switch {
 		case singleton && a.collection():
@@ -406,6 +421,12 @@ func applyBehaviors(s scope, a *attribute, behaviors []annotations.FieldBehavior
 		// Left out, the object is the API's, and Terraform plans each of its
 		// fields from the configuration's null unless it is computed.
 		a.required, a.optional, a.computed, a.keep, a.replace = false, true, true, false, false
+	}
+	if a.inputOnly {
+		// The API never answers with it, so there is nothing for it to
+		// choose, and the state keeps the configured value.
+		a.computed, a.keep = false, false
+		a.doc = strings.TrimSpace(a.doc + " The API never returns it: the state keeps the configured value, and an imported " + words(s.t.singular) + " has none.")
 	}
 	if a.replace {
 		a.doc = strings.TrimSpace(a.doc + " Changing it replaces the " + words(s.t.singular) + ".")
@@ -695,6 +716,9 @@ func generateConversions(g *protogen.GeneratedFile, t resourceType, name, model,
 			}
 			continue
 		}
+		if a.inputOnly {
+			continue // not in the answer: the state keeps the plan's
+		}
 		g.P("m.", a.goName, " = ", c.fromProto(a, "p", "m."+a.goName))
 	}
 	g.P("return nil")
@@ -933,6 +957,8 @@ func (c conv) fromProto(a attribute, p, prior string) string {
 	}
 	var value, zero string
 	switch {
+	case a.inputOnly:
+		value = prior
 	case a.kept:
 		value = c.framework("Kept") + "(" + prior + ", " + get + ")"
 	case a.wellKnown != "":
@@ -953,6 +979,9 @@ func (c conv) fromProto(a attribute, p, prior string) string {
 		value = c.framework("String"+a.kind) + "(" + get + ")"
 	case a.kind == "List" || a.kind == "Set":
 		value = c.framework(a.kind+"Of") + "(" + c.elemType(a) + ", " + get + ", " + c.scalarFrom(a) + ")"
+	case a.chosenEnum:
+		// The API's choice, or null while it has made none.
+		value = c.framework("ChosenEnum") + "(" + get + ")"
 	case a.enum != nil:
 		value, zero = c.types("StringValue")+"("+get+".String())", get+" == 0"
 	case a.kind == "Int64":

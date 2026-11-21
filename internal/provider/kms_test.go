@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -22,14 +21,7 @@ var kmsKeyPattern = regexp.MustCompile(`^projects/p-1/regions/eu-central1/keys/k
 
 // kmsConfig returns a configuration of the provider calling fake, with a
 // key whose body is key, and more after it.
-//
-// A key's state is set to ENABLED unless key sets it: the API answers
-// ENABLED for a key whose state is left out, which the attribute, not
-// computed, can't take.
 func kmsConfig(fake *fakeKMS, key, more string) string {
-	if !strings.Contains(key, "state") {
-		key += "\n  state   = \"ENABLED\""
-	}
 	return fmt.Sprintf(`
 provider "origincloud" {
   endpoint = %q
@@ -171,6 +163,95 @@ func TestKeysAreCreatedUpdatedReplacedImportedAndDeleted(t *testing.T) {
 	if calls := fake.mutations(); !slices.Contains(calls, "PATCH "+kmsKeyName1+" tags") || !slices.Contains(calls, "PATCH "+kmsKeyName1+" state") {
 		t.Errorf("mutations %v", calls)
 	}
+}
+
+// A key's state is optional and computed: left out, it is the API's
+// ENABLED, and the plan after the create is empty.
+func TestAKeyWithoutAStateIsEnabledByTheAPI(t *testing.T) {
+	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
+	fake := newFakeKMS(t)
+	config := kmsConfig(fake, `purpose = "ENCRYPT_DECRYPT"`, "")
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			{
+				Config:           config,
+				ConfigPlanChecks: resource.ConfigPlanChecks{PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()}},
+				Check:            resource.TestCheckResourceAttr(kmsKey, "state", "ENABLED"),
+			},
+			// Disabling it is still a change, and leaving the state out
+			// afterwards keeps what it is.
+			{
+				Config: kmsConfig(fake, `purpose = "ENCRYPT_DECRYPT"
+  state   = "DISABLED"`, ""),
+				Check: resource.TestCheckResourceAttr(kmsKey, "state", "DISABLED"),
+			},
+			{
+				Config:           config,
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()}},
+				Check:            resource.TestCheckResourceAttr(kmsKey, "state", "DISABLED"),
+			},
+		},
+	})
+}
+
+// A grant's ttl is input only: no answer has it, so the state keeps the
+// configured value, and expiry shows in expire_time. An imported grant has
+// no ttl, as nothing in the API says what it was.
+func TestAGrantKeepsItsTTLAndIsImportedWithoutIt(t *testing.T) {
+	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
+	fake := newFakeKMS(t)
+	key := `purpose = "ENCRYPT_DECRYPT"`
+	grant := "origincloud_kms_grant.host"
+	grantName := regexp.MustCompile(`^projects/p-1/regions/eu-central1/keys/key-1/grants/grant-[0-9]+$`)
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			{
+				Config:           kmsConfig(fake, key, fmt.Sprintf(kmsGranted, grantBody(`{ purpose = "volumes" }`, "600s"))),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()}},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestMatchResourceAttr(grant, "name", grantName),
+					resource.TestCheckResourceAttr(grant, "ttl", "600s"),
+					resource.TestCheckResourceAttr(grant, "expire_time", "2026-11-01T12:10:00Z"),
+				),
+			},
+			// The ttl is kept across a refresh.
+			{
+				Config:           kmsConfig(fake, key, fmt.Sprintf(kmsGranted, grantBody(`{ purpose = "volumes" }`, "600s"))),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()}},
+				Check:            resource.TestCheckResourceAttr(grant, "ttl", "600s"),
+			},
+			// Imported, it has everything the API answers with, and no ttl.
+			{
+				Config:                  kmsConfig(fake, key, fmt.Sprintf(kmsGranted, grantBody(`{ purpose = "volumes" }`, "600s"))),
+				ResourceName:            grant,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"ttl"},
+				ImportStateCheck: func(states []*terraform.InstanceState) error {
+					if len(states) != 1 {
+						return fmt.Errorf("%d imported resources, not 1", len(states))
+					}
+					if ttl, ok := states[0].Attributes["ttl"]; ok && ttl != "" {
+						return fmt.Errorf("the imported grant has ttl %q", ttl)
+					}
+					return nil
+				},
+			},
+			// A different ttl is a different grant.
+			{
+				Config: kmsConfig(fake, key, fmt.Sprintf(kmsGranted, grantBody(`{ purpose = "volumes" }`, "900s"))),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(grant, plancheck.ResourceActionReplace),
+				}},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(grant, "ttl", "900s"),
+					resource.TestCheckResourceAttr(grant, "expire_time", "2026-11-01T12:15:00Z"),
+				),
+			},
+		},
+	})
 }
 
 func TestAGrantThatTheAPIRefusesFailsTheApply(t *testing.T) {
