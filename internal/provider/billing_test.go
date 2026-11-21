@@ -263,3 +263,113 @@ data "origincloud_billing_billing_country" "de" {
 		},
 	})
 }
+
+func TestLegalDocumentsVersionsAndAcceptancesAreRead(t *testing.T) {
+	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
+	fake := newFakeBilling(t)
+	provider := fmt.Sprintf(`
+provider "origincloud" {
+  endpoint = %q
+}
+`, fake.URL)
+	const (
+		terms    = "data.origincloud_billing_legal_document.terms"
+		all      = "data.origincloud_billing_legal_documents.all"
+		version  = "data.origincloud_billing_legal_document_version.terms"
+		versions = "data.origincloud_billing_legal_document_versions.terms"
+		accepted = "data.origincloud_billing_legal_acceptance.terms"
+		list     = "data.origincloud_billing_legal_acceptances.default"
+	)
+	const termsVersion = "legalDocuments/terms/versions/2026-06"
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			{
+				Config: provider + `
+data "origincloud_billing_legal_document" "terms" {
+  name = "legalDocuments/terms"
+}
+
+data "origincloud_billing_legal_documents" "all" {}
+
+data "origincloud_billing_legal_document_version" "terms" {
+  name = "` + termsVersion + `"
+}
+
+data "origincloud_billing_legal_document_versions" "terms" {
+  legal_document = "terms"
+}
+
+data "origincloud_billing_legal_acceptance" "terms" {
+  name = "` + defaultAccount + `/legalAcceptances/la-1"
+}
+
+data "origincloud_billing_legal_acceptances" "default" {
+  organization    = "acme"
+  billing_account = "ba-1"
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					// A document, with the version in force and the latest
+					// one, a version announced to take effect later.
+					resource.TestCheckResourceAttr(terms, "id", full("billing", "legalDocuments/terms")),
+					resource.TestCheckResourceAttr(terms, "display_name", "Terms of Service"),
+					resource.TestCheckResourceAttr(terms, "acceptance_required", "true"),
+					resource.TestCheckResourceAttr(terms, "current_version", full("billing", termsVersion)),
+					resource.TestCheckResourceAttr(terms, "latest_version", full("billing", "legalDocuments/terms/versions/2026-12")),
+					// The fake answers one document per page: both are read.
+					resource.TestCheckResourceAttr(all, "legal_documents.#", "2"),
+					resource.TestCheckResourceAttr(all, "legal_documents.0.name", "legalDocuments/dpa"),
+					resource.TestCheckResourceAttr(all, "legal_documents.1.id", full("billing", "legalDocuments/terms")),
+					// A version, whose date is a string.
+					resource.TestCheckResourceAttr(version, "id", full("billing", termsVersion)),
+					resource.TestCheckResourceAttr(version, "effective_date", "2026-06-01"),
+					resource.TestCheckResourceAttr(version, "change_class", "MATERIAL"),
+					resource.TestCheckResourceAttr(version, "sha256", "aa11"),
+					resource.TestCheckResourceAttr(version, "markdown", "# Terms\n"),
+					resource.TestCheckResourceAttr(version, "html", "<p>Terms</p>"),
+					resource.TestCheckResourceAttr(version, "uri", "https://example.test/legal/terms/2026-06"),
+					resource.TestCheckResourceAttr(version, "pdf_uri", "https://example.test/legal/terms/2026-06.pdf"),
+					resource.TestCheckResourceAttr(versions, "legal_document_versions.#", "2"),
+					resource.TestCheckResourceAttr(versions, "legal_document_versions.0.name", termsVersion),
+					resource.TestCheckResourceAttr(versions, "legal_document_versions.1.effective_date", "2026-12-01"),
+					resource.TestCheckResourceAttr(versions, "legal_document_versions.1.change_class", "NOTICE"),
+					// An acceptance records the text accepted and who
+					// accepted it.
+					resource.TestCheckResourceAttr(accepted, "id", full("billing", defaultAccount+"/legalAcceptances/la-1")),
+					resource.TestCheckResourceAttr(accepted, "legal_document_version", full("billing", termsVersion)),
+					resource.TestCheckResourceAttr(accepted, "sha256", "aa11"),
+					resource.TestCheckResourceAttr(accepted, "accepter", "//iam.origincloudapis.eu/users/u-me"),
+					resource.TestCheckResourceAttr(accepted, "accept_time", "2026-06-02T08:00:00Z"),
+					resource.TestCheckResourceAttr(accepted, "method", "SIGNUP"),
+					resource.TestCheckResourceAttr(accepted, "acts_as_business", "true"),
+					resource.TestCheckResourceAttr(accepted, "organization_display_name", "Acme GmbH"),
+					resource.TestCheckResourceAttr(accepted, "billing_address.city", "Berlin"),
+					resource.TestCheckResourceAttr(list, "legal_acceptances.#", "2"),
+					resource.TestCheckResourceAttr(list, "legal_acceptances.1.method", "MIGRATION"),
+					resource.TestCheckResourceAttr(list, "legal_acceptances.1.vat_id", "DE123456789"),
+					resource.TestCheckNoResourceAttr(list, "legal_acceptances.1.billing_address.city"),
+				),
+			},
+			// A document, version or acceptance that doesn't exist is an
+			// error, and so is a name of another form.
+			{
+				Config: provider + `
+data "origincloud_billing_legal_document" "missing" {
+  name = "legalDocuments/aup"
+}
+`,
+				ExpectError: regexp.MustCompile(`NOT_FOUND:\s+legalDocuments/aup\s+doesn't\s+exist`),
+			},
+			{
+				Config: provider + `
+data "origincloud_billing_legal_document_version" "bad" {
+  name = "terms/2026-06"
+}
+`,
+				ExpectError: regexp.MustCompile(`name must have the form\s+legalDocuments/\*/versions/\*`),
+			},
+		},
+	})
+}
