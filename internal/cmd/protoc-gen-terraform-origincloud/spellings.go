@@ -31,6 +31,9 @@ type spelling struct {
 	framework string
 	// doc replaces the attribute's "Changing it replaces" sentence.
 	doc string
+	// replacer names the framework's plan modifier that replaces the
+	// resource, when it isn't StringReplaceSpelled.
+	replacer string
 }
 
 var spellings = []spelling{

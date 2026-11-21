@@ -76,6 +76,12 @@ type attribute struct {
 	// toggle is the attribute's toggle, when methods of their own set and
 	// clear it (toggles.go).
 	toggle *resolvedToggle
+	// modifiers and validators are the attribute's own, written by the
+	// functions of the generated code's imports.
+	modifiers, validators []func(c conv) string
+	// versioned: a reference that may name a revision of its resource,
+	// `.../web@3`, `@default` or `@latest`.
+	versioned bool
 	// spelling is the attribute's spelling, when the API answers it in a
 	// form of its own (spellings.go).
 	spelling *spelling
@@ -163,6 +169,12 @@ func attributes(t resourceType, forResource bool, prefix string) ([]attribute, e
 		}
 		if err == nil {
 			err = applySpelling(t, &a, forResource)
+		}
+		if err == nil {
+			err = applyRevisionAttribute(t, &a, forResource)
+		}
+		if err == nil {
+			err = applyLaunchAttribute(t, &a, forResource)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("field %s: %w", f.Desc.Name(), err)
@@ -522,7 +534,11 @@ func generateAttributes(g *protogen.GeneratedFile, schemaPackage protogen.GoImpo
 			modifiers = append(modifiers, c.framework(a.kind+"ReplaceIfSent")+"(func(plan, state "+value+") bool { return "+sentSame(g, a, "plan", "state")+" }, "+fmt.Sprint(ifConfigured)+")")
 		} else if a.replace && a.spelling != nil {
 			// Not when the configuration only writes it another way.
-			modifiers = append(modifiers, c.framework("StringReplaceSpelled")+"("+c.framework(a.spelling.framework)+")")
+			replacer := "StringReplaceSpelled"
+			if a.spelling.replacer != "" {
+				replacer = a.spelling.replacer
+			}
+			modifiers = append(modifiers, c.framework(replacer)+"("+c.framework(a.spelling.framework)+")")
 		} else if a.replace && a.wellKnown != "" {
 			// The same instant or length, however written.
 			same := g.QualifiedGoIdent(protoPackage.Ident("Equal")) + "(" + c.toProto(a, "plan") + ", " + c.toProto(a, "state") + ")"
@@ -531,6 +547,9 @@ func generateAttributes(g *protogen.GeneratedFile, schemaPackage protogen.GoImpo
 			modifiers = append(modifiers, g.QualifiedGoIdent(modifierPackage.Ident("RequiresReplaceIfConfigured"))+"()")
 		} else if a.replace {
 			modifiers = append(modifiers, g.QualifiedGoIdent(modifierPackage.Ident("RequiresReplace"))+"()")
+		}
+		for _, m := range a.modifiers {
+			modifiers = append(modifiers, m(c))
 		}
 		if len(modifiers) > 0 {
 			g.P("PlanModifiers: []", g.QualifiedGoIdent(planPackage.Ident(a.kind)), "{", strings.Join(modifiers, ", "), "},")
@@ -571,6 +590,8 @@ func attributeValidators(c conv, a attribute, attrs []attribute) []string {
 		validators = append(validators, c.framework("OneOf")+"("+quoted(enumNames(a.enum))+")")
 	case a.kind == "String" && a.wellKnown != "" && settable:
 		validators = append(validators, c.framework(a.wellKnown+"Format")+"()")
+	case a.kind == "String" && settable && isReference(a) && a.versioned:
+		validators = append(validators, c.framework("VersionedFullNameReference")+"()")
 	case a.kind == "String" && settable && isReference(a):
 		validators = append(validators, c.framework("FullNameReference")+"()")
 	case settable && a.collection():
@@ -608,6 +629,9 @@ func attributeValidators(c conv, a attribute, attrs []attribute) []string {
 			check += ", Required: true"
 		}
 		validators = append(validators, check+"}")
+	}
+	for _, v := range a.validators {
+		validators = append(validators, v(c))
 	}
 	return validators
 }

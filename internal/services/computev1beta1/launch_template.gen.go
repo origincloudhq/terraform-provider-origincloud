@@ -54,11 +54,8 @@ func launchTemplateSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"launch_template_data": schema.SingleNestedAttribute{
-				MarkdownDescription: "The recipe of the version this shows, `version`: the default version's unless the name named another. On creation, the recipe of version 1. Changing it replaces the launch template.",
+				MarkdownDescription: "The recipe of the version this shows, `version`: the default version's unless the name named another. On creation, the recipe of version 1. Changing it adds a version; the launch template shows its newest.",
 				Required:            true,
-				PlanModifiers: []planmodifier.Object{framework.ObjectReplaceIfSent(func(plan, state types.Object) bool {
-					return proto.Equal(launchTemplate_LaunchTemplateDataToProto(plan), launchTemplate_LaunchTemplateDataToProto(state))
-				}, false)},
 				Attributes: map[string]schema.Attribute{
 					"instance_type": schema.StringAttribute{
 						MarkdownDescription: "The instance type by its full name, `//compute.origincloudapis.eu/instanceTypes/{instance_type}`, such as `//compute.origincloudapis.eu/instanceTypes/gp1.core.2`: one whose `available` is true.",
@@ -146,9 +143,11 @@ func launchTemplateSchema() schema.Schema {
 				},
 			},
 			"default_version": schema.Int64Attribute{
-				MarkdownDescription: "The number of the version launches use when they name no version. 1 on creation; an update sets it to another version the template has.",
+				MarkdownDescription: "The number of the version launches use when they name no version. 1 on creation; an update sets it to another version the template has. Left out, it is the newest version after every change to `launch_template_data`, and what it was otherwise.",
 				Optional:            true,
+				Computed:            true,
 				Validators:          []validator.Int64{framework.Int32()},
+				PlanModifiers:       []planmodifier.Int64{framework.Int64FollowsRevision("launch_template_data")},
 			},
 			"latest_version": schema.Int64Attribute{
 				MarkdownDescription: "The number of the newest version the template has.",
@@ -325,7 +324,7 @@ func launchTemplateFromProto(p *v1beta1.LaunchTemplate, m *launchTemplateModel) 
 	m.Project = types.StringValue(values[0])
 	m.Name = types.StringValue(p.GetName())
 	m.LaunchTemplateData = framework.Object(p.GetLaunchTemplateData(), m.LaunchTemplateData, launchTemplate_LaunchTemplateDataAttrTypes(), launchTemplate_LaunchTemplateDataFromProto)
-	m.DefaultVersion = framework.Optional(m.DefaultVersion, types.Int64Value(int64(p.GetDefaultVersion())), p.GetDefaultVersion() == 0)
+	m.DefaultVersion = types.Int64Value(int64(p.GetDefaultVersion()))
 	m.LatestVersion = types.Int64Value(int64(p.GetLatestVersion()))
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
 	m.Creator = types.StringValue(p.GetCreator())
@@ -346,6 +345,9 @@ func launchTemplateResource() framework.ResourceSpec[launchTemplateModel, *v1bet
 		FromProto: launchTemplateFromProto,
 		UpdateMask: func(plan, state *launchTemplateModel) []string {
 			var mask []string
+			if !proto.Equal(launchTemplate_LaunchTemplateDataToProto(plan.LaunchTemplateData), launchTemplate_LaunchTemplateDataToProto(state.LaunchTemplateData)) {
+				mask = append(mask, "launch_template_data")
+			}
 			if !plan.DefaultVersion.Equal(state.DefaultVersion) {
 				mask = append(mask, "default_version")
 			}
@@ -353,6 +355,20 @@ func launchTemplateResource() framework.ResourceSpec[launchTemplateModel, *v1bet
 				mask = append(mask, "tags")
 			}
 			return mask
+		},
+		Revision: &framework.Revision[*v1beta1.LaunchTemplate]{
+			Field:       "launch_template_data",
+			Latest:      "@latest",
+			Name:        func(p *v1beta1.LaunchTemplate) string { return p.GetName() },
+			Unversioned: func(p *v1beta1.LaunchTemplate) { p.Name = framework.WithoutRevision(p.GetName()) },
+			Revise: func(ctx context.Context, client *core.Client, resource *v1beta1.LaunchTemplate) (*v1beta1.LaunchTemplate, error) {
+				return v1beta1.NewLaunchTemplateClient(client).CreateLaunchTemplateVersion(ctx, &v1beta1.CreateLaunchTemplateVersionRequest{Name: resource.GetName(), LaunchTemplateData: resource.GetLaunchTemplateData()})
+			},
+			Follow: func(resource, revised *v1beta1.LaunchTemplate) {
+				if resource.GetDefaultVersion() == 0 {
+					resource.DefaultVersion = revised.GetLatestVersion()
+				}
+			},
 		},
 		CreateSync: func(ctx context.Context, client *core.Client, plan *launchTemplateModel) (*v1beta1.LaunchTemplate, error) {
 			return v1beta1.NewLaunchTemplateClient(client).CreateLaunchTemplate(ctx, &v1beta1.CreateLaunchTemplateRequest{
@@ -369,6 +385,433 @@ func launchTemplateResource() framework.ResourceSpec[launchTemplateModel, *v1bet
 		Delete: func(ctx context.Context, client *core.Client, name string) error {
 			_, err := v1beta1.NewLaunchTemplateClient(client).DeleteLaunchTemplate(ctx, &v1beta1.DeleteLaunchTemplateRequest{Name: name})
 			return err
+		},
+	}
+}
+
+// launchTemplateByNameModel is origincloud_compute_launch_template's state.
+type launchTemplateByNameModel struct {
+	ID                 types.String `tfsdk:"id"`
+	Name               types.String `tfsdk:"name"`
+	LaunchTemplateData types.Object `tfsdk:"launch_template_data"`
+	DefaultVersion     types.Int64  `tfsdk:"default_version"`
+	LatestVersion      types.Int64  `tfsdk:"latest_version"`
+	CreateTime         types.String `tfsdk:"create_time"`
+	Creator            types.String `tfsdk:"creator"`
+	Tags               types.Map    `tfsdk:"tags"`
+	Version            types.Int64  `tfsdk:"version"`
+	VersionCreateTime  types.String `tfsdk:"version_create_time"`
+}
+
+func launchTemplateByNameSchema() schema1.Schema {
+	return schema1.Schema{
+		MarkdownDescription: "A recipe kept under a name: numbered versions of it, and the one that is the default.",
+		Attributes: map[string]schema1.Attribute{
+			"id": schema1.StringAttribute{
+				MarkdownDescription: "The launch template's full resource name, `//compute.origincloudapis.eu/projects/{project}/launchTemplates/{launch_template}`: what an argument that refers to the launch template takes. `name` is the relative name, without the host.",
+				Computed:            true,
+			},
+			"name": schema1.StringAttribute{
+				MarkdownDescription: "The launch template's resource name. A template read at one version, by `@{version}`, `@default` or `@latest`, is named with that version's number, `projects/{project}/launchTemplates/{launch_template}@{version}`.",
+				Required:            true,
+			},
+			"launch_template_data": schema1.SingleNestedAttribute{
+				MarkdownDescription: "The recipe of the version this shows, `version`: the default version's unless the name named another. On creation, the recipe of version 1.",
+				Computed:            true,
+				Attributes: map[string]schema1.Attribute{
+					"instance_type": schema1.StringAttribute{
+						MarkdownDescription: "The instance type by its full name, `//compute.origincloudapis.eu/instanceTypes/{instance_type}`, such as `//compute.origincloudapis.eu/instanceTypes/gp1.core.2`: one whose `available` is true.",
+						Computed:            true,
+					},
+					"image": schema1.StringAttribute{
+						MarkdownDescription: "The full name of the image the boot volume is created from, in the launch's zone: one of the project's own, `//compute.origincloudapis.eu/projects/{project}/zones/{zone}/images/{image}`, or a public one, `//compute.origincloudapis.eu/zones/{zone}/images/{image}`. Set exactly one of `image` and `image_family`.",
+						Computed:            true,
+					},
+					"image_family": schema1.StringAttribute{
+						MarkdownDescription: "The full name of the image family to launch the current public image of, `//compute.origincloudapis.eu/imageFamilies/{image_family}`. Set exactly one of `image` and `image_family`.",
+						Computed:            true,
+					},
+					"key_pair": schema1.StringAttribute{
+						MarkdownDescription: "The full name of the key pair whose public key is installed for `login_user`, in the launch's project.",
+						Computed:            true,
+					},
+					"login_user": schema1.StringAttribute{
+						MarkdownDescription: "The account to log in as: a user created at first boot that holds the key pair. A POSIX user name of at most 32 lowercase letters, digits, underscores and hyphens, starting with a letter or an underscore, and not `root`. The image's `default_user` when left empty.",
+						Computed:            true,
+					},
+					"boot_volume": schema1.SingleNestedAttribute{
+						MarkdownDescription: "The boot volume's size and storage class. The image's size on the default storage class when left out.",
+						Computed:            true,
+						Attributes: map[string]schema1.Attribute{
+							"size_gib": schema1.Int64Attribute{
+								MarkdownDescription: "The size in GiB, at least the image's size; the image's size when left at 0. A smaller size is refused rather than raised.",
+								Computed:            true,
+							},
+							"storage_class": schema1.StringAttribute{
+								MarkdownDescription: "The storage class by its full name, `//pvs.origincloudapis.eu/storageClasses/{storage_class}`; the default class when left empty.",
+								Computed:            true,
+							},
+						},
+					},
+					"service_account": schema1.StringAttribute{
+						MarkdownDescription: "The full name of the service account the instance runs as, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`: a `WORKLOAD` service account of the project's organization that isn't deleted. Launching with one needs `iam.service_account.act_as` on the organization as well. Empty for an instance that runs as none.",
+						Computed:            true,
+					},
+					"tags": schema1.MapAttribute{
+						MarkdownDescription: "Labels of your own for the instance, at most 50. The `origin:name` tag is the name the console shows.",
+						Computed:            true,
+						ElementType:         types.StringType,
+					},
+					"network_interfaces": schema1.ListNestedAttribute{
+						MarkdownDescription: "The instance's network interfaces, in device order, the boot interface first; at most one today. Left empty, the instance gets one interface created from an empty spec: in the project's default subnet, with the VPC's default security group.",
+						Computed:            true,
+						NestedObject: schema1.NestedAttributeObject{
+							Attributes: map[string]schema1.Attribute{
+								"spec": schema1.SingleNestedAttribute{
+									MarkdownDescription: "An interface the launch creates for the instance. It is deleted when the instance is terminated; an instance that ends `FAILED` keeps it, so starting the instance again can use it.",
+									Computed:            true,
+									Attributes: map[string]schema1.Attribute{
+										"subnet": schema1.StringAttribute{
+											MarkdownDescription: "The full name of the subnet to create the interface in, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/subnets/{subnet}`, in the launch's project and zone. Left empty, the project's default subnet, in its default VPC: the first launch that needs them creates both, the VPC with an internet gateway attached and the subnet assigning each interface a public address. In a subnet that assigns public addresses, a launch whose address can't be assigned ends `FAILED` with the reason.",
+											Computed:            true,
+										},
+										"security_groups": schema1.ListAttribute{
+											MarkdownDescription: "The full names of the security groups to put the interface in, `//network.origincloudapis.eu/projects/{project}/regions/{region}/securityGroups/{security_group}`, in the launch's project and region, in the subnet's VPC. Left empty, the VPC's default security group when it has one, and none when it has none: an interface in no security group admits and sends nothing but address resolution and replies to its own traffic.",
+											Computed:            true,
+											ElementType:         types.StringType,
+										},
+									},
+								},
+								"network_interface": schema1.StringAttribute{
+									MarkdownDescription: "The full name of an existing interface, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/networkInterfaces/{network_interface}`, in the launch's project and zone, that nothing else holds. It brings its own subnet and security groups. Terminating the instance releases it, and it stays.",
+									Computed:            true,
+								},
+							},
+						},
+					},
+				},
+			},
+			"default_version": schema1.Int64Attribute{
+				MarkdownDescription: "The number of the version launches use when they name no version. 1 on creation; an update sets it to another version the template has.",
+				Computed:            true,
+			},
+			"latest_version": schema1.Int64Attribute{
+				MarkdownDescription: "The number of the newest version the template has.",
+				Computed:            true,
+			},
+			"create_time": schema1.StringAttribute{
+				MarkdownDescription: "When the launch template was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.",
+				Computed:            true,
+			},
+			"creator": schema1.StringAttribute{
+				MarkdownDescription: "The principal that created the launch template, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
+				Computed:            true,
+			},
+			"tags": schema1.MapAttribute{
+				MarkdownDescription: "Labels of your own for the launch template, at most 50. The `origin:name` tag is the name the console shows. The recipe's own `tags` are the instances'.",
+				Computed:            true,
+				ElementType:         types.StringType,
+			},
+			"version": schema1.Int64Attribute{
+				MarkdownDescription: "The number of the version whose recipe this shows.",
+				Computed:            true,
+			},
+			"version_create_time": schema1.StringAttribute{
+				MarkdownDescription: "When that version was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.",
+				Computed:            true,
+			},
+		},
+	}
+}
+
+func launchTemplateByName_LaunchTemplateDataAttrTypes() map[string]attr.Type {
+	return map[string]attr.Type{
+		"instance_type":      types.StringType,
+		"image":              types.StringType,
+		"image_family":       types.StringType,
+		"key_pair":           types.StringType,
+		"login_user":         types.StringType,
+		"boot_volume":        types.ObjectType{AttrTypes: launchTemplateByName_LaunchTemplateData_BootVolumeAttrTypes()},
+		"service_account":    types.StringType,
+		"tags":               types.MapType{ElemType: types.StringType},
+		"network_interfaces": types.ListType{ElemType: types.ObjectType{AttrTypes: launchTemplateByName_LaunchTemplateData_NetworkInterfacesAttrTypes()}},
+	}
+}
+
+func launchTemplateByName_LaunchTemplateDataFromProto(p *v1beta1.LaunchTemplateData, prior types.Object) types.Object {
+	return types.ObjectValueMust(launchTemplateByName_LaunchTemplateDataAttrTypes(), map[string]attr.Value{
+		"instance_type":      types.StringValue(p.GetInstanceType()),
+		"image":              types.StringValue(p.GetImage()),
+		"image_family":       types.StringValue(p.GetImageFamily()),
+		"key_pair":           types.StringValue(p.GetKeyPair()),
+		"login_user":         types.StringValue(p.GetLoginUser()),
+		"boot_volume":        framework.Object(p.GetBootVolume(), types.ObjectNull(launchTemplateByName_LaunchTemplateData_BootVolumeAttrTypes()), launchTemplateByName_LaunchTemplateData_BootVolumeAttrTypes(), launchTemplateByName_LaunchTemplateData_BootVolumeFromProto),
+		"service_account":    types.StringValue(p.GetServiceAccount()),
+		"tags":               framework.StringMap(p.GetTags()),
+		"network_interfaces": framework.MessageList(launchTemplateByName_LaunchTemplateData_NetworkInterfacesAttrTypes(), p.GetNetworkInterfaces(), types.ListNull(types.ObjectType{AttrTypes: launchTemplateByName_LaunchTemplateData_NetworkInterfacesAttrTypes()}), launchTemplateByName_LaunchTemplateData_NetworkInterfacesFromProto),
+	})
+}
+
+func launchTemplateByName_LaunchTemplateDataToProto(o types.Object) *v1beta1.LaunchTemplateData {
+	if o.IsNull() || o.IsUnknown() {
+		return nil
+	}
+	return &v1beta1.LaunchTemplateData{}
+}
+
+func launchTemplateByName_LaunchTemplateData_BootVolumeAttrTypes() map[string]attr.Type {
+	return map[string]attr.Type{
+		"size_gib":      types.Int64Type,
+		"storage_class": types.StringType,
+	}
+}
+
+func launchTemplateByName_LaunchTemplateData_BootVolumeFromProto(p *v1beta1.LaunchTemplateBootVolume, prior types.Object) types.Object {
+	return types.ObjectValueMust(launchTemplateByName_LaunchTemplateData_BootVolumeAttrTypes(), map[string]attr.Value{
+		"size_gib":      types.Int64Value(int64(p.GetSizeGib())),
+		"storage_class": types.StringValue(p.GetStorageClass()),
+	})
+}
+
+func launchTemplateByName_LaunchTemplateData_BootVolumeToProto(o types.Object) *v1beta1.LaunchTemplateBootVolume {
+	if o.IsNull() || o.IsUnknown() {
+		return nil
+	}
+	return &v1beta1.LaunchTemplateBootVolume{}
+}
+
+func launchTemplateByName_LaunchTemplateData_NetworkInterfacesAttrTypes() map[string]attr.Type {
+	return map[string]attr.Type{
+		"spec":              types.ObjectType{AttrTypes: launchTemplateByName_LaunchTemplateData_NetworkInterfaces_SpecAttrTypes()},
+		"network_interface": types.StringType,
+	}
+}
+
+func launchTemplateByName_LaunchTemplateData_NetworkInterfacesFromProto(p *v1beta1.LaunchTemplateNetworkInterface, prior types.Object) types.Object {
+	return types.ObjectValueMust(launchTemplateByName_LaunchTemplateData_NetworkInterfacesAttrTypes(), map[string]attr.Value{
+		"spec":              framework.When(framework.Is[*v1beta1.LaunchTemplateNetworkInterface_Spec](p.GetSource()), framework.Object(p.GetSpec(), types.ObjectNull(launchTemplateByName_LaunchTemplateData_NetworkInterfaces_SpecAttrTypes()), launchTemplateByName_LaunchTemplateData_NetworkInterfaces_SpecAttrTypes(), launchTemplateByName_LaunchTemplateData_NetworkInterfaces_SpecFromProto), types.ObjectNull(launchTemplateByName_LaunchTemplateData_NetworkInterfaces_SpecAttrTypes())),
+		"network_interface": framework.When(framework.Is[*v1beta1.LaunchTemplateNetworkInterface_NetworkInterface](p.GetSource()), types.StringValue(p.GetNetworkInterface()), types.StringNull()),
+	})
+}
+
+func launchTemplateByName_LaunchTemplateData_NetworkInterfacesToProto(o types.Object) *v1beta1.LaunchTemplateNetworkInterface {
+	if o.IsNull() || o.IsUnknown() {
+		return nil
+	}
+	return &v1beta1.LaunchTemplateNetworkInterface{}
+}
+
+func launchTemplateByName_LaunchTemplateData_NetworkInterfaces_SpecAttrTypes() map[string]attr.Type {
+	return map[string]attr.Type{
+		"subnet":          types.StringType,
+		"security_groups": types.ListType{ElemType: types.StringType},
+	}
+}
+
+func launchTemplateByName_LaunchTemplateData_NetworkInterfaces_SpecFromProto(p *v1beta1.NetworkInterfaceSpec, prior types.Object) types.Object {
+	return types.ObjectValueMust(launchTemplateByName_LaunchTemplateData_NetworkInterfaces_SpecAttrTypes(), map[string]attr.Value{
+		"subnet":          types.StringValue(p.GetSubnet()),
+		"security_groups": framework.StringList(p.GetSecurityGroups()),
+	})
+}
+
+func launchTemplateByName_LaunchTemplateData_NetworkInterfaces_SpecToProto(o types.Object) *v1beta1.NetworkInterfaceSpec {
+	if o.IsNull() || o.IsUnknown() {
+		return nil
+	}
+	return &v1beta1.NetworkInterfaceSpec{}
+}
+
+func launchTemplateByNameFromProto(p *v1beta1.LaunchTemplate, m *launchTemplateByNameModel) error {
+	id, err := framework.FullName("compute", p.GetName())
+	if err != nil {
+		return err
+	}
+	m.ID = id
+	m.Name = types.StringValue(p.GetName())
+	m.LaunchTemplateData = framework.Object(p.GetLaunchTemplateData(), types.ObjectNull(launchTemplateByName_LaunchTemplateDataAttrTypes()), launchTemplateByName_LaunchTemplateDataAttrTypes(), launchTemplateByName_LaunchTemplateDataFromProto)
+	m.DefaultVersion = types.Int64Value(int64(p.GetDefaultVersion()))
+	m.LatestVersion = types.Int64Value(int64(p.GetLatestVersion()))
+	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
+	m.Creator = types.StringValue(p.GetCreator())
+	m.Tags = framework.StringMap(p.GetTags())
+	m.Version = types.Int64Value(int64(p.GetVersion()))
+	m.VersionCreateTime = framework.Timestamp(p.GetVersionCreateTime(), types.StringNull())
+	return nil
+}
+
+func launchTemplateByNameDataSource() framework.DataSourceSpec[launchTemplateByNameModel, *v1beta1.LaunchTemplate] {
+	return framework.DataSourceSpec[launchTemplateByNameModel, *v1beta1.LaunchTemplate]{
+		TypeName:  "_compute_launch_template",
+		Schema:    launchTemplateByNameSchema(),
+		Name:      func(m *launchTemplateByNameModel) string { return m.Name.ValueString() },
+		FromProto: launchTemplateByNameFromProto,
+		Get: func(ctx context.Context, client *core.Client, name string) (*v1beta1.LaunchTemplate, error) {
+			return v1beta1.NewLaunchTemplateClient(client).GetLaunchTemplate(ctx, &v1beta1.GetLaunchTemplateRequest{Name: name})
+		},
+	}
+}
+
+// launchTemplateRevisionsModel is origincloud_compute_launch_template_versions's state.
+type launchTemplateRevisionsModel struct {
+	LaunchTemplate types.String              `tfsdk:"launch_template"`
+	Versions       []launchTemplateItemModel `tfsdk:"versions"`
+}
+
+func launchTemplateRevisionsSchema() schema1.Schema {
+	return schema1.Schema{
+		MarkdownDescription: "Lists a launch template's versions, newest first, each as the template at that version, named `{launch_template}@{version}`.",
+		Attributes: map[string]schema1.Attribute{
+			"launch_template": schema1.StringAttribute{
+				MarkdownDescription: "The launch template whose versions to list: its `id`, or its relative name.",
+				Required:            true,
+			},
+			"versions": schema1.ListNestedAttribute{
+				MarkdownDescription: "The template at each version on this page, newest first, each named with its version's number.",
+				Computed:            true,
+				NestedObject: schema1.NestedAttributeObject{
+					Attributes: map[string]schema1.Attribute{
+						"id": schema1.StringAttribute{
+							MarkdownDescription: "The launch template's full resource name, `//compute.origincloudapis.eu/projects/{project}/launchTemplates/{launch_template}`: what an argument that refers to the launch template takes. `name` is the relative name, without the host.",
+							Computed:            true,
+						},
+						"name": schema1.StringAttribute{
+							MarkdownDescription: "The launch template's resource name. A template read at one version, by `@{version}`, `@default` or `@latest`, is named with that version's number, `projects/{project}/launchTemplates/{launch_template}@{version}`.",
+							Computed:            true,
+						},
+						"launch_template_data": schema1.SingleNestedAttribute{
+							MarkdownDescription: "The recipe of the version this shows, `version`: the default version's unless the name named another. On creation, the recipe of version 1.",
+							Computed:            true,
+							Attributes: map[string]schema1.Attribute{
+								"instance_type": schema1.StringAttribute{
+									MarkdownDescription: "The instance type by its full name, `//compute.origincloudapis.eu/instanceTypes/{instance_type}`, such as `//compute.origincloudapis.eu/instanceTypes/gp1.core.2`: one whose `available` is true.",
+									Computed:            true,
+								},
+								"image": schema1.StringAttribute{
+									MarkdownDescription: "The full name of the image the boot volume is created from, in the launch's zone: one of the project's own, `//compute.origincloudapis.eu/projects/{project}/zones/{zone}/images/{image}`, or a public one, `//compute.origincloudapis.eu/zones/{zone}/images/{image}`. Set exactly one of `image` and `image_family`.",
+									Computed:            true,
+								},
+								"image_family": schema1.StringAttribute{
+									MarkdownDescription: "The full name of the image family to launch the current public image of, `//compute.origincloudapis.eu/imageFamilies/{image_family}`. Set exactly one of `image` and `image_family`.",
+									Computed:            true,
+								},
+								"key_pair": schema1.StringAttribute{
+									MarkdownDescription: "The full name of the key pair whose public key is installed for `login_user`, in the launch's project.",
+									Computed:            true,
+								},
+								"login_user": schema1.StringAttribute{
+									MarkdownDescription: "The account to log in as: a user created at first boot that holds the key pair. A POSIX user name of at most 32 lowercase letters, digits, underscores and hyphens, starting with a letter or an underscore, and not `root`. The image's `default_user` when left empty.",
+									Computed:            true,
+								},
+								"boot_volume": schema1.SingleNestedAttribute{
+									MarkdownDescription: "The boot volume's size and storage class. The image's size on the default storage class when left out.",
+									Computed:            true,
+									Attributes: map[string]schema1.Attribute{
+										"size_gib": schema1.Int64Attribute{
+											MarkdownDescription: "The size in GiB, at least the image's size; the image's size when left at 0. A smaller size is refused rather than raised.",
+											Computed:            true,
+										},
+										"storage_class": schema1.StringAttribute{
+											MarkdownDescription: "The storage class by its full name, `//pvs.origincloudapis.eu/storageClasses/{storage_class}`; the default class when left empty.",
+											Computed:            true,
+										},
+									},
+								},
+								"service_account": schema1.StringAttribute{
+									MarkdownDescription: "The full name of the service account the instance runs as, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`: a `WORKLOAD` service account of the project's organization that isn't deleted. Launching with one needs `iam.service_account.act_as` on the organization as well. Empty for an instance that runs as none.",
+									Computed:            true,
+								},
+								"tags": schema1.MapAttribute{
+									MarkdownDescription: "Labels of your own for the instance, at most 50. The `origin:name` tag is the name the console shows.",
+									Computed:            true,
+									ElementType:         types.StringType,
+								},
+								"network_interfaces": schema1.ListNestedAttribute{
+									MarkdownDescription: "The instance's network interfaces, in device order, the boot interface first; at most one today. Left empty, the instance gets one interface created from an empty spec: in the project's default subnet, with the VPC's default security group.",
+									Computed:            true,
+									NestedObject: schema1.NestedAttributeObject{
+										Attributes: map[string]schema1.Attribute{
+											"spec": schema1.SingleNestedAttribute{
+												MarkdownDescription: "An interface the launch creates for the instance. It is deleted when the instance is terminated; an instance that ends `FAILED` keeps it, so starting the instance again can use it.",
+												Computed:            true,
+												Attributes: map[string]schema1.Attribute{
+													"subnet": schema1.StringAttribute{
+														MarkdownDescription: "The full name of the subnet to create the interface in, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/subnets/{subnet}`, in the launch's project and zone. Left empty, the project's default subnet, in its default VPC: the first launch that needs them creates both, the VPC with an internet gateway attached and the subnet assigning each interface a public address. In a subnet that assigns public addresses, a launch whose address can't be assigned ends `FAILED` with the reason.",
+														Computed:            true,
+													},
+													"security_groups": schema1.ListAttribute{
+														MarkdownDescription: "The full names of the security groups to put the interface in, `//network.origincloudapis.eu/projects/{project}/regions/{region}/securityGroups/{security_group}`, in the launch's project and region, in the subnet's VPC. Left empty, the VPC's default security group when it has one, and none when it has none: an interface in no security group admits and sends nothing but address resolution and replies to its own traffic.",
+														Computed:            true,
+														ElementType:         types.StringType,
+													},
+												},
+											},
+											"network_interface": schema1.StringAttribute{
+												MarkdownDescription: "The full name of an existing interface, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/networkInterfaces/{network_interface}`, in the launch's project and zone, that nothing else holds. It brings its own subnet and security groups. Terminating the instance releases it, and it stays.",
+												Computed:            true,
+											},
+										},
+									},
+								},
+							},
+						},
+						"default_version": schema1.Int64Attribute{
+							MarkdownDescription: "The number of the version launches use when they name no version. 1 on creation; an update sets it to another version the template has.",
+							Computed:            true,
+						},
+						"latest_version": schema1.Int64Attribute{
+							MarkdownDescription: "The number of the newest version the template has.",
+							Computed:            true,
+						},
+						"create_time": schema1.StringAttribute{
+							MarkdownDescription: "When the launch template was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.",
+							Computed:            true,
+						},
+						"creator": schema1.StringAttribute{
+							MarkdownDescription: "The principal that created the launch template, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform did.",
+							Computed:            true,
+						},
+						"tags": schema1.MapAttribute{
+							MarkdownDescription: "Labels of your own for the launch template, at most 50. The `origin:name` tag is the name the console shows. The recipe's own `tags` are the instances'.",
+							Computed:            true,
+							ElementType:         types.StringType,
+						},
+						"version": schema1.Int64Attribute{
+							MarkdownDescription: "The number of the version whose recipe this shows.",
+							Computed:            true,
+						},
+						"version_create_time": schema1.StringAttribute{
+							MarkdownDescription: "When that version was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.",
+							Computed:            true,
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func launchTemplateRevisionsDataSource() framework.ListDataSourceSpec[launchTemplateRevisionsModel] {
+	return framework.ListDataSourceSpec[launchTemplateRevisionsModel]{
+		TypeName: "_compute_launch_template_versions",
+		Schema:   launchTemplateRevisionsSchema(),
+		List: func(ctx context.Context, client *core.Client, m *launchTemplateRevisionsModel) error {
+			name, err := framework.RelativeName("compute", m.LaunchTemplate.ValueString())
+			if err != nil {
+				return err
+			}
+			m.Versions = []launchTemplateItemModel{}
+			for p, err := range v1beta1.NewLaunchTemplateClient(client).AllLaunchTemplateVersions(ctx, &v1beta1.ListLaunchTemplateVersionsRequest{Name: name}) {
+				if err != nil {
+					return err
+				}
+				var item launchTemplateItemModel
+				if err := launchTemplateItemFromProto(p, &item); err != nil {
+					return err
+				}
+				m.Versions = append(m.Versions, item)
+			}
+			return nil
 		},
 	}
 }

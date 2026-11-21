@@ -19,6 +19,7 @@ data sources are generated from the API definitions in
 | Data source | `origincloud_location_zones` | Every zone |
 | Resource | `origincloud_compute_instance` | A virtual machine in one zone |
 | Resource | `origincloud_compute_key_pair` | An SSH public key, and the private key generated for it |
+| Resource | `origincloud_compute_launch_template` | A recipe for instances, with numbered versions that never change |
 | Resource | `origincloud_compute_volume_attachment` | A volume an instance holds |
 | Resource | `origincloud_compute_image` | A project's own image, which boot volumes are created from |
 | Data source | `origincloud_compute_instance_type` | A size an instance is launched as |
@@ -28,6 +29,9 @@ data sources are generated from the API definitions in
 | Data source | `origincloud_compute_public_image` | One of the platform's images, in one zone |
 | Data source | `origincloud_compute_public_images` | The public images in a zone |
 | Data source | `origincloud_compute_images` | A project's own images in a zone |
+| Data source | `origincloud_compute_launch_template` | A launch template at its default, newest or a numbered version |
+| Data source | `origincloud_compute_launch_template_versions` | A launch template's versions, the newest first |
+| Data source | `origincloud_compute_launch_templates` | A project's launch templates, at their default versions |
 | Data source | `origincloud_compute_instances` | The instances in a zone |
 | Data source | `origincloud_compute_key_pairs` | A project's key pairs |
 | Data source | `origincloud_compute_volume_attachments` | The volumes an instance holds |

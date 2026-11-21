@@ -9,6 +9,7 @@ import (
 	schema1 "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	schema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	listplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
+	mapplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/mapplanmodifier"
 	objectplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
 	planmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	stringplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -70,9 +71,11 @@ func instanceSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"instance_type": schema.StringAttribute{
-				MarkdownDescription: "The instance type by its full name, `//compute.origincloudapis.eu/instanceTypes/{instance_type}`, such as `//compute.origincloudapis.eu/instanceTypes/gp1.core.2`: one whose `available` is true. Changing it needs the instance `STOPPED`.",
-				Required:            true,
-				Validators:          []validator.String{framework.FullNameReference()},
+				MarkdownDescription: "The instance type by its full name, `//compute.origincloudapis.eu/instanceTypes/{instance_type}`, such as `//compute.origincloudapis.eu/instanceTypes/gp1.core.2`: one whose `available` is true. Changing it needs the instance `STOPPED`. Required unless `launch_template` is set; left out, it is the template's.",
+				Optional:            true,
+				Computed:            true,
+				Validators:          []validator.String{framework.FullNameReference(), framework.RequiredUnless{Template: "launch_template"}},
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"image": schema.StringAttribute{
 				MarkdownDescription: "The full name of the image the boot volume is created from, in the instance's zone: one of the project's own, `//compute.origincloudapis.eu/projects/{project}/zones/{zone}/images/{image}`, or a public one, `//compute.origincloudapis.eu/zones/{zone}/images/{image}`. Set exactly one of `image` and `image_family`; launched from a family, this is the public image the family resolved to. Changing it replaces the instance.",
@@ -89,10 +92,11 @@ func instanceSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()},
 			},
 			"key_pair": schema.StringAttribute{
-				MarkdownDescription: "The full name of the key pair whose public key is installed for `login_user`, in the instance's project. Changing it replaces the instance.",
-				Required:            true,
-				Validators:          []validator.String{framework.FullNameReference()},
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
+				MarkdownDescription: "The full name of the key pair whose public key is installed for `login_user`, in the instance's project. Changing it replaces the instance. Required unless `launch_template` is set; left out, it is the template's.",
+				Optional:            true,
+				Computed:            true,
+				Validators:          []validator.String{framework.FullNameReference(), framework.RequiredUnless{Template: "launch_template"}},
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()},
 			},
 			"login_user": schema.StringAttribute{
 				MarkdownDescription: "The account to log in as: a user created at first boot that holds the key pair. A POSIX user name of at most 32 lowercase letters, digits, underscores and hyphens, starting with a letter or an underscore, and not `root`. The image's `default_user` when left empty. Changing it replaces the instance.",
@@ -127,11 +131,12 @@ func instanceSchema() schema.Schema {
 				},
 			},
 			"network_interfaces": schema.ListAttribute{
-				MarkdownDescription: "The network interfaces' full names, in device order, the boot interface first; exactly one today. Each is an existing interface in the instance's project and zone that nothing else holds, created with the network service: its subnet and security groups are the instance's. Terminating the instance releases it, and it stays. An instance launched from a recipe with an interface spec, or before interfaces were named at launch, shows the interface created for it once it exists, which is deleted with the instance. Changing it replaces the instance.",
-				Required:            true,
+				MarkdownDescription: "The network interfaces' full names, in device order, the boot interface first; exactly one today. Each is an existing interface in the instance's project and zone that nothing else holds, created with the network service: its subnet and security groups are the instance's. Terminating the instance releases it, and it stays. An instance launched from a recipe with an interface spec, or before interfaces were named at launch, shows the interface created for it once it exists, which is deleted with the instance. Changing it replaces the instance. Required unless `launch_template` is set; left out, it is the template's.",
+				Optional:            true,
+				Computed:            true,
 				ElementType:         types.StringType,
-				Validators:          []validator.List{framework.ElementCheck{FullNames: true}},
-				PlanModifiers:       []planmodifier.List{listplanmodifier.RequiresReplace()},
+				Validators:          []validator.List{framework.ElementCheck{FullNames: true}, framework.RequiredUnless{Template: "launch_template"}},
+				PlanModifiers:       []planmodifier.List{listplanmodifier.UseStateForUnknown(), listplanmodifier.RequiresReplaceIfConfigured()},
 			},
 			"state": schema.StringAttribute{
 				MarkdownDescription: "Where the instance is in its lifecycle. One of `INITIALIZING`, `PENDING`, `RUNNING`, `STOPPING`, `STOPPED`, `SHUTTING_DOWN`, `TERMINATED`, `FAILED`.",
@@ -184,10 +189,12 @@ func instanceSchema() schema.Schema {
 				Computed:            true,
 			},
 			"tags": schema.MapAttribute{
-				MarkdownDescription: "Labels of your own, at most 50. The `origin:name` tag is the name the console shows.",
+				MarkdownDescription: "Labels of your own, at most 50. The `origin:name` tag is the name the console shows. Left out, it keeps its current value, the template's when launched from one; set it empty to clear it.",
 				Optional:            true,
+				Computed:            true,
 				ElementType:         types.StringType,
 				Validators:          []validator.Map{framework.ElementCheck{}},
+				PlanModifiers:       []planmodifier.Map{mapplanmodifier.UseStateForUnknown()},
 			},
 			"interface_addresses": schema.ListNestedAttribute{
 				MarkdownDescription: "Each network interface's private addresses, in the order of `network_interfaces`; an interface not attached yet has none.",
@@ -210,13 +217,18 @@ func instanceSchema() schema.Schema {
 				},
 			},
 			"service_account": schema.StringAttribute{
-				MarkdownDescription: "The full name of the service account the instance runs as, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`: a `WORKLOAD` service account of the instance's organization that isn't deleted. Launching with one, or updating the instance to one, needs `iam.service_account.act_as` on the organization as well; an update that leaves it empty removes it, and a terminated instance's can't change. Empty for an instance that runs as none.",
+				MarkdownDescription: "The full name of the service account the instance runs as, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`: a `WORKLOAD` service account of the instance's organization that isn't deleted. Launching with one, or updating the instance to one, needs `iam.service_account.act_as` on the organization as well; an update that leaves it empty removes it, and a terminated instance's can't change. Empty for an instance that runs as none. Left out, it keeps its current value, the template's when launched from one; set it empty to clear it.",
 				Optional:            true,
+				Computed:            true,
 				Validators:          []validator.String{framework.FullNameReference()},
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"launch_template": schema.StringAttribute{
-				MarkdownDescription: "The full name of the launch template version the instance was launched from, `//compute.origincloudapis.eu/projects/{project}/launchTemplates/{launch_template}@{version}`, with the number the launch resolved `@default` or `@latest` to. Empty for an instance launched without a template. The template may since have been changed or deleted.",
+				MarkdownDescription: "The full name of the launch template version the instance was launched from, `//compute.origincloudapis.eu/projects/{project}/launchTemplates/{launch_template}@{version}`, with the number the launch resolved `@default` or `@latest` to. Empty for an instance launched without a template. The template may since have been changed or deleted. Set it to launch the instance from a template: `//compute.origincloudapis.eu/projects/{project}/launchTemplates/{launch_template}` for its default version, or with `@{version}`, `@default` or `@latest` after it for that version. The arguments set with it override the version's for this launch only. The state keeps what was configured while the template is the one launched from.",
+				Optional:            true,
 				Computed:            true,
+				Validators:          []validator.String{framework.VersionedFullNameReference()},
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), framework.StringReplaceTemplate(framework.TemplateSpelling)},
 			},
 		},
 	}
@@ -329,6 +341,7 @@ func instanceToProto(m *instanceModel) *v1beta1.Instance {
 		NetworkInterfaces: framework.Elements(m.NetworkInterfaces, func(e attr.Value) string { return e.(types.String).ValueString() }),
 		Tags:              framework.StringMapToProto(m.Tags),
 		ServiceAccount:    m.ServiceAccount.ValueString(),
+		LaunchTemplate:    m.LaunchTemplate.ValueString(),
 	}
 }
 
@@ -357,9 +370,9 @@ func instanceFromProto(p *v1beta1.Instance, m *instanceModel) error {
 	m.Health = framework.Object(p.GetHealth(), types.ObjectNull(instance_HealthAttrTypes()), instance_HealthAttrTypes(), instance_HealthFromProto)
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
 	m.Creator = types.StringValue(p.GetCreator())
-	m.Tags = framework.Optional(m.Tags, framework.StringMap(p.GetTags()), len(p.GetTags()) == 0)
+	m.Tags = framework.StringMap(p.GetTags())
 	m.InterfaceAddresses = framework.MessageList(instance_InterfaceAddressesAttrTypes(), p.GetInterfaceAddresses(), types.ListNull(types.ObjectType{AttrTypes: instance_InterfaceAddressesAttrTypes()}), instance_InterfaceAddressesFromProto)
-	m.ServiceAccount = framework.Optional(m.ServiceAccount, types.StringValue(p.GetServiceAccount()), p.GetServiceAccount() == "")
+	m.ServiceAccount = types.StringValue(p.GetServiceAccount())
 	m.LaunchTemplate = types.StringValue(p.GetLaunchTemplate())
 	return nil
 }
@@ -389,6 +402,13 @@ func instanceResource() framework.ResourceSpec[instanceModel, *v1beta1.Instance]
 		},
 		Gone: func(p *v1beta1.Instance) bool { return p.GetState() == v1beta1.Instance_TERMINATED },
 		Create: func(ctx context.Context, client *core.Client, plan *instanceModel) (*core.Operation[*v1beta1.Instance], error) {
+			if plan.LaunchTemplate.ValueString() != "" {
+				return v1beta1.NewInstanceClient(client).LaunchInstance(ctx, &v1beta1.LaunchInstanceRequest{
+					Parent:             "projects/" + plan.Project.ValueString() + "/zones/" + plan.Zone.ValueString(),
+					LaunchTemplate:     plan.LaunchTemplate.ValueString(),
+					LaunchTemplateData: instanceLaunchOverrides(instanceToProto(plan)),
+				})
+			}
 			return v1beta1.NewInstanceClient(client).CreateInstance(ctx, &v1beta1.CreateInstanceRequest{
 				Parent:   "projects/" + plan.Project.ValueString() + "/zones/" + plan.Zone.ValueString(),
 				Instance: instanceToProto(plan),
@@ -411,6 +431,13 @@ func instanceResource() framework.ResourceSpec[instanceModel, *v1beta1.Instance]
 			}
 			_, err = op.Wait(ctx)
 			return err
+		},
+		Spelled: []framework.Spelled[instanceModel]{
+			{
+				Attribute: "launch_template",
+				Spelling:  framework.TemplateSpelling,
+				Value:     func(m *instanceModel) *types.String { return &m.LaunchTemplate },
+			},
 		},
 	}
 }

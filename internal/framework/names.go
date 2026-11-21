@@ -37,6 +37,9 @@ func FullName(service, name string) (types.String, error) {
 }
 
 func fullName(service, name string) (string, error) {
+	// A resource read at one of its revisions is named with it, which its
+	// own name hasn't.
+	name = WithoutRevision(name)
 	if strings.HasPrefix(name, "//") {
 		parsed, err := core.ParseFullName(name)
 		if err != nil {
@@ -144,13 +147,18 @@ func (r *Resource[M, P]) upgradeFromVersion0(ctx context.Context, req resource.U
 	resp.DynamicValue = &dynamic
 }
 
+// VersionedFullNameReference is FullNameReference for a reference that may
+// name a revision of the resource it refers to, `{name}@3`, `{name}@default`
+// or `{name}@latest`.
+func VersionedFullNameReference() validator.String { return fullNameValidator{versioned: true} }
+
 // FullNameReference validates that a string attribute that refers to
 // another resource holds its full resource name: a reference to another
 // service's resource, or another project's, is written as the `id` of the
 // resource it refers to, never as its `name`, which is relative.
 func FullNameReference() validator.String { return fullNameValidator{} }
 
-type fullNameValidator struct{}
+type fullNameValidator struct{ versioned bool }
 
 func (fullNameValidator) Description(context.Context) string {
 	return "value must be a full resource name, //{service}.origincloudapis.eu/{name}; use the `id` of the resource it refers to"
@@ -162,7 +170,11 @@ func (v fullNameValidator) ValidateString(ctx context.Context, req validator.Str
 	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() || req.ConfigValue.ValueString() == "" {
 		return
 	}
-	if _, err := core.ParseFullName(req.ConfigValue.ValueString()); err != nil {
+	name := req.ConfigValue.ValueString()
+	if v.versioned {
+		name = WithoutRevision(name)
+	}
+	if _, err := core.ParseFullName(name); err != nil {
 		resp.Diagnostics.AddAttributeError(req.Path, "Not a full resource name", fmt.Sprintf("%s, got %q: %s", v.Description(ctx), req.ConfigValue.ValueString(), err))
 	}
 }
