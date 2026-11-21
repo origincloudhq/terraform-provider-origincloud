@@ -27,6 +27,8 @@ func DataSources() []func() datasource.DataSource {
 		framework.NewDataSource(imageFamilyDataSource()),
 		framework.NewListDataSource(imageFamilyListDataSource()),
 		framework.NewListDataSource(imageListDataSource()),
+		framework.NewDataSource(launchTemplateByNameDataSource()),
+		framework.NewListDataSource(launchTemplateRevisionsDataSource()),
 		framework.NewListDataSource(launchTemplateListDataSource()),
 		framework.NewListDataSource(instanceListDataSource()),
 		framework.NewListDataSource(keyPairListDataSource()),

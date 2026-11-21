@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -24,7 +25,10 @@ import (
 // instances too, as the API does for a while. An instance's type changes
 // only while it is STOPPED, which stop brings it to, as a user would
 // outside Terraform. A key pair created without a public key is
-// generated, its private key in the create's response only.
+// generated, its private key in the create's response only. A launch
+// template keeps numbered versions, the highest number it has ever given
+// one past the highest; a version is read as `{name}@{n}`, `@default` or
+// `@latest`, and the template read at one is named with its number.
 type fakeCompute struct {
 	*httptest.Server
 
@@ -34,6 +38,8 @@ type fakeCompute struct {
 	images      map[string]*computev1beta1.Image
 	instances   map[string]*computev1beta1.Instance
 	attachments map[string]*computev1beta1.VolumeAttachment
+	// templates are the launch templates, by name.
+	templates map[string]*fakeTemplate
 	// privateKeys are the private keys generated, by key pair.
 	privateKeys map[string]string
 	// calls are the mutations received, such as "DELETE projects/p/keyPairs/kp-1".
@@ -74,6 +80,7 @@ func newFakeCompute(t *testing.T) *fakeCompute {
 		images:      map[string]*computev1beta1.Image{},
 		instances:   map[string]*computev1beta1.Instance{},
 		attachments: map[string]*computev1beta1.VolumeAttachment{},
+		templates:   map[string]*fakeTemplate{},
 		privateKeys: map[string]string{},
 	}
 	f.Server = httptest.NewServer(http.HandlerFunc(f.serve))
@@ -144,6 +151,15 @@ func (f *fakeCompute) serve(w http.ResponseWriter, r *http.Request) {
 		writeMessage(w, &computev1beta1.ListInstancesResponse{Instances: items, NextPageToken: next})
 	case len(s) == 5 && s[4] == "instances" && create:
 		f.createInstance(w, path, body)
+	case len(s) == 5 && s[4] == "instances:launch" && create:
+		f.launchInstance(w, strings.TrimSuffix(path, ":launch"), body)
+	case len(s) == 3 && s[2] == "launchTemplates" && list:
+		items, next := f.listTemplates(path+"/", r)
+		writeMessage(w, &computev1beta1.ListLaunchTemplatesResponse{LaunchTemplates: items, NextPageToken: next})
+	case len(s) == 3 && s[2] == "launchTemplates" && create:
+		f.createTemplate(w, path, body)
+	case len(s) == 4 && s[2] == "launchTemplates":
+		f.template(w, r, path, body)
 	case len(s) == 6 && s[4] == "instances":
 		f.instance(w, r, path, body)
 	case len(s) == 7 && s[6] == "volumeAttachments" && list:
@@ -210,6 +226,12 @@ func (f *fakeCompute) createInstance(w http.ResponseWriter, parent string, body 
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
 		return
 	}
+	f.startInstance(w, parent, instance)
+}
+
+// startInstance checks and creates an instance, answering with the
+// operation.
+func (f *fakeCompute) startInstance(w http.ResponseWriter, parent string, instance *computev1beta1.Instance) {
 	if err := f.check(instance); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
 		return
@@ -438,4 +460,258 @@ func writeNamed[P interface {
 		}
 	}
 	writeError(w, http.StatusNotFound, "NOT_FOUND", name+" doesn't exist")
+}
+
+// A fakeTemplate is a launch template: its versions' recipes by number, the
+// default and the highest number given.
+type fakeTemplate struct {
+	name        string
+	tags        map[string]string
+	versions    map[int32]*fakeVersion
+	defaultNum  int32
+	latestNum   int32
+	creator     string
+	createTime  *timestamppb.Timestamp
+	versionTime int
+}
+
+type fakeVersion struct {
+	data       *computev1beta1.LaunchTemplateData
+	createTime *timestamppb.Timestamp
+}
+
+// view returns the template read at version, named with its number when
+// named is set, as a read by `@` is.
+func (t *fakeTemplate) view(version int32, named bool) *computev1beta1.LaunchTemplate {
+	v := t.versions[version]
+	name := t.name
+	if named {
+		name = fmt.Sprintf("%s@%d", t.name, version)
+	}
+	return &computev1beta1.LaunchTemplate{
+		Name: name, LaunchTemplateData: proto.Clone(v.data).(*computev1beta1.LaunchTemplateData),
+		DefaultVersion: t.defaultNum, LatestVersion: t.latestNum, CreateTime: t.createTime, Creator: t.creator,
+		Tags: t.tags, Version: version, VersionCreateTime: v.createTime,
+	}
+}
+
+// resolve returns the version a selector names: none or `default`, `latest`
+// or a number the template has.
+func (t *fakeTemplate) resolve(selector string) (int32, error) {
+	switch selector {
+	case "", "default":
+		return t.defaultNum, nil
+	case "latest":
+		return t.latestNum, nil
+	}
+	n, err := strconv.Atoi(selector)
+	if err != nil || t.versions[int32(n)] == nil {
+		return 0, fmt.Errorf("%s has no version %s", t.name, selector)
+	}
+	return int32(n), nil
+}
+
+// checkRecipe checks a recipe for what its names say.
+func (f *fakeCompute) checkRecipe(data *computev1beta1.LaunchTemplateData) error {
+	switch {
+	case data.GetInstanceType() == "" || data.GetKeyPair() == "":
+		return fmt.Errorf("instance_type and key_pair are required")
+	case (data.GetImage() == "") == (data.GetImageFamily() == ""):
+		return fmt.Errorf("set exactly one of image and image_family")
+	case len(data.GetNetworkInterfaces()) > 1:
+		return fmt.Errorf("at most one network interface")
+	}
+	return nil
+}
+
+func (f *fakeCompute) listTemplates(prefix string, r *http.Request) ([]*computev1beta1.LaunchTemplate, string) {
+	views := map[string]*computev1beta1.LaunchTemplate{}
+	for name, t := range f.templates {
+		views[name] = t.view(t.defaultNum, false)
+	}
+	return page(views, prefix, r, func(*computev1beta1.LaunchTemplate) bool { return true })
+}
+
+func (f *fakeCompute) createTemplate(w http.ResponseWriter, parent string, body []byte) {
+	template := new(computev1beta1.LaunchTemplate)
+	if err := protojson.Unmarshal(body, template); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+		return
+	}
+	if err := f.checkRecipe(template.GetLaunchTemplateData()); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+		return
+	}
+	f.next++
+	t := &fakeTemplate{
+		name: fmt.Sprintf("%s/lt-%d", parent, f.next), tags: template.GetTags(), creator: "user:test",
+		versions: map[int32]*fakeVersion{}, createTime: timestamppb.New(time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)),
+	}
+	t.addVersion(template.GetLaunchTemplateData())
+	t.defaultNum = 1
+	f.templates[t.name] = t
+	writeMessage(w, t.view(1, false))
+}
+
+// addVersion gives data the number past the highest the template has given.
+func (t *fakeTemplate) addVersion(data *computev1beta1.LaunchTemplateData) int32 {
+	t.latestNum++
+	t.versionTime++
+	t.versions[t.latestNum] = &fakeVersion{data: data, createTime: timestamppb.New(time.Date(2026, 11, 1, 12, t.versionTime, 0, 0, time.UTC))}
+	return t.latestNum
+}
+
+// template serves one launch template: its name may end in `@{version}`, or
+// in an action, `:createVersion`, `:listVersions` or `:deleteVersion`.
+func (f *fakeCompute) template(w http.ResponseWriter, r *http.Request, path string, body []byte) {
+	rest, action, _ := strings.Cut(path, ":")
+	name, selector, selected := strings.Cut(rest, "@")
+	t, ok := f.templates[name]
+	if !ok {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", name+" doesn't exist")
+		return
+	}
+	version, err := t.resolve(selector)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", err.Error())
+		return
+	}
+	switch {
+	case action == "createVersion" && r.Method == http.MethodPost:
+		request := new(computev1beta1.CreateLaunchTemplateVersionRequest)
+		if err := protojson.Unmarshal(body, request); err != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+			return
+		}
+		if err := f.checkRecipe(request.GetLaunchTemplateData()); err != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+			return
+		}
+		writeMessage(w, t.view(t.addVersion(request.GetLaunchTemplateData()), true))
+	case action == "listVersions" && r.Method == http.MethodGet:
+		var views []*computev1beta1.LaunchTemplate
+		for n := t.latestNum; n >= 1; n-- {
+			if t.versions[n] != nil {
+				views = append(views, t.view(n, true))
+			}
+		}
+		i, _ := strconv.Atoi(r.URL.Query().Get("pageToken"))
+		next := ""
+		if i+1 < len(views) {
+			next = strconv.Itoa(i + 1)
+		}
+		writeMessage(w, &computev1beta1.ListLaunchTemplateVersionsResponse{LaunchTemplates: views[i : i+1], NextPageToken: next})
+	case action != "":
+		writeError(w, http.StatusNotFound, "NOT_FOUND", r.Method+" "+path+" isn't served")
+	case r.Method == http.MethodGet:
+		writeMessage(w, t.view(version, selected))
+	case r.Method == http.MethodPatch:
+		update := new(computev1beta1.LaunchTemplate)
+		if err := protojson.Unmarshal(body, update); err != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+			return
+		}
+		for _, field := range strings.Split(r.URL.Query().Get("updateMask"), ",") {
+			switch field {
+			case "tags":
+				t.tags = update.GetTags()
+			case "defaultVersion":
+				if t.versions[update.GetDefaultVersion()] == nil {
+					writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", fmt.Sprintf("%s has no version %d", t.name, update.GetDefaultVersion()))
+					return
+				}
+				t.defaultNum = update.GetDefaultVersion()
+			default:
+				writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", field+" can't be updated")
+				return
+			}
+		}
+		writeMessage(w, t.view(t.defaultNum, false))
+	case r.Method == http.MethodDelete:
+		delete(f.templates, name)
+		writeMessage(w, &emptypb.Empty{})
+	}
+}
+
+// launchInstance launches an instance from a template's version, which a
+// bare name, `@default` or `@latest` resolve to, with the recipe's fields
+// the request sets over the version's: an image or family replaces both,
+// and tags and network interfaces replace the version's whole.
+func (f *fakeCompute) launchInstance(w http.ResponseWriter, parent string, body []byte) {
+	request := new(computev1beta1.LaunchInstanceRequest)
+	if err := protojson.Unmarshal(body, request); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+		return
+	}
+	data := new(computev1beta1.LaunchTemplateData)
+	var resolved string
+	if request.GetLaunchTemplate() != "" {
+		name, selector, _ := strings.Cut(relativeName(request.GetLaunchTemplate()), "@")
+		t, ok := f.templates[name]
+		if !ok {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", name+" doesn't exist")
+			return
+		}
+		version, err := t.resolve(selector)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", err.Error())
+			return
+		}
+		data = proto.Clone(t.versions[version].data).(*computev1beta1.LaunchTemplateData)
+		resolved = full("compute", fmt.Sprintf("%s@%d", name, version))
+	}
+	over := request.GetLaunchTemplateData()
+	if over.GetImage() != "" || over.GetImageFamily() != "" {
+		data.Image, data.ImageFamily = over.GetImage(), over.GetImageFamily()
+	}
+	if over.GetBootVolume() != nil {
+		if data.BootVolume == nil {
+			data.BootVolume = &computev1beta1.LaunchTemplateBootVolume{}
+		}
+		if over.GetBootVolume().GetSizeGib() != 0 {
+			data.BootVolume.SizeGib = over.GetBootVolume().GetSizeGib()
+		}
+		if over.GetBootVolume().GetStorageClass() != "" {
+			data.BootVolume.StorageClass = over.GetBootVolume().GetStorageClass()
+		}
+	}
+	for field, set := range map[*string]string{
+		&data.InstanceType: over.GetInstanceType(), &data.KeyPair: over.GetKeyPair(),
+		&data.LoginUser: over.GetLoginUser(), &data.ServiceAccount: over.GetServiceAccount(),
+	} {
+		if set != "" {
+			*field = set
+		}
+	}
+	if len(over.GetTags()) > 0 {
+		data.Tags = over.GetTags()
+	}
+	if len(over.GetNetworkInterfaces()) > 0 {
+		data.NetworkInterfaces = over.GetNetworkInterfaces()
+	}
+	if err := f.checkRecipe(data); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+		return
+	}
+	instance := &computev1beta1.Instance{
+		InstanceType: data.GetInstanceType(), Image: data.GetImage(), ImageFamily: data.GetImageFamily(),
+		KeyPair: data.GetKeyPair(), LoginUser: data.GetLoginUser(), ServiceAccount: data.GetServiceAccount(),
+		Tags: data.GetTags(), LaunchTemplate: resolved,
+	}
+	if boot := data.GetBootVolume(); boot != nil {
+		instance.BootVolume = &computev1beta1.BootVolume{SizeGib: boot.GetSizeGib(), StorageClass: boot.GetStorageClass()}
+	}
+	// An interface the launch creates, from a spec or from none, is the
+	// instance's own.
+	for _, source := range data.GetNetworkInterfaces() {
+		if name := source.GetNetworkInterface(); name != "" {
+			instance.NetworkInterfaces = append(instance.NetworkInterfaces, name)
+		}
+	}
+	if len(instance.NetworkInterfaces) == 0 {
+		f.next++
+		zone := strings.TrimSuffix(parent[strings.Index(parent, "projects/"):], "/instances")
+		instance.NetworkInterfaces = []string{full("network", fmt.Sprintf("%s/networkInterfaces/eni-launch-%d", zone, f.next))}
+	}
+	f.startInstance(w, parent, instance)
 }

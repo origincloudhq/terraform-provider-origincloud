@@ -226,6 +226,31 @@ to the plugin or `internal/framework`.
   lists it. Nothing in the API marks such a type, so each is declared in
   `outside.go`, with the reason, which generation checks against the API,
   as it does secrets: one the API doesn't create, or deletes, fails it.
+- A resource that keeps a history of one field, such as a launch template's
+  recipe (AIP-162), is a **revision**: the field is `REQUIRED` and
+  `IMMUTABLE`, which would replace the resource when it changes, so each is
+  declared in `revisions.go`, with the method that adds a revision, the one
+  that lists them, and the field that points at one of them (a template's
+  default version), which generation checks against the API. A change to the
+  revised field then adds a revision, and the resource is read at its newest
+  (`@latest`): the state holds the resource's own name, without the
+  `@{version}` the API names a revision with. The field that points at a
+  revision is optional and computed, and left out of the configuration it
+  is the new revision after every such change, and what it was otherwise.
+  The resource also gets a data source of its own name, which reads it
+  at any revision by its `name`, and one that lists the revisions
+  (`origincloud_compute_launch_template_versions`).
+- A resource that is created from a recipe as well as from its own
+  arguments, such as an instance launched from a launch template, is a
+  **launch**, declared in `launches.go`: the resource's output-only field
+  that names the recipe becomes an argument, which makes the create a call
+  of the launching method, with the arguments set in the configuration as
+  the recipe's overrides (the package's hand-written function maps them).
+  Written as `.../web`, `.../web@default` or `.../web@latest`, it is answered
+  with the version it resolved to; the state keeps what was written while
+  it names the same template, and a number differing from the answered one
+  replaces the resource. The arguments the API requires are required only
+  without a recipe, and the ones it chooses keep what it answers.
 - Every method of a service is called by a generated resource or data
   source, or is **not managed**, such as a query over a window of time
   series, whose answer would change at every plan. Each method not managed

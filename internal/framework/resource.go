@@ -103,6 +103,9 @@ type ResourceSpec[M any, P proto.Message] struct {
 	// which only the first answer carries.
 	RefusesReplays bool
 
+	// Revision is set for a resource that keeps a history of one field.
+	Revision *Revision[P]
+
 	// MovedFrom are the types this one replaces, as the API renamed them.
 	MovedFrom []Move
 }
@@ -126,6 +129,7 @@ type Toggle[M any, P proto.Message] struct {
 
 // NewResource returns the constructor of the resource spec describes.
 func NewResource[M any, P proto.Message](spec ResourceSpec[M, P]) func() resource.Resource {
+	spec = reviseSpec(spec)
 	return func() resource.Resource { return &Resource[M, P]{spec: spec} }
 }
 

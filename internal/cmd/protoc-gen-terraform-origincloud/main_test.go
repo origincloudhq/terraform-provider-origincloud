@@ -1010,3 +1010,36 @@ func TestARenamedResourceTakesTheStateOfTheTypeItReplaces(t *testing.T) {
 		t.Errorf("failed with %q", failure)
 	}
 }
+
+// A revision or a launch declared for a type the API doesn't have fails
+// generation, as does a revised field that isn't a required, immutable
+// message.
+func TestRevisionsAndLaunchesAreCheckedAgainstTheAPI(t *testing.T) {
+	savedRevisions, savedLaunches := revisions, launches
+	t.Cleanup(func() { revisions, launches = savedRevisions, savedLaunches })
+	reset := func() {
+		revisionsFound, launchesFound = map[protoreflect.FullName]bool{}, map[protoreflect.FullName]bool{}
+	}
+
+	reset()
+	revisions = []revision{{resource: "test.widgets.v1.Missing", field: "a", follows: "b", newest: "c", create: "CreateX", list: "ListX"}}
+	if _, failure := run(t, nil); !strings.Contains(failure, "revised: no resource type test.widgets.v1.Missing") {
+		t.Errorf("a missing revision failed with %q", failure)
+	}
+
+	reset()
+	revisions = nil
+	launches = []launch{{resource: "test.widgets.v1.Missing", method: "LaunchX", template: "t", data: "d"}}
+	if _, failure := run(t, nil); !strings.Contains(failure, "launched: no resource type test.widgets.v1.Missing") {
+		t.Errorf("a missing launch failed with %q", failure)
+	}
+
+	// A resource that has the declared fields, but not as a revision: a
+	// widget's label is a string, not a message.
+	reset()
+	launches = nil
+	revisions = []revision{{resource: "test.widgets.v1.Widget", field: "name", follows: "aliases", newest: "aliases", create: "CreateWidget", list: "ListWidgets"}}
+	if _, failure := run(t, nil); !strings.Contains(failure, "name isn't a REQUIRED, IMMUTABLE message") {
+		t.Errorf("a revised field that isn't a message failed with %q", failure)
+	}
+}
