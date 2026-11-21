@@ -29,6 +29,7 @@ type secret struct {
 var secrets = []secret{
 	{"origincloud.compute.v1beta1.KeyPair", "private_key"},
 	{"origincloud.iam.v1beta1.ServiceAccount", "client_secret"},
+	{"origincloud.iam.v1beta1.ServiceAccountKey", "credentials_file"},
 }
 
 // secretsFound are the secrets whose fields were generated.
