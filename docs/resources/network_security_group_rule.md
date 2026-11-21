@@ -21,7 +21,7 @@ A security group rule: the traffic it allows in one direction, to or from one pe
 - `project` (String) The project the security group rule is in. Changing it replaces the security group rule.
 - `protocol` (String) The traffic the rule allows. One of `ALL`, `TCP`, `UDP`, `ICMP`. Changing it replaces the security group rule.
 - `region` (String) The region the security group rule is in. Changing it replaces the security group rule.
-- `security_group` (String) The security group the security group rule is in. Changing it replaces the security group rule.
+- `security_group` (String) The security group the security group rule is in. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/regions/{region}/securityGroups/{security_group}`. `project` and `region` must be the ones it is in. Changing it replaces the security group rule.
 
 ### Optional
 

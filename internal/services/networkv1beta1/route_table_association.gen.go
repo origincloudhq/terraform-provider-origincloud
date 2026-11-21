@@ -46,8 +46,9 @@ func routeTableAssociationSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"subnet": schema.StringAttribute{
-				MarkdownDescription: "The subnet the route table association is in. Changing it replaces the route table association.",
+				MarkdownDescription: "The subnet the route table association is in. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/zones/{zone}/subnets/{subnet}`. `project` and `zone` must be the ones it is in. Changing it replaces the route table association.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("network", "projects/{project}/zones/{zone}/subnets/{subnet}", "subnet")},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"name": schema.StringAttribute{
@@ -84,7 +85,7 @@ func routeTableAssociationFromProto(p *v1beta1.RouteTableAssociation, m *routeTa
 	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Zone = types.StringValue(values[1])
-	m.Subnet = types.StringValue(values[2])
+	m.Subnet = framework.ParentOf("network", p.GetName())
 	m.Name = types.StringValue(p.GetName())
 	m.RouteTable = types.StringValue(p.GetRouteTable())
 	return nil
@@ -96,6 +97,7 @@ func routeTableAssociationResource() framework.ResourceSpec[routeTableAssociatio
 		Pattern:    "projects/{project}/zones/{zone}/subnets/{subnet}/routeTableAssociations/{route_table_association}",
 		Service:    "network",
 		References: map[string]string{"route_table": "network"},
+		Parent:     "subnet",
 		Schema:     routeTableAssociationSchema(),
 		Name:       func(m *routeTableAssociationModel) string { return m.Name.ValueString() },
 		ToProto:    routeTableAssociationToProto,
@@ -106,7 +108,7 @@ func routeTableAssociationResource() framework.ResourceSpec[routeTableAssociatio
 		},
 		Create: func(ctx context.Context, client *core.Client, plan *routeTableAssociationModel) (*core.Operation[*v1beta1.RouteTableAssociation], error) {
 			return v1beta1.NewRouteTableAssociationClient(client).CreateRouteTableAssociation(ctx, &v1beta1.CreateRouteTableAssociationRequest{
-				Parent:                "projects/" + plan.Project.ValueString() + "/zones/" + plan.Zone.ValueString() + "/subnets/" + plan.Subnet.ValueString(),
+				Parent:                framework.ParentPath(plan.Subnet),
 				RouteTableAssociation: routeTableAssociationToProto(plan),
 			})
 		},
@@ -163,8 +165,9 @@ func routeTableAssociationListSchema() schema1.Schema {
 				Required:            true,
 			},
 			"subnet": schema1.StringAttribute{
-				MarkdownDescription: "The subnet whose route table associations to list.",
+				MarkdownDescription: "The subnet whose route table associations to list. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/zones/{zone}/subnets/{subnet}`. `project` and `zone` must be the ones it is in.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("network", "projects/{project}/zones/{zone}/subnets/{subnet}", "subnet")},
 			},
 			"route_table_associations": schema1.ListNestedAttribute{
 				MarkdownDescription: "The route table associations listed, from every page.",
@@ -196,7 +199,7 @@ func routeTableAssociationListDataSource() framework.ListDataSourceSpec[routeTab
 		Schema:   routeTableAssociationListSchema(),
 		List: func(ctx context.Context, client *core.Client, m *routeTableAssociationListModel) error {
 			m.RouteTableAssociations = []routeTableAssociationItemModel{}
-			for p, err := range v1beta1.NewRouteTableAssociationClient(client).AllRouteTableAssociations(ctx, &v1beta1.ListRouteTableAssociationsRequest{Parent: "projects/" + m.Project.ValueString() + "/zones/" + m.Zone.ValueString() + "/subnets/" + m.Subnet.ValueString()}) {
+			for p, err := range v1beta1.NewRouteTableAssociationClient(client).AllRouteTableAssociations(ctx, &v1beta1.ListRouteTableAssociationsRequest{Parent: framework.ParentPath(m.Subnet)}) {
 				if err != nil {
 					return err
 				}

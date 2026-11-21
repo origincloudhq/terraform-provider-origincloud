@@ -91,10 +91,39 @@ type attribute struct {
 	// spelling is the attribute's spelling, when the API answers it in a
 	// form of its own (spellings.go).
 	spelling *spelling
+	// parent is set for the attribute of the resource a resource is a child
+	// of, such as a security group rule's security_group: it holds the
+	// parent's full name, which is its id.
+	parent *parentReference
 	// nameValue is the index, among the resource name's variable values,
 	// of an attribute that isn't a field but a part of the name: a parent's
 	// variable, or the id the client chooses.
 	nameValue int
+}
+
+// A parentReference is the resource a child resource is a child of.
+type parentReference struct {
+	service string // short code
+	pattern string // the parent's, such as projects/{project}/securityGroups/{security_group}
+	name    string // in words, such as "security group"
+}
+
+// sentence describes what the attribute takes, after what it is.
+func (p parentReference) sentence() string {
+	variables := patternVariables(p.pattern)
+	var place []string
+	for _, v := range variables[:len(variables)-1] {
+		place = append(place, "`"+v+"`")
+	}
+	text := fmt.Sprintf("Its `id`, the full resource name `//%s.%s/%s`.", p.service, apiDomain, p.pattern)
+	switch len(place) {
+	case 0:
+	case 1:
+		text += " " + place[0] + " must be the one it is in."
+	default:
+		text += " " + strings.Join(place[:len(place)-1], ", ") + " and " + place[len(place)-1] + " must be the ones it is in."
+	}
+	return text
 }
 
 // computedOnly says that the configuration can't set the attribute.
@@ -142,10 +171,15 @@ func attributes(t resourceType, forResource bool, prefix string) ([]attribute, e
 	})
 	if forResource {
 		for i, v := range t.parentVariables() {
-			attrs = append(attrs, attribute{
+			a := attribute{
 				name: v, goName: camel(v), kind: "String", required: true, replace: true, nameValue: i,
 				doc: fmt.Sprintf("The %s the %s is in. Changing it replaces the %s.", words(v), singular, singular),
-			})
+			}
+			if pattern, ok := t.parentResource(); ok && i == len(t.parentVariables())-1 {
+				a.parent = &parentReference{service: t.shortcode, pattern: pattern, name: words(v)}
+				a.doc = fmt.Sprintf("The %s the %s is in. %s Changing it replaces the %s.", words(v), singular, a.parent.sentence(), singular)
+			}
+			attrs = append(attrs, a)
 		}
 		if id := t.idField(); id != nil {
 			// The id the client chooses (AIP-133): its name's last segment.
@@ -605,6 +639,8 @@ func attributeValidators(c conv, a attribute, attrs []attribute) []string {
 	settable := a.required || a.optional
 	var validators []string
 	switch {
+	case a.parent != nil:
+		validators = append(validators, c.framework("ParentReference")+"("+quoted([]string{a.parent.service, a.parent.pattern, a.parent.name})+")")
 	case a.kind == "Int64" && a.int32 && settable:
 		validators = append(validators, c.framework("Int32")+"()")
 	case a.kind == "String" && a.enum != nil && settable:
@@ -712,7 +748,12 @@ func generateConversions(g *protogen.GeneratedFile, t resourceType, name, model,
 				g.P("}")
 				g.P("m.ID = id")
 			} else {
-				g.P("m.", a.goName, " = ", c.types("StringValue"), "(values[", a.nameValue, "])")
+				if a.parent != nil {
+					// The parent's full name, which holds its place.
+					g.P("m.", a.goName, " = ", c.framework("ParentOf"), "(", fmt.Sprintf("%q", t.shortcode), ", p.GetName())")
+				} else {
+					g.P("m.", a.goName, " = ", c.types("StringValue"), "(values[", a.nameValue, "])")
+				}
 			}
 			continue
 		}

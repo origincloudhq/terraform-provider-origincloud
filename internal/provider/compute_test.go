@@ -287,7 +287,7 @@ func TestAVolumeIsAttachedToAnInstance(t *testing.T) {
 resource "origincloud_compute_volume_attachment" "data" {
   project  = "p-1"
   zone     = "eu-central1-az1"
-  instance = basename(origincloud_compute_instance.web.name)
+  instance = origincloud_compute_instance.web.id
   volume   = %q
   %s
 }
@@ -295,14 +295,14 @@ resource "origincloud_compute_volume_attachment" "data" {
 data "origincloud_compute_volume_attachments" "web" {
   project    = "p-1"
   zone       = "eu-central1-az1"
-  instance   = basename(origincloud_compute_instance.web.name)
+  instance   = origincloud_compute_instance.web.id
   depends_on = [origincloud_compute_volume_attachment.data]
 }
 
 data "origincloud_compute_volume_attachments" "zone" {
   project    = "p-1"
   zone       = "eu-central1-az1"
-  instance   = "-"
+  instance   = "//compute.origincloudapis.eu/projects/p-1/zones/eu-central1-az1/instances/-"
   depends_on = [origincloud_compute_volume_attachment.data]
 }
 `, full("pvs", zone+"/volumes/vol-data"), device)

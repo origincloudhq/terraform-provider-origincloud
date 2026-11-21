@@ -17,7 +17,7 @@ Lists a private zone's VPC attachments, oldest first. With `-` for the zone, lis
 
 ### Required
 
-- `hosted_zone` (String) The hosted zone whose vpc attachments to list.
+- `hosted_zone` (String) The hosted zone whose vpc attachments to list. Its `id`, the full resource name `//dns.origincloudapis.eu/projects/{project}/hostedZones/{hosted_zone}`. `project` must be the one it is in.
 - `project` (String) The project whose vpc attachments to list.
 
 ### Read-Only

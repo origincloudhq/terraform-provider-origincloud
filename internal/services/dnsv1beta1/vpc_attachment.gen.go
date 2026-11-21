@@ -41,8 +41,9 @@ func vpcAttachmentSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"hosted_zone": schema.StringAttribute{
-				MarkdownDescription: "The hosted zone the vpc attachment is in. Changing it replaces the vpc attachment.",
+				MarkdownDescription: "The hosted zone the vpc attachment is in. Its `id`, the full resource name `//dns.origincloudapis.eu/projects/{project}/hostedZones/{hosted_zone}`. `project` must be the one it is in. Changing it replaces the vpc attachment.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("dns", "projects/{project}/hostedZones/{hosted_zone}", "hosted zone")},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"name": schema.StringAttribute{
@@ -82,7 +83,7 @@ func vpcAttachmentFromProto(p *v1beta1.VpcAttachment, m *vpcAttachmentModel) err
 	}
 	m.ID = id
 	m.Project = types.StringValue(values[0])
-	m.HostedZone = types.StringValue(values[1])
+	m.HostedZone = framework.ParentOf("dns", p.GetName())
 	m.Name = types.StringValue(p.GetName())
 	m.Vpc = types.StringValue(p.GetVpc())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
@@ -95,6 +96,7 @@ func vpcAttachmentResource() framework.ResourceSpec[vpcAttachmentModel, *v1beta1
 		Pattern:    "projects/{project}/hostedZones/{hosted_zone}/vpcAttachments/{vpc_attachment}",
 		Service:    "dns",
 		References: map[string]string{"vpc": "network"},
+		Parent:     "hosted_zone",
 		Schema:     vpcAttachmentSchema(),
 		Name:       func(m *vpcAttachmentModel) string { return m.Name.ValueString() },
 		ToProto:    vpcAttachmentToProto,
@@ -105,7 +107,7 @@ func vpcAttachmentResource() framework.ResourceSpec[vpcAttachmentModel, *v1beta1
 		},
 		CreateSync: func(ctx context.Context, client *core.Client, plan *vpcAttachmentModel) (*v1beta1.VpcAttachment, error) {
 			return v1beta1.NewVpcAttachmentClient(client).CreateVpcAttachment(ctx, &v1beta1.CreateVpcAttachmentRequest{
-				Parent:        "projects/" + plan.Project.ValueString() + "/hostedZones/" + plan.HostedZone.ValueString(),
+				Parent:        framework.ParentPath(plan.HostedZone),
 				VpcAttachment: vpcAttachmentToProto(plan),
 			})
 		},
@@ -155,8 +157,9 @@ func vpcAttachmentListSchema() schema1.Schema {
 				Required:            true,
 			},
 			"hosted_zone": schema1.StringAttribute{
-				MarkdownDescription: "The hosted zone whose vpc attachments to list.",
+				MarkdownDescription: "The hosted zone whose vpc attachments to list. Its `id`, the full resource name `//dns.origincloudapis.eu/projects/{project}/hostedZones/{hosted_zone}`. `project` must be the one it is in.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("dns", "projects/{project}/hostedZones/{hosted_zone}", "hosted zone")},
 			},
 			"vpc_attachments": schema1.ListNestedAttribute{
 				MarkdownDescription: "The vpc attachments listed, from every page.",
@@ -192,7 +195,7 @@ func vpcAttachmentListDataSource() framework.ListDataSourceSpec[vpcAttachmentLis
 		Schema:   vpcAttachmentListSchema(),
 		List: func(ctx context.Context, client *core.Client, m *vpcAttachmentListModel) error {
 			m.VpcAttachments = []vpcAttachmentItemModel{}
-			for p, err := range v1beta1.NewVpcAttachmentClient(client).AllVpcAttachments(ctx, &v1beta1.ListVpcAttachmentsRequest{Parent: "projects/" + m.Project.ValueString() + "/hostedZones/" + m.HostedZone.ValueString()}) {
+			for p, err := range v1beta1.NewVpcAttachmentClient(client).AllVpcAttachments(ctx, &v1beta1.ListVpcAttachmentsRequest{Parent: framework.ParentPath(m.HostedZone)}) {
 				if err != nil {
 					return err
 				}

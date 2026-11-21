@@ -17,7 +17,7 @@ Lists a legal document's published versions, the latest first.
 
 ### Required
 
-- `legal_document` (String) The legal document whose legal document versions to list.
+- `legal_document` (String) The legal document whose legal document versions to list. Its `id`, the full resource name `//billing.origincloudapis.eu/legalDocuments/{legal_document}`.
 
 ### Read-Only
 

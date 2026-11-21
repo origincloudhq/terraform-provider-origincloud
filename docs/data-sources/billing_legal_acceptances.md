@@ -17,7 +17,7 @@ Lists a billing account's acceptances, the latest first. Needs `admin.billing_ac
 
 ### Required
 
-- `billing_account` (String) The billing account whose legal acceptances to list.
+- `billing_account` (String) The billing account whose legal acceptances to list. Its `id`, the full resource name `//billing.origincloudapis.eu/organizations/{organization}/billingAccounts/{billing_account}`. `organization` must be the one it is in.
 - `organization` (String) The organization whose legal acceptances to list.
 
 ### Read-Only

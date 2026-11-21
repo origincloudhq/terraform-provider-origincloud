@@ -17,7 +17,7 @@ Lists an ACL's rules of both directions, oldest first.
 
 ### Required
 
-- `acl` (String) The acl whose acl rules to list.
+- `acl` (String) The acl whose acl rules to list. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/regions/{region}/acls/{acl}`. `project` and `region` must be the ones it is in.
 - `project` (String) The project whose acl rules to list.
 - `region` (String) The region whose acl rules to list.
 

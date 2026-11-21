@@ -19,7 +19,7 @@ A grant: one host may use one key for one operation, with exactly one encryption
 
 - `encryption_context` (Map of String) The encryption context a use must carry, exactly; never empty. Changing it replaces the grant.
 - `grantee` (String) The platform host the grant is for, by the SPIFFE ID its certificate names, which ends in `/zones/{zone}/hosts/{host}`. Changing it replaces the grant.
-- `key` (String) The key the grant is in. Changing it replaces the grant.
+- `key` (String) The key the grant is in. Its `id`, the full resource name `//kms.origincloudapis.eu/projects/{project}/regions/{region}/keys/{key}`. `project` and `region` must be the ones it is in. Changing it replaces the grant.
 - `operation` (String) What the host may do with the key. One of `DECRYPT`. Changing it replaces the grant.
 - `project` (String) The project the grant is in. Changing it replaces the grant.
 - `region` (String) The region the grant is in. Changing it replaces the grant.

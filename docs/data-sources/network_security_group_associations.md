@@ -17,7 +17,7 @@ Lists a network interface's security group associations, oldest first.
 
 ### Required
 
-- `network_interface` (String) The network interface whose security group associations to list.
+- `network_interface` (String) The network interface whose security group associations to list. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/zones/{zone}/networkInterfaces/{network_interface}`. `project` and `zone` must be the ones it is in.
 - `project` (String) The project whose security group associations to list.
 - `zone` (String) The zone whose security group associations to list.
 

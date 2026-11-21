@@ -17,7 +17,7 @@ A security group that filters a network interface's traffic.
 
 ### Required
 
-- `network_interface` (String) The network interface the security group association is in. Changing it replaces the security group association.
+- `network_interface` (String) The network interface the security group association is in. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/zones/{zone}/networkInterfaces/{network_interface}`. `project` and `zone` must be the ones it is in. Changing it replaces the security group association.
 - `project` (String) The project the security group association is in. Changing it replaces the security group association.
 - `security_group` (String) The security group's full name, in the interface's VPC. Changing it replaces the security group association.
 - `zone` (String) The zone the security group association is in. Changing it replaces the security group association.

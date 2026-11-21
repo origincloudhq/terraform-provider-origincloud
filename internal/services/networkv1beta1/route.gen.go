@@ -48,8 +48,9 @@ func routeSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"route_table": schema.StringAttribute{
-				MarkdownDescription: "The route table the route is in. Changing it replaces the route.",
+				MarkdownDescription: "The route table the route is in. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/regions/{region}/routeTables/{route_table}`. `project` and `region` must be the ones it is in. Changing it replaces the route.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("network", "projects/{project}/regions/{region}/routeTables/{route_table}", "route table")},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"name": schema.StringAttribute{
@@ -101,7 +102,7 @@ func routeFromProto(p *v1beta1.Route, m *routeModel) error {
 	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Region = types.StringValue(values[1])
-	m.RouteTable = types.StringValue(values[2])
+	m.RouteTable = framework.ParentOf("network", p.GetName())
 	m.Name = types.StringValue(p.GetName())
 	m.Destination = types.StringValue(p.GetDestination())
 	m.InternetGateway = types.StringValue(p.GetInternetGateway())
@@ -115,6 +116,7 @@ func routeResource() framework.ResourceSpec[routeModel, *v1beta1.Route] {
 		Pattern:    "projects/{project}/regions/{region}/routeTables/{route_table}/routes/{route}",
 		Service:    "network",
 		References: map[string]string{"internet_gateway": "network", "nat_gateway": "network"},
+		Parent:     "route_table",
 		Schema:     routeSchema(),
 		Name:       func(m *routeModel) string { return m.Name.ValueString() },
 		ToProto:    routeToProto,
@@ -125,7 +127,7 @@ func routeResource() framework.ResourceSpec[routeModel, *v1beta1.Route] {
 		},
 		Create: func(ctx context.Context, client *core.Client, plan *routeModel) (*core.Operation[*v1beta1.Route], error) {
 			return v1beta1.NewRouteClient(client).CreateRoute(ctx, &v1beta1.CreateRouteRequest{
-				Parent: "projects/" + plan.Project.ValueString() + "/regions/" + plan.Region.ValueString() + "/routeTables/" + plan.RouteTable.ValueString(),
+				Parent: framework.ParentPath(plan.RouteTable),
 				Route:  routeToProto(plan),
 			})
 		},
@@ -186,8 +188,9 @@ func routeListSchema() schema1.Schema {
 				Required:            true,
 			},
 			"route_table": schema1.StringAttribute{
-				MarkdownDescription: "The route table whose routes to list.",
+				MarkdownDescription: "The route table whose routes to list. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/regions/{region}/routeTables/{route_table}`. `project` and `region` must be the ones it is in.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("network", "projects/{project}/regions/{region}/routeTables/{route_table}", "route table")},
 			},
 			"routes": schema1.ListNestedAttribute{
 				MarkdownDescription: "The routes listed, from every page.",
@@ -227,7 +230,7 @@ func routeListDataSource() framework.ListDataSourceSpec[routeListModel] {
 		Schema:   routeListSchema(),
 		List: func(ctx context.Context, client *core.Client, m *routeListModel) error {
 			m.Routes = []routeItemModel{}
-			for p, err := range v1beta1.NewRouteClient(client).AllRoutes(ctx, &v1beta1.ListRoutesRequest{Parent: "projects/" + m.Project.ValueString() + "/regions/" + m.Region.ValueString() + "/routeTables/" + m.RouteTable.ValueString()}) {
+			for p, err := range v1beta1.NewRouteClient(client).AllRoutes(ctx, &v1beta1.ListRoutesRequest{Parent: framework.ParentPath(m.RouteTable)}) {
 				if err != nil {
 					return err
 				}

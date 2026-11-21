@@ -18,7 +18,7 @@ Lists a service account's federated credentials, oldest first. Deleted ones are 
 ### Required
 
 - `organization` (String) The organization whose federated credentials to list.
-- `service_account` (String) The service account whose federated credentials to list.
+- `service_account` (String) The service account whose federated credentials to list. Its `id`, the full resource name `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`. `organization` must be the one it is in.
 
 ### Read-Only
 

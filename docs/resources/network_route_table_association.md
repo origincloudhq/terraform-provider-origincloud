@@ -19,7 +19,7 @@ The route table a subnet uses.
 
 - `project` (String) The project the route table association is in. Changing it replaces the route table association.
 - `route_table` (String) The full name of the route table the subnet uses, in the subnet's VPC. Changing it replaces the route table association.
-- `subnet` (String) The subnet the route table association is in. Changing it replaces the route table association.
+- `subnet` (String) The subnet the route table association is in. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/zones/{zone}/subnets/{subnet}`. `project` and `zone` must be the ones it is in. Changing it replaces the route table association.
 - `zone` (String) The zone the route table association is in. Changing it replaces the route table association.
 
 ### Read-Only

@@ -46,13 +46,13 @@ resource "origincloud_dns_hosted_zone" "public" {
 
 resource "origincloud_dns_record_set" "www" {
   project     = "p-1"
-  hosted_zone = basename(origincloud_dns_hosted_zone.public.name)
+  hosted_zone = origincloud_dns_hosted_zone.public.id
   %s
 }
 
 resource "origincloud_dns_record_set" "apex" {
   project     = "p-1"
-  hosted_zone = basename(origincloud_dns_hosted_zone.public.name)
+  hosted_zone = origincloud_dns_hosted_zone.public.id
   dns_name    = origincloud_dns_hosted_zone.public.dns_name
   %s
 }
@@ -65,7 +65,7 @@ resource "origincloud_dns_hosted_zone" "private" {
 
 resource "origincloud_dns_vpc_attachment" "corp" {
   project     = "p-1"
-  hosted_zone = basename(origincloud_dns_hosted_zone.private.name)
+  hosted_zone = origincloud_dns_hosted_zone.private.id
   vpc         = %q
 }
 %s`, fake.URL, zone, www, apex, attached, more)
@@ -96,13 +96,13 @@ data "origincloud_dns_hosted_zones" "p1" {
 
 data "origincloud_dns_record_sets" "public" {
   project     = "p-1"
-  hosted_zone = basename(origincloud_dns_hosted_zone.public.name)
+  hosted_zone = origincloud_dns_hosted_zone.public.id
   depends_on  = [origincloud_dns_record_set.www, origincloud_dns_record_set.apex]
 }
 
 data "origincloud_dns_vpc_attachments" "private" {
   project     = "p-1"
-  hosted_zone = basename(origincloud_dns_hosted_zone.private.name)
+  hosted_zone = origincloud_dns_hosted_zone.private.id
   depends_on  = [origincloud_dns_vpc_attachment.corp]
 }
 `
@@ -238,7 +238,7 @@ data "origincloud_dns_vpc_attachments" "private" {
 				Config: dnsConfig(fake, `dns_name = "example.com"`, www("www.example.com", "60s", `"192.0.2.10"`), apex(`basic = { values = ["192.0.2.20"] }`), vpc1, `
 resource "origincloud_dns_record_set" "spf" {
   project     = "p-1"
-  hosted_zone = basename(origincloud_dns_hosted_zone.public.name)
+  hosted_zone = origincloud_dns_hosted_zone.public.id
   dns_name    = "example.com"
   type        = "TXT"
   basic       = { values = ["v=spf1 -all"] }
@@ -323,7 +323,7 @@ resource "origincloud_dns_hosted_zone" "public" {
 
 resource "origincloud_dns_record_set" "www" {
   project     = "p-1"
-  hosted_zone = basename(origincloud_dns_hosted_zone.public.name)
+  hosted_zone = origincloud_dns_hosted_zone.public.id
   dns_name    = "www.example.com"
   type        = "TXT"
   ttl         = "300s"

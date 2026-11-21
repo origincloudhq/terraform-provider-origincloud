@@ -22,7 +22,7 @@ resource "origincloud_dns_hosted_zone" "example" {
 # Values of its own.
 resource "origincloud_dns_record_set" "www" {
   project     = "my-project-123"
-  hosted_zone = basename(origincloud_dns_hosted_zone.example.name)
+  hosted_zone = origincloud_dns_hosted_zone.example.id
   dns_name    = "www.example.com"
   type        = "A"
   ttl         = "60s"
@@ -31,7 +31,7 @@ resource "origincloud_dns_record_set" "www" {
 
 resource "origincloud_dns_record_set" "mail" {
   project     = "my-project-123"
-  hosted_zone = basename(origincloud_dns_hosted_zone.example.name)
+  hosted_zone = origincloud_dns_hosted_zone.example.id
   dns_name    = "example.com"
   type        = "MX"
   ttl         = "3600s"
@@ -47,7 +47,7 @@ resource "origincloud_network_floating_ip" "web" {
 
 resource "origincloud_dns_record_set" "apex" {
   project     = "my-project-123"
-  hosted_zone = basename(origincloud_dns_hosted_zone.example.name)
+  hosted_zone = origincloud_dns_hosted_zone.example.id
   dns_name    = "example.com"
   type        = "A"
   ttl         = "300s"
@@ -61,7 +61,7 @@ resource "origincloud_dns_record_set" "apex" {
 ### Required
 
 - `dns_name` (String) The name the records answer for: the zone's `dns_name` or a name below it, written in full, such as `www.example.com`, without the final dot; answered in lowercase. Labels may hold `_` (`_dmarc.example.com`), and `*` only as the whole leftmost label, for a wildcard. Changing it replaces the record set, unless it is the same name in another case.
-- `hosted_zone` (String) The hosted zone the record set is in. Changing it replaces the record set.
+- `hosted_zone` (String) The hosted zone the record set is in. Its `id`, the full resource name `//dns.origincloudapis.eu/projects/{project}/hostedZones/{hosted_zone}`. `project` must be the one it is in. Changing it replaces the record set.
 - `project` (String) The project the record set is in. Changing it replaces the record set.
 - `type` (String) The records' type. An alias is `A`. One of `A`, `AAAA`, `CNAME`, `TXT`, `MX`, `SRV`, `CAA`. Changing it replaces the record set.
 

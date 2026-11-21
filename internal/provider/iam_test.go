@@ -308,7 +308,7 @@ resource "origincloud_iam_service_account" "deploy" {
 
 resource "origincloud_iam_federated_credential" "github" {
   organization    = "acme"
-  service_account = basename(origincloud_iam_service_account.deploy.name)
+  service_account = origincloud_iam_service_account.deploy.id
   %s
 }
 `, credential)
@@ -350,7 +350,7 @@ func TestFederatedCredentialsAreCreatedImportedReplacedAndDestroyed(t *testing.T
 					resource.TestMatchResourceAttr(githubCredential, "name", regexp.MustCompile(`^organizations/acme/serviceAccounts/sa-[0-9]+/federatedCredentials/fc-[0-9]+$`)),
 					checkFullName(githubCredential),
 					resource.TestCheckResourceAttr(githubCredential, "organization", "acme"),
-					resource.TestMatchResourceAttr(githubCredential, "service_account", regexp.MustCompile(`^sa-[0-9]+$`)),
+					resource.TestMatchResourceAttr(githubCredential, "service_account", regexp.MustCompile(`^//iam\.origincloudapis\.eu/organizations/acme/serviceAccounts/sa-[0-9]+$`)),
 					resource.TestCheckResourceAttr(githubCredential, "audience", "https://sts.origincloudapis.eu"),
 					resource.TestCheckResourceAttr(githubCredential, "conditions.%", "2"),
 					resource.TestCheckResourceAttr(githubCredential, "conditions.repository_id", "123456"),
@@ -497,7 +497,7 @@ resource "origincloud_iam_service_account" "ci" {
 
 resource "origincloud_iam_federated_credential" "gitlab" {
   organization    = "acme"
-  service_account = basename(origincloud_iam_service_account.ci.name)
+  service_account = origincloud_iam_service_account.ci.id
   display_name    = "GitLab CI"
   issuer          = "https://gitlab.com"
   conditions      = { project_id = "42" }
@@ -693,7 +693,7 @@ resource "origincloud_iam_service_account" "ci" {
 		config += `
 resource "origincloud_iam_service_account_key" "ci" {
   organization    = "acme"
-  service_account = basename(origincloud_iam_service_account.ci.name)
+  service_account = origincloud_iam_service_account.ci.id
 }
 `
 	}
@@ -872,20 +872,20 @@ func TestAKeyOfAWorkloadServiceAccountIsRefusedAndTheKeysAreListed(t *testing.T)
 	lists := `
 resource "origincloud_iam_service_account_key" "second" {
   organization    = "acme"
-  service_account = basename(origincloud_iam_service_account.ci.name)
+  service_account = origincloud_iam_service_account.ci.id
   depends_on      = [origincloud_iam_service_account_key.ci]
 }
 
 data "origincloud_iam_service_account_keys" "ci" {
   organization    = "acme"
-  service_account = basename(origincloud_iam_service_account.ci.name)
+  service_account = origincloud_iam_service_account.ci.id
   depends_on      = [origincloud_iam_service_account_key.second]
 }
 `
 	unlisted := `
 data "origincloud_iam_service_account_keys" "ci" {
   organization    = "acme"
-  service_account = basename(origincloud_iam_service_account.ci.name)
+  service_account = origincloud_iam_service_account.ci.id
 }
 `
 	resource.UnitTest(t, resource.TestCase{
@@ -901,7 +901,7 @@ resource "origincloud_iam_service_account" "deploy" {
 
 resource "origincloud_iam_service_account_key" "deploy" {
   organization    = "acme"
-  service_account = basename(origincloud_iam_service_account.deploy.name)
+  service_account = origincloud_iam_service_account.deploy.id
 }
 `,
 				ExpectError: regexp.MustCompile(`a WORKLOAD one has no\s+key`),

@@ -404,7 +404,7 @@ data "origincloud_vaults_ticket" "t" {
 }
 
 data "origincloud_vaults_tickets" "v1" {
-  vault = "v1"
+  vault = "//vaults.origincloudapis.eu/vaults/v1"
 }
 `, first)),
 				Check: resource.ComposeAggregateTestCheckFunc(
