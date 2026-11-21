@@ -82,11 +82,23 @@ to the plugin or `internal/framework`.
   one, so that a configuration written before can't replace a resource whose
   reference the API now answers in full. A reference that may take several
   patterns needs nothing of its own.
+- A resource whose parent is another resource of its service, such as a
+  security group's rule, has an attribute named after its last parent
+  variable (`security_group`), which takes the parent's `id`, its full
+  name: the other variables are the place both are in (`project`,
+  `region`), attributes of their own that must be the parent's, which the
+  plan checks. The request takes the parent's relative name, and the state
+  holds the full one. A resource whose parent is only a place, such as a
+  project, and a singleton, whose parent is its place, take a bare id. The
+  list data source takes the parent the same way, and `-` for its last
+  segment, to list across parents.
 - The state's schema has a version, `framework.StateVersion`, and a
   permanent upgrade from every earlier one, in `internal/framework/names.go`:
   version 0 held the relative name as `id` and a `urn`, and the references
   relative. It rewrites the `id`, and the references of the types the API
-  names, to full names, and drops what the schema no longer has. A change of
+  names, to full names, and drops what the schema no longer has. Version 1
+  held a child's parent as a bare id, which version 2 holds as the parent's
+  full name, derived from the child's own name. A change of
   a resource's state that needs its own upgrade raises the version and keeps
   this one. `testdata/v0.18.0` holds a state a release wrote, which the
   tests upgrade and plan.

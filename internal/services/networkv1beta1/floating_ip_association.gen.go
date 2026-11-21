@@ -47,8 +47,9 @@ func floatingIpAssociationSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"floating_ip": schema.StringAttribute{
-				MarkdownDescription: "The floating ip the floating ip association is in. Changing it replaces the floating ip association.",
+				MarkdownDescription: "The floating ip the floating ip association is in. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/zones/{zone}/floatingIps/{floating_ip}`. `project` and `zone` must be the ones it is in. Changing it replaces the floating ip association.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("network", "projects/{project}/zones/{zone}/floatingIps/{floating_ip}", "floating ip")},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"name": schema.StringAttribute{
@@ -89,7 +90,7 @@ func floatingIpAssociationFromProto(p *v1beta1.FloatingIpAssociation, m *floatin
 	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Zone = types.StringValue(values[1])
-	m.FloatingIp = types.StringValue(values[2])
+	m.FloatingIp = framework.ParentOf("network", p.GetName())
 	m.Name = types.StringValue(p.GetName())
 	m.NetworkInterface = types.StringValue(p.GetNetworkInterface())
 	m.PrivateAddress = types.StringValue(p.GetPrivateAddress())
@@ -102,6 +103,7 @@ func floatingIpAssociationResource() framework.ResourceSpec[floatingIpAssociatio
 		Pattern:    "projects/{project}/zones/{zone}/floatingIps/{floating_ip}/associations/{association}",
 		Service:    "network",
 		References: map[string]string{"network_interface": "network"},
+		Parent:     "floating_ip",
 		Schema:     floatingIpAssociationSchema(),
 		Name:       func(m *floatingIpAssociationModel) string { return m.Name.ValueString() },
 		ToProto:    floatingIpAssociationToProto,
@@ -112,7 +114,7 @@ func floatingIpAssociationResource() framework.ResourceSpec[floatingIpAssociatio
 		},
 		Create: func(ctx context.Context, client *core.Client, plan *floatingIpAssociationModel) (*core.Operation[*v1beta1.FloatingIpAssociation], error) {
 			return v1beta1.NewFloatingIpAssociationClient(client).CreateFloatingIpAssociation(ctx, &v1beta1.CreateFloatingIpAssociationRequest{
-				Parent:                "projects/" + plan.Project.ValueString() + "/zones/" + plan.Zone.ValueString() + "/floatingIps/" + plan.FloatingIp.ValueString(),
+				Parent:                framework.ParentPath(plan.FloatingIp),
 				FloatingIpAssociation: floatingIpAssociationToProto(plan),
 			})
 		},
@@ -171,8 +173,9 @@ func floatingIpAssociationListSchema() schema1.Schema {
 				Required:            true,
 			},
 			"floating_ip": schema1.StringAttribute{
-				MarkdownDescription: "The floating ip whose floating ip associations to list.",
+				MarkdownDescription: "The floating ip whose floating ip associations to list. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/zones/{zone}/floatingIps/{floating_ip}`. `project` and `zone` must be the ones it is in.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("network", "projects/{project}/zones/{zone}/floatingIps/{floating_ip}", "floating ip")},
 			},
 			"floating_ip_associations": schema1.ListNestedAttribute{
 				MarkdownDescription: "The floating ip associations listed, from every page.",
@@ -208,7 +211,7 @@ func floatingIpAssociationListDataSource() framework.ListDataSourceSpec[floating
 		Schema:   floatingIpAssociationListSchema(),
 		List: func(ctx context.Context, client *core.Client, m *floatingIpAssociationListModel) error {
 			m.FloatingIpAssociations = []floatingIpAssociationItemModel{}
-			for p, err := range v1beta1.NewFloatingIpAssociationClient(client).AllFloatingIpAssociations(ctx, &v1beta1.ListFloatingIpAssociationsRequest{Parent: "projects/" + m.Project.ValueString() + "/zones/" + m.Zone.ValueString() + "/floatingIps/" + m.FloatingIp.ValueString()}) {
+			for p, err := range v1beta1.NewFloatingIpAssociationClient(client).AllFloatingIpAssociations(ctx, &v1beta1.ListFloatingIpAssociationsRequest{Parent: framework.ParentPath(m.FloatingIp)}) {
 				if err != nil {
 					return err
 				}

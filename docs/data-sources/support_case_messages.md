@@ -17,7 +17,7 @@ Lists a case's messages, oldest first. Needs `admin.support_case.get` on the org
 
 ### Required
 
-- `case` (String) The case whose case messages to list.
+- `case` (String) The case whose case messages to list. Its `id`, the full resource name `//support.origincloudapis.eu/organizations/{organization}/cases/{case}`. `organization` must be the one it is in.
 - `organization` (String) The organization whose case messages to list.
 
 ### Read-Only

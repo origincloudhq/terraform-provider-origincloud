@@ -46,8 +46,9 @@ func resolverPolicyAssociationSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"vpc": schema.StringAttribute{
-				MarkdownDescription: "The vpc the resolver policy association is in. Changing it replaces the resolver policy association.",
+				MarkdownDescription: "The vpc the resolver policy association is in. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/regions/{region}/vpcs/{vpc}`. `project` and `region` must be the ones it is in. Changing it replaces the resolver policy association.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("network", "projects/{project}/regions/{region}/vpcs/{vpc}", "vpc")},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"name": schema.StringAttribute{
@@ -84,7 +85,7 @@ func resolverPolicyAssociationFromProto(p *v1beta1.ResolverPolicyAssociation, m 
 	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Region = types.StringValue(values[1])
-	m.Vpc = types.StringValue(values[2])
+	m.Vpc = framework.ParentOf("network", p.GetName())
 	m.Name = types.StringValue(p.GetName())
 	m.ResolverPolicy = types.StringValue(p.GetResolverPolicy())
 	return nil
@@ -96,6 +97,7 @@ func resolverPolicyAssociationResource() framework.ResourceSpec[resolverPolicyAs
 		Pattern:    "projects/{project}/regions/{region}/vpcs/{vpc}/resolverPolicyAssociations/{resolver_policy_association}",
 		Service:    "network",
 		References: map[string]string{"resolver_policy": "network"},
+		Parent:     "vpc",
 		Schema:     resolverPolicyAssociationSchema(),
 		Name:       func(m *resolverPolicyAssociationModel) string { return m.Name.ValueString() },
 		ToProto:    resolverPolicyAssociationToProto,
@@ -111,7 +113,7 @@ func resolverPolicyAssociationResource() framework.ResourceSpec[resolverPolicyAs
 		}},
 		Create: func(ctx context.Context, client *core.Client, plan *resolverPolicyAssociationModel) (*core.Operation[*v1beta1.ResolverPolicyAssociation], error) {
 			return v1beta1.NewResolverPolicyAssociationClient(client).CreateResolverPolicyAssociation(ctx, &v1beta1.CreateResolverPolicyAssociationRequest{
-				Parent:                    "projects/" + plan.Project.ValueString() + "/regions/" + plan.Region.ValueString() + "/vpcs/" + plan.Vpc.ValueString(),
+				Parent:                    framework.ParentPath(plan.Vpc),
 				ResolverPolicyAssociation: resolverPolicyAssociationToProto(plan),
 			})
 		},
@@ -168,8 +170,9 @@ func resolverPolicyAssociationListSchema() schema1.Schema {
 				Required:            true,
 			},
 			"vpc": schema1.StringAttribute{
-				MarkdownDescription: "The vpc whose resolver policy associations to list.",
+				MarkdownDescription: "The vpc whose resolver policy associations to list. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/regions/{region}/vpcs/{vpc}`. `project` and `region` must be the ones it is in.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("network", "projects/{project}/regions/{region}/vpcs/{vpc}", "vpc")},
 			},
 			"resolver_policy_associations": schema1.ListNestedAttribute{
 				MarkdownDescription: "The resolver policy associations listed, from every page.",
@@ -201,7 +204,7 @@ func resolverPolicyAssociationListDataSource() framework.ListDataSourceSpec[reso
 		Schema:   resolverPolicyAssociationListSchema(),
 		List: func(ctx context.Context, client *core.Client, m *resolverPolicyAssociationListModel) error {
 			m.ResolverPolicyAssociations = []resolverPolicyAssociationItemModel{}
-			for p, err := range v1beta1.NewResolverPolicyAssociationClient(client).AllResolverPolicyAssociations(ctx, &v1beta1.ListResolverPolicyAssociationsRequest{Parent: "projects/" + m.Project.ValueString() + "/regions/" + m.Region.ValueString() + "/vpcs/" + m.Vpc.ValueString()}) {
+			for p, err := range v1beta1.NewResolverPolicyAssociationClient(client).AllResolverPolicyAssociations(ctx, &v1beta1.ListResolverPolicyAssociationsRequest{Parent: framework.ParentPath(m.Vpc)}) {
 				if err != nil {
 					return err
 				}

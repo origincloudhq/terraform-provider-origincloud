@@ -46,8 +46,9 @@ func securityGroupAssociationSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"network_interface": schema.StringAttribute{
-				MarkdownDescription: "The network interface the security group association is in. Changing it replaces the security group association.",
+				MarkdownDescription: "The network interface the security group association is in. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/zones/{zone}/networkInterfaces/{network_interface}`. `project` and `zone` must be the ones it is in. Changing it replaces the security group association.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("network", "projects/{project}/zones/{zone}/networkInterfaces/{network_interface}", "network interface")},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"name": schema.StringAttribute{
@@ -84,7 +85,7 @@ func securityGroupAssociationFromProto(p *v1beta1.SecurityGroupAssociation, m *s
 	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Zone = types.StringValue(values[1])
-	m.NetworkInterface = types.StringValue(values[2])
+	m.NetworkInterface = framework.ParentOf("network", p.GetName())
 	m.Name = types.StringValue(p.GetName())
 	m.SecurityGroup = types.StringValue(p.GetSecurityGroup())
 	return nil
@@ -96,6 +97,7 @@ func securityGroupAssociationResource() framework.ResourceSpec[securityGroupAsso
 		Pattern:    "projects/{project}/zones/{zone}/networkInterfaces/{network_interface}/securityGroupAssociations/{security_group_association}",
 		Service:    "network",
 		References: map[string]string{"security_group": "network"},
+		Parent:     "network_interface",
 		Schema:     securityGroupAssociationSchema(),
 		Name:       func(m *securityGroupAssociationModel) string { return m.Name.ValueString() },
 		ToProto:    securityGroupAssociationToProto,
@@ -106,7 +108,7 @@ func securityGroupAssociationResource() framework.ResourceSpec[securityGroupAsso
 		},
 		Create: func(ctx context.Context, client *core.Client, plan *securityGroupAssociationModel) (*core.Operation[*v1beta1.SecurityGroupAssociation], error) {
 			return v1beta1.NewSecurityGroupAssociationClient(client).CreateSecurityGroupAssociation(ctx, &v1beta1.CreateSecurityGroupAssociationRequest{
-				Parent:                   "projects/" + plan.Project.ValueString() + "/zones/" + plan.Zone.ValueString() + "/networkInterfaces/" + plan.NetworkInterface.ValueString(),
+				Parent:                   framework.ParentPath(plan.NetworkInterface),
 				SecurityGroupAssociation: securityGroupAssociationToProto(plan),
 			})
 		},
@@ -163,8 +165,9 @@ func securityGroupAssociationListSchema() schema1.Schema {
 				Required:            true,
 			},
 			"network_interface": schema1.StringAttribute{
-				MarkdownDescription: "The network interface whose security group associations to list.",
+				MarkdownDescription: "The network interface whose security group associations to list. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/zones/{zone}/networkInterfaces/{network_interface}`. `project` and `zone` must be the ones it is in.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("network", "projects/{project}/zones/{zone}/networkInterfaces/{network_interface}", "network interface")},
 			},
 			"security_group_associations": schema1.ListNestedAttribute{
 				MarkdownDescription: "The security group associations listed, from every page.",
@@ -196,7 +199,7 @@ func securityGroupAssociationListDataSource() framework.ListDataSourceSpec[secur
 		Schema:   securityGroupAssociationListSchema(),
 		List: func(ctx context.Context, client *core.Client, m *securityGroupAssociationListModel) error {
 			m.SecurityGroupAssociations = []securityGroupAssociationItemModel{}
-			for p, err := range v1beta1.NewSecurityGroupAssociationClient(client).AllSecurityGroupAssociations(ctx, &v1beta1.ListSecurityGroupAssociationsRequest{Parent: "projects/" + m.Project.ValueString() + "/zones/" + m.Zone.ValueString() + "/networkInterfaces/" + m.NetworkInterface.ValueString()}) {
+			for p, err := range v1beta1.NewSecurityGroupAssociationClient(client).AllSecurityGroupAssociations(ctx, &v1beta1.ListSecurityGroupAssociationsRequest{Parent: framework.ParentPath(m.NetworkInterface)}) {
 				if err != nil {
 					return err
 				}

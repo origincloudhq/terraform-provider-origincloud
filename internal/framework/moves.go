@@ -71,6 +71,10 @@ func (r *Resource[M, P]) MoveState(context.Context) []resource.StateMover {
 				return
 			}
 			moved, err := MoveRawState(m, req.SourceRawState.JSON)
+			if err == nil {
+				// The type that was moved from held its parent as a bare id.
+				moved, err = UpgradeRawParent(r.spec.Service, r.spec.Parent, moved)
+			}
 			if err != nil {
 				resp.Diagnostics.AddError(r.summary("move the state of"), err.Error())
 				return

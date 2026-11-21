@@ -19,7 +19,7 @@ Lists a security group's rules of both directions, oldest first.
 
 - `project` (String) The project whose security group rules to list.
 - `region` (String) The region whose security group rules to list.
-- `security_group` (String) The security group whose security group rules to list.
+- `security_group` (String) The security group whose security group rules to list. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/regions/{region}/securityGroups/{security_group}`. `project` and `region` must be the ones it is in.
 
 ### Read-Only
 

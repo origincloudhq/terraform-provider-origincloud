@@ -17,7 +17,7 @@ A volume an instance holds.
 
 ### Required
 
-- `instance` (String) The instance the volume attachment is in. Changing it replaces the volume attachment.
+- `instance` (String) The instance the volume attachment is in. Its `id`, the full resource name `//compute.origincloudapis.eu/projects/{project}/zones/{zone}/instances/{instance}`. `project` and `zone` must be the ones it is in. Changing it replaces the volume attachment.
 - `project` (String) The project the volume attachment is in. Changing it replaces the volume attachment.
 - `volume` (String) The volume's full name, in the instance's project and zone. Changing it replaces the volume attachment.
 - `zone` (String) The zone the volume attachment is in. Changing it replaces the volume attachment.

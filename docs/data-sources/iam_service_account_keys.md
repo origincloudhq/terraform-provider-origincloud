@@ -18,7 +18,7 @@ Lists a service account's keys, oldest first, by their public metadata; never a 
 ### Required
 
 - `organization` (String) The organization whose service account keys to list.
-- `service_account` (String) The service account whose service account keys to list.
+- `service_account` (String) The service account whose service account keys to list. Its `id`, the full resource name `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`. `organization` must be the one it is in.
 
 ### Read-Only
 

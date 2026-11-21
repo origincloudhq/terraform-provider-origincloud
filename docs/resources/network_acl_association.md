@@ -19,7 +19,7 @@ The ACL that filters a subnet's traffic at its edge.
 
 - `acl` (String) The full name of the ACL that filters the subnet's traffic, in the subnet's VPC. Changing it replaces the acl association.
 - `project` (String) The project the acl association is in. Changing it replaces the acl association.
-- `subnet` (String) The subnet the acl association is in. Changing it replaces the acl association.
+- `subnet` (String) The subnet the acl association is in. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/zones/{zone}/subnets/{subnet}`. `project` and `zone` must be the ones it is in. Changing it replaces the acl association.
 - `zone` (String) The zone the acl association is in. Changing it replaces the acl association.
 
 ### Read-Only

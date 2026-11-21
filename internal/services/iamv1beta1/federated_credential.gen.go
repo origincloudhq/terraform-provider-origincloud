@@ -48,8 +48,9 @@ func federatedCredentialSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"service_account": schema.StringAttribute{
-				MarkdownDescription: "The service account the federated credential is in. Changing it replaces the federated credential.",
+				MarkdownDescription: "The service account the federated credential is in. Its `id`, the full resource name `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`. `organization` must be the one it is in. Changing it replaces the federated credential.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("iam", "organizations/{organization}/serviceAccounts/{service_account}", "service account")},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"name": schema.StringAttribute{
@@ -121,7 +122,7 @@ func federatedCredentialFromProto(p *v1beta1.FederatedCredential, m *federatedCr
 	}
 	m.ID = id
 	m.Organization = types.StringValue(values[0])
-	m.ServiceAccount = types.StringValue(values[1])
+	m.ServiceAccount = framework.ParentOf("iam", p.GetName())
 	m.Name = types.StringValue(p.GetName())
 	m.DisplayName = types.StringValue(p.GetDisplayName())
 	m.Issuer = types.StringValue(p.GetIssuer())
@@ -139,6 +140,7 @@ func federatedCredentialResource() framework.ResourceSpec[federatedCredentialMod
 		TypeName:  "_iam_federated_credential",
 		Pattern:   "organizations/{organization}/serviceAccounts/{service_account}/federatedCredentials/{federated_credential}",
 		Service:   "iam",
+		Parent:    "service_account",
 		Schema:    federatedCredentialSchema(),
 		Name:      func(m *federatedCredentialModel) string { return m.Name.ValueString() },
 		ToProto:   federatedCredentialToProto,
@@ -150,7 +152,7 @@ func federatedCredentialResource() framework.ResourceSpec[federatedCredentialMod
 		Gone: func(p *v1beta1.FederatedCredential) bool { return p.GetState() == v1beta1.FederatedCredential_DELETED },
 		CreateSync: func(ctx context.Context, client *core.Client, plan *federatedCredentialModel) (*v1beta1.FederatedCredential, error) {
 			return v1beta1.NewFederatedCredentialClient(client).CreateFederatedCredential(ctx, &v1beta1.CreateFederatedCredentialRequest{
-				Parent:              "organizations/" + plan.Organization.ValueString() + "/serviceAccounts/" + plan.ServiceAccount.ValueString(),
+				Parent:              framework.ParentPath(plan.ServiceAccount),
 				FederatedCredential: federatedCredentialToProto(plan),
 			})
 		},
@@ -212,8 +214,9 @@ func federatedCredentialListSchema() schema1.Schema {
 				Required:            true,
 			},
 			"service_account": schema1.StringAttribute{
-				MarkdownDescription: "The service account whose federated credentials to list.",
+				MarkdownDescription: "The service account whose federated credentials to list. Its `id`, the full resource name `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`. `organization` must be the one it is in.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("iam", "organizations/{organization}/serviceAccounts/{service_account}", "service account")},
 			},
 			"federated_credentials": schema1.ListNestedAttribute{
 				MarkdownDescription: "The federated credentials listed, from every page.",
@@ -274,7 +277,7 @@ func federatedCredentialListDataSource() framework.ListDataSourceSpec[federatedC
 		Schema:   federatedCredentialListSchema(),
 		List: func(ctx context.Context, client *core.Client, m *federatedCredentialListModel) error {
 			m.FederatedCredentials = []federatedCredentialItemModel{}
-			for p, err := range v1beta1.NewFederatedCredentialClient(client).AllFederatedCredentials(ctx, &v1beta1.ListFederatedCredentialsRequest{Parent: "organizations/" + m.Organization.ValueString() + "/serviceAccounts/" + m.ServiceAccount.ValueString()}) {
+			for p, err := range v1beta1.NewFederatedCredentialClient(client).AllFederatedCredentials(ctx, &v1beta1.ListFederatedCredentialsRequest{Parent: framework.ParentPath(m.ServiceAccount)}) {
 				if err != nil {
 					return err
 				}

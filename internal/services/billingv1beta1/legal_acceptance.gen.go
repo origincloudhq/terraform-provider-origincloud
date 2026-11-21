@@ -7,6 +7,7 @@ import (
 	context "context"
 	attr "github.com/hashicorp/terraform-plugin-framework/attr"
 	schema "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	validator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	types "github.com/hashicorp/terraform-plugin-framework/types"
 	framework "github.com/origincloudhq/terraform-provider-origincloud/internal/framework"
 	v1beta1 "go.origincloud.eu/sdk/billing/v1beta1"
@@ -170,8 +171,9 @@ func legalAcceptanceListSchema() schema.Schema {
 				Required:            true,
 			},
 			"billing_account": schema.StringAttribute{
-				MarkdownDescription: "The billing account whose legal acceptances to list.",
+				MarkdownDescription: "The billing account whose legal acceptances to list. Its `id`, the full resource name `//billing.origincloudapis.eu/organizations/{organization}/billingAccounts/{billing_account}`. `organization` must be the one it is in.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("billing", "organizations/{organization}/billingAccounts/{billing_account}", "billing account")},
 			},
 			"legal_acceptances": schema.ListNestedAttribute{
 				MarkdownDescription: "The legal acceptances listed, from every page.",
@@ -253,7 +255,7 @@ func legalAcceptanceListDataSource() framework.ListDataSourceSpec[legalAcceptanc
 		Schema:   legalAcceptanceListSchema(),
 		List: func(ctx context.Context, client *core.Client, m *legalAcceptanceListModel) error {
 			m.LegalAcceptances = []legalAcceptanceModel{}
-			for p, err := range v1beta1.NewLegalAcceptanceClient(client).AllLegalAcceptances(ctx, &v1beta1.ListLegalAcceptancesRequest{Parent: "organizations/" + m.Organization.ValueString() + "/billingAccounts/" + m.BillingAccount.ValueString()}) {
+			for p, err := range v1beta1.NewLegalAcceptanceClient(client).AllLegalAcceptances(ctx, &v1beta1.ListLegalAcceptancesRequest{Parent: framework.ParentPath(m.BillingAccount)}) {
 				if err != nil {
 					return err
 				}

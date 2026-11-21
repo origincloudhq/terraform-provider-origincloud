@@ -74,7 +74,7 @@ resource "origincloud_network_route_table" "public" {
 resource "origincloud_network_route" "default" {
   project          = local.project
   region           = local.region
-  route_table      = basename(origincloud_network_route_table.public.name)
+  route_table      = origincloud_network_route_table.public.id
   destination      = "0.0.0.0/0"
   internet_gateway = origincloud_network_internet_gateway.main.id
 }
@@ -82,7 +82,7 @@ resource "origincloud_network_route" "default" {
 resource "origincloud_network_route_table_association" "web" {
   project     = local.project
   zone        = local.zone
-  subnet      = basename(origincloud_network_subnet.web.name)
+  subnet      = origincloud_network_subnet.web.id
   route_table = origincloud_network_route_table.public.id
 }
 
@@ -95,7 +95,7 @@ resource "origincloud_network_security_group" "web" {
 resource "origincloud_network_security_group_rule" "ssh" {
   project        = local.project
   region         = local.region
-  security_group = basename(origincloud_network_security_group.web.name)
+  security_group = origincloud_network_security_group.web.id
   direction      = "INGRESS"
   protocol       = "TCP"
   first_port     = 22
@@ -112,7 +112,7 @@ resource "origincloud_network_acl" "web" {
 resource "origincloud_network_acl_rule" "https" {
   project    = local.project
   region     = local.region
-  acl        = basename(origincloud_network_acl.web.name)
+  acl        = origincloud_network_acl.web.id
   direction  = "INGRESS"
   priority   = 100
   protocol   = "TCP"
@@ -124,7 +124,7 @@ resource "origincloud_network_acl_rule" "https" {
 resource "origincloud_network_acl_association" "web" {
   project = local.project
   zone    = local.zone
-  subnet  = basename(origincloud_network_subnet.web.name)
+  subnet  = origincloud_network_subnet.web.id
   acl     = origincloud_network_acl.web.id
 }
 `, sshFrom)
@@ -338,7 +338,7 @@ resource "origincloud_network_security_group" "lb" {
 resource "origincloud_network_security_group_rule" "from_lb" {
   project        = local.project
   region         = local.region
-  security_group = basename(origincloud_network_security_group.web.name)
+  security_group = origincloud_network_security_group.web.id
   direction      = "INGRESS"
   protocol       = "TCP"
   first_port     = 8080
@@ -348,7 +348,7 @@ resource "origincloud_network_security_group_rule" "from_lb" {
 resource "origincloud_network_security_group_rule" "within" {
   project        = local.project
   region         = local.region
-  security_group = basename(origincloud_network_security_group.web.name)
+  security_group = origincloud_network_security_group.web.id
   direction      = "INGRESS"
   protocol       = "ALL"
   same_group     = true
@@ -362,13 +362,110 @@ func extraSecurityGroupRule(peer string) string {
 resource "origincloud_network_security_group_rule" "extra" {
   project        = local.project
   region         = local.region
-  security_group = basename(origincloud_network_security_group.web.name)
+  security_group = origincloud_network_security_group.web.id
   direction      = "INGRESS"
   protocol       = "TCP"
   first_port     = 443
   %s
 }
 `, peer)
+}
+
+// A child's parent attribute takes the parent's id, its full resource
+// name, like every other reference: the request is built from the parent's
+// relative name, the state holds the full one, and an import has it too.
+func TestAChildTakesItsParentsId(t *testing.T) {
+	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
+	fake := newFakeNetwork(t)
+	const rule = "origincloud_network_security_group_rule.from_lb"
+	config := peersConfig(fake, `peer_security_group = origincloud_network_security_group.lb.id`, "") + `
+data "origincloud_network_security_group_rules" "web" {
+  project        = local.project
+  region         = local.region
+  security_group = origincloud_network_security_group.web.id
+  depends_on     = [origincloud_network_security_group_rule.from_lb]
+}
+`
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrPair(rule, "security_group", "origincloud_network_security_group.web", "id"),
+					resource.TestMatchResourceAttr(rule, "security_group", regexp.MustCompile(`^//network\.origincloudapis\.eu/projects/p-1/regions/eu-central1/securityGroups/sg-[0-9]+$`)),
+					// The name is relative, with the group's name in it.
+					resource.TestMatchResourceAttr(rule, "name", regexp.MustCompile(`^projects/p-1/regions/eu-central1/securityGroups/sg-[0-9]+/rules/`)),
+					resource.TestCheckResourceAttr("data.origincloud_network_security_group_rules.web", "security_group_rules.#", "2"),
+					func(*terraform.State) error {
+						// The path is the group's relative name, not its full one.
+						for _, call := range fake.mutations() {
+							if strings.Contains(call, "//") {
+								return fmt.Errorf("a request for %q", call)
+							}
+						}
+						if !slices.ContainsFunc(fake.mutations(), func(call string) bool {
+							return strings.HasPrefix(call, "POST projects/p-1/regions/eu-central1/securityGroups/sg-") && strings.HasSuffix(call, "/rules")
+						}) {
+							return fmt.Errorf("no rule was created in a group: %v", fake.mutations())
+						}
+						return nil
+					},
+				),
+			},
+			// Imported by its full name, it has the parent's full name too.
+			{
+				Config:            config,
+				ResourceName:      rule,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+		CheckDestroy: checkNetworkDestroyed(fake),
+	})
+}
+
+// Any other form of a parent, which a configuration written before took,
+// is refused at the plan with a message that points at the parent's id.
+func TestAParentThatIsNotAFullNameIsRefusedAtThePlan(t *testing.T) {
+	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
+	fake := newFakeNetwork(t)
+	const group = "projects/p-1/regions/eu-central1/securityGroups/sg-1"
+	step := func(parent string, refused string) resource.TestStep {
+		return resource.TestStep{
+			Config: fmt.Sprintf(`
+provider "origincloud" {
+  endpoint = %q
+}
+
+resource "origincloud_network_security_group_rule" "ssh" {
+  project        = "p-1"
+  region         = "eu-central1"
+  security_group = %q
+  direction      = "INGRESS"
+  protocol       = "TCP"
+  first_port     = 22
+  cidr_block     = "10.0.0.0/8"
+}
+`, fake.URL, parent),
+			PlanOnly:    true,
+			ExpectError: regexp.MustCompile(refused),
+		}
+	}
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			// The bare id, and the relative name, which `.name` is.
+			step("sg-1", `(?s)Not a full resource name.*use the .id. of the security\s+group`),
+			step(group, `(?s)Not a full resource name.*use the .id. of the security\s+group`),
+			// A resource of another service, or another type.
+			step(full("compute", "projects/p-1/zones/eu-central1-az1/instances/i-1"), `Not the full name of a security\s+group`),
+			step(full("network", "projects/p-1/regions/eu-central1/vpcs/vpc-1"), `Not the full name of a security\s+group`),
+			// Another place than the one the rule says it is in.
+			step(full("network", "projects/p-2/regions/eu-central1/securityGroups/sg-1"), `the security group is in project "p-2", but\s+project is "p-1"`),
+			step(full("network", "projects/p-1/regions/eu-west1/securityGroups/sg-1"), `the security group is in region "eu-west1", but\s+region is "eu-central1"`),
+		},
+	})
 }
 
 func TestASecurityGroupRuleHasExactlyOnePeer(t *testing.T) {
@@ -465,7 +562,7 @@ resource "origincloud_network_floating_ip" "web" {
 resource "origincloud_network_floating_ip_association" "web" {
   project           = local.project
   zone              = local.zone
-  floating_ip       = basename(origincloud_network_floating_ip.web.name)
+  floating_ip       = origincloud_network_floating_ip.web.id
   network_interface = origincloud_network_network_interface.web.id
 }
 `
@@ -551,7 +648,7 @@ resource "origincloud_network_security_group" "web" {
 resource "origincloud_network_security_group_rule" "https" {
   project        = local.project
   region         = local.region
-  security_group = basename(origincloud_network_security_group.web.name)
+  security_group = origincloud_network_security_group.web.id
   direction      = "INGRESS"
   protocol       = "TCP"
   first_port     = 443
@@ -562,7 +659,7 @@ resource "origincloud_network_security_group_rule" "https" {
 resource "origincloud_network_security_group_rule" "ephemeral" {
   project        = local.project
   region         = local.region
-  security_group = basename(origincloud_network_security_group.web.name)
+  security_group = origincloud_network_security_group.web.id
   direction      = "EGRESS"
   protocol       = "UDP"
   first_port     = 32768
@@ -574,7 +671,7 @@ resource "origincloud_network_security_group_rule" "ephemeral" {
 resource "origincloud_network_security_group_rule" "within" {
   project        = local.project
   region         = local.region
-  security_group = basename(origincloud_network_security_group.web.name)
+  security_group = origincloud_network_security_group.web.id
   direction      = "INGRESS"
   protocol       = "ALL"
   same_group     = true
@@ -585,7 +682,7 @@ resource "origincloud_network_security_group_rule" "within" {
 data "origincloud_network_security_group_rules" "web" {
   project        = local.project
   region         = local.region
-  security_group = basename(origincloud_network_security_group.web.name)
+  security_group = origincloud_network_security_group.web.id
 }
 
 data "origincloud_network_vpcs" "central" {

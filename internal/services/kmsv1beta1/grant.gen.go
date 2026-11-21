@@ -56,8 +56,9 @@ func grantSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"key": schema.StringAttribute{
-				MarkdownDescription: "The key the grant is in. Changing it replaces the grant.",
+				MarkdownDescription: "The key the grant is in. Its `id`, the full resource name `//kms.origincloudapis.eu/projects/{project}/regions/{region}/keys/{key}`. `project` and `region` must be the ones it is in. Changing it replaces the grant.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("kms", "projects/{project}/regions/{region}/keys/{key}", "key")},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"name": schema.StringAttribute{
@@ -137,7 +138,7 @@ func grantFromProto(p *v1beta1.Grant, m *grantModel) error {
 	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Region = types.StringValue(values[1])
-	m.Key = types.StringValue(values[2])
+	m.Key = framework.ParentOf("kms", p.GetName())
 	m.Name = types.StringValue(p.GetName())
 	m.Operation = types.StringValue(p.GetOperation().String())
 	m.Grantee = types.StringValue(p.GetGrantee())
@@ -155,6 +156,7 @@ func grantResource() framework.ResourceSpec[grantModel, *v1beta1.Grant] {
 		TypeName:  "_kms_grant",
 		Pattern:   "projects/{project}/regions/{region}/keys/{key}/grants/{grant}",
 		Service:   "kms",
+		Parent:    "key",
 		Schema:    grantSchema(),
 		Name:      func(m *grantModel) string { return m.Name.ValueString() },
 		ToProto:   grantToProto,
@@ -165,7 +167,7 @@ func grantResource() framework.ResourceSpec[grantModel, *v1beta1.Grant] {
 		},
 		CreateSync: func(ctx context.Context, client *core.Client, plan *grantModel) (*v1beta1.Grant, error) {
 			return v1beta1.NewGrantClient(client).CreateGrant(ctx, &v1beta1.CreateGrantRequest{
-				Parent: "projects/" + plan.Project.ValueString() + "/regions/" + plan.Region.ValueString() + "/keys/" + plan.Key.ValueString(),
+				Parent: framework.ParentPath(plan.Key),
 				Grant:  grantToProto(plan),
 			})
 		},
@@ -234,8 +236,9 @@ func grantListSchema() schema1.Schema {
 				Required:            true,
 			},
 			"key": schema1.StringAttribute{
-				MarkdownDescription: "The key whose grants to list.",
+				MarkdownDescription: "The key whose grants to list. Its `id`, the full resource name `//kms.origincloudapis.eu/projects/{project}/regions/{region}/keys/{key}`. `project` and `region` must be the ones it is in.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("kms", "projects/{project}/regions/{region}/keys/{key}", "key")},
 			},
 			"grants": schema1.ListNestedAttribute{
 				MarkdownDescription: "The grants listed, from every page.",
@@ -300,7 +303,7 @@ func grantListDataSource() framework.ListDataSourceSpec[grantListModel] {
 		Schema:   grantListSchema(),
 		List: func(ctx context.Context, client *core.Client, m *grantListModel) error {
 			m.Grants = []grantItemModel{}
-			for p, err := range v1beta1.NewGrantClient(client).AllGrants(ctx, &v1beta1.ListGrantsRequest{Parent: "projects/" + m.Project.ValueString() + "/regions/" + m.Region.ValueString() + "/keys/" + m.Key.ValueString()}) {
+			for p, err := range v1beta1.NewGrantClient(client).AllGrants(ctx, &v1beta1.ListGrantsRequest{Parent: framework.ParentPath(m.Key)}) {
 				if err != nil {
 					return err
 				}

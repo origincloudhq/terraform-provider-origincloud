@@ -39,7 +39,7 @@ const kmsGranted = `
 resource "origincloud_kms_grant" "host" {
   project = "p-1"
   region  = "eu-central1"
-  key     = basename(origincloud_kms_key.main.name)
+  key     = origincloud_kms_key.main.id
   %s
 }
 `
@@ -304,7 +304,7 @@ data "origincloud_kms_keys" "all" {
 data "origincloud_kms_grants" "main" {
   project = "p-1"
   region  = "eu-central1"
-  key     = "key-1"
+  key     = "//kms.origincloudapis.eu/projects/p-1/regions/eu-central1/keys/key-1"
 }
 
 data "origincloud_kms_public_key" "signer" {

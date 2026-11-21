@@ -73,6 +73,12 @@ func generate(gen *protogen.Plugin) error {
 	gen.SupportedFeatures = uint64(pluginpb.CodeGeneratorResponse_FEATURE_PROTO3_OPTIONAL)
 	var packages []*servicePackage
 	methodsCalled = map[protoreflect.FullName]bool{}
+	resourcePatterns = map[string]map[string]bool{}
+	for _, f := range gen.Files {
+		if f.Generate {
+			collectPatterns(f)
+		}
+	}
 	for _, f := range gen.Files {
 		if !f.Generate {
 			continue
@@ -157,6 +163,47 @@ type constructor struct {
 func (t resourceType) singleton() bool {
 	segments := strings.Split(t.pattern, "/")
 	return !patternVariable.MatchString(segments[len(segments)-1])
+}
+
+// resourcePatterns are the patterns of the resource types of each service,
+// by short code: what tells a resource's parent, which is another resource
+// of its service, from the place it is in, such as a project or a zone.
+var resourcePatterns map[string]map[string]bool
+
+// collectPatterns records the patterns of the resource types of f's
+// services.
+func collectPatterns(f *protogen.File) {
+	for _, s := range f.Services {
+		host, _ := proto.GetExtension(s.Desc.Options(), annotations.E_DefaultHost).(string)
+		shortcode, _, _ := strings.Cut(host, ".")
+		if shortcode == "" {
+			continue
+		}
+		for _, t := range resourceTypes(f, s, shortcode) {
+			if resourcePatterns[shortcode] == nil {
+				resourcePatterns[shortcode] = map[string]bool{}
+			}
+			for _, p := range t.patterns {
+				resourcePatterns[shortcode][p] = true
+			}
+		}
+	}
+}
+
+// parentResource returns the pattern of the resource the type is a child
+// of, when its parent is another resource of its service, such as a
+// security group's rule: its last parent variable is then that resource's,
+// which the child's attribute of that name refers to by its full name. The
+// other variables, such as the project, are the place both are in. A
+// singleton, which is its parent's only one, has none: its parent is the
+// place.
+func (t resourceType) parentResource() (string, bool) {
+	segments := strings.Split(t.pattern, "/")
+	if t.singleton() || len(segments) < 4 {
+		return "", false
+	}
+	pattern := strings.Join(segments[:len(segments)-2], "/")
+	return pattern, resourcePatterns[t.shortcode][pattern]
 }
 
 // parentVariables returns the variables of the resource's name before its
@@ -426,6 +473,9 @@ func generateResource(g *protogen.GeneratedFile, t resourceType) error {
 	if len(references) > 0 {
 		g.P("References: map[string]string{", strings.Join(references, ", "), "},")
 	}
+	if i := slices.IndexFunc(attrs, func(a attribute) bool { return a.parent != nil }); i >= 0 {
+		g.P("Parent: ", fmt.Sprintf("%q", attrs[i].name), ",")
+	}
 	if id := t.idField(); id != nil {
 		g.P("ClientID: func(m *", model, ") ", g.QualifiedGoIdent(typesPackage.Ident("String")), " { return m.", camel(string(id.Desc.Name())), " },")
 		g.P("IDAttribute: ", fmt.Sprintf("%q", string(id.Desc.Name())), ",")
@@ -618,7 +668,7 @@ func generateCreate(g *protogen.GeneratedFile, t resourceType, model, message, c
 		template := "plan." + camel(string(t.launch.template))
 		g.P("if ", template, ".ValueString() != \"\" {")
 		g.P("return ", client, ".", t.launch.method.GoName, "(ctx, &", g.QualifiedGoIdent(t.launch.method.Input.GoIdent), "{")
-		g.P("Parent: ", parentExpression(t.pattern, "plan"), ",")
+		g.P("Parent: ", parentExpression(g, t, "plan"), ",")
 		g.P(fieldNamed(t.launch.method.Input, string(t.launch.template)).GoName, ": ", template, ".ValueString(),")
 		g.P(fieldNamed(t.launch.method.Input, string(t.launch.data)).GoName, ": ", t.launch.overrides, "(", lowerFirst(t.message.GoIdent.GoName), "ToProto(plan)),")
 		g.P("})")
@@ -632,7 +682,7 @@ func generateCreate(g *protogen.GeneratedFile, t resourceType, model, message, c
 		if fieldNamed(createInput, "parent") == nil {
 			return fmt.Errorf("Create%s's request has no parent", t.message.Desc.Name())
 		}
-		g.P("Parent: ", parentExpression(t.pattern, "plan"), ",")
+		g.P("Parent: ", parentExpression(g, t, "plan"), ",")
 	}
 	g.P(resourceField.GoName, ": ", lowerFirst(t.message.GoIdent.GoName), "ToProto(plan),")
 	g.P("})")
@@ -874,11 +924,18 @@ func generateListDataSource(g *protogen.GeneratedFile, t resourceType) error {
 		return fmt.Errorf("the resource's plural %q isn't distinct from its singular", t.plural)
 	}
 	var attrs []attribute
-	for _, v := range t.parentVariables() {
-		attrs = append(attrs, attribute{
+	for i, v := range t.parentVariables() {
+		a := attribute{
 			name: v, goName: camel(v), kind: "String", required: true,
 			doc: fmt.Sprintf("The %s whose %s to list.", words(v), words(t.plural)),
-		})
+		}
+		if i == len(t.parentVariables())-1 {
+			if pattern, ok := t.parentResource(); ok {
+				a.parent = &parentReference{service: t.shortcode, pattern: pattern, name: words(v)}
+				a.doc = fmt.Sprintf("The %s whose %s to list. %s", words(v), words(t.plural), a.parent.sentence())
+			}
+		}
+		attrs = append(attrs, a)
 	}
 	for _, f := range filters {
 		if slices.ContainsFunc(attrs, func(b attribute) bool { return b.name == f.name }) || f.name == snake(t.plural) {
@@ -931,7 +988,7 @@ func generateListDataSource(g *protogen.GeneratedFile, t resourceType) error {
 
 	var fields []string
 	if len(t.variables) > 1 {
-		fields = append(fields, "Parent: "+parentExpression(t.pattern, "m"))
+		fields = append(fields, "Parent: "+parentExpression(g, t, "m"))
 	}
 	for _, f := range filters {
 		fields = append(fields, f.goName+": "+conv{g}.toProto(f, "m."+f.goName))
@@ -1081,8 +1138,13 @@ func nameExpression(pattern, model string) string {
 
 // parentExpression returns the Go expression building a resource's parent
 // from a model's variables: "projects/" + plan.Project.ValueString() + ...
-func parentExpression(pattern, model string) string {
-	segments := strings.Split(pattern, "/")
+func parentExpression(g *protogen.GeneratedFile, t resourceType, model string) string {
+	if _, ok := t.parentResource(); ok {
+		// The parent's full name holds its whole place.
+		variables := t.parentVariables()
+		return conv{g}.framework("ParentPath") + "(" + model + "." + camel(variables[len(variables)-1]) + ")"
+	}
+	segments := strings.Split(t.pattern, "/")
 	return segmentsExpression(segments[:len(segments)-2], model)
 }
 

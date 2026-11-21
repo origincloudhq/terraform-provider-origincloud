@@ -31,7 +31,7 @@ resource "origincloud_iam_role_binding" "deploy" {
 # is the repository's number, which a rename doesn't change.
 resource "origincloud_iam_federated_credential" "github" {
   organization    = "my-org-123"
-  service_account = basename(origincloud_iam_service_account.deploy.name)
+  service_account = origincloud_iam_service_account.deploy.id
   display_name    = "GitHub Actions"
   issuer          = "https://token.actions.githubusercontent.com"
   conditions = {
@@ -43,7 +43,7 @@ resource "origincloud_iam_federated_credential" "github" {
 # GitLab CI jobs of one project, on its main branch.
 resource "origincloud_iam_federated_credential" "gitlab" {
   organization    = "my-org-123"
-  service_account = basename(origincloud_iam_service_account.deploy.name)
+  service_account = origincloud_iam_service_account.deploy.id
   display_name    = "GitLab CI"
   issuer          = "https://gitlab.com"
   conditions = {
@@ -62,7 +62,7 @@ resource "origincloud_iam_federated_credential" "gitlab" {
 - `display_name` (String) A name of your own, shown in the console; at most 100 characters. Changing it replaces the federated credential.
 - `issuer` (String) The identity provider whose tokens are trusted: a token's `iss`, matched exactly, an `https` URL that serves `/.well-known/openid-configuration`, such as `https://token.actions.githubusercontent.com`. Changing it replaces the federated credential.
 - `organization` (String) The organization the federated credential is in. Changing it replaces the federated credential.
-- `service_account` (String) The service account the federated credential is in. Changing it replaces the federated credential.
+- `service_account` (String) The service account the federated credential is in. Its `id`, the full resource name `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`. `organization` must be the one it is in. Changing it replaces the federated credential.
 
 ### Optional
 

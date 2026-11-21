@@ -51,7 +51,7 @@ func TestADNSPolicyStateMovesToTheResolverPolicyTypes(t *testing.T) {
 			want: map[string]string{
 				"id":              newAssociation,
 				"name":            "projects/p-1/regions/eu-central1/vpcs/v-1/resolverPolicyAssociations/office",
-				"vpc":             "v-1",
+				"vpc":             "//network.origincloudapis.eu/projects/p-1/regions/eu-central1/vpcs/v-1",
 				"resolver_policy": newPolicy,
 			},
 		},

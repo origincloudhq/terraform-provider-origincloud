@@ -6,6 +6,7 @@ package firewallsv1
 import (
 	context "context"
 	schema "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	validator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	types "github.com/hashicorp/terraform-plugin-framework/types"
 	framework "github.com/origincloudhq/terraform-provider-origincloud/internal/framework"
 	firewallsv1 "github.com/origincloudhq/terraform-provider-origincloud/internal/testapi/firewallsv1"
@@ -73,8 +74,9 @@ func ticketListSchema() schema.Schema {
 		MarkdownDescription: "",
 		Attributes: map[string]schema.Attribute{
 			"vault": schema.StringAttribute{
-				MarkdownDescription: "The vault whose tickets to list.",
+				MarkdownDescription: "The vault whose tickets to list. Its `id`, the full resource name `//vaults.origincloudapis.eu/vaults/{vault}`.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("vaults", "vaults/{vault}", "vault")},
 			},
 			"tickets": schema.ListNestedAttribute{
 				MarkdownDescription: "",
@@ -106,7 +108,7 @@ func ticketListDataSource() framework.ListDataSourceSpec[ticketListModel] {
 		Schema:   ticketListSchema(),
 		List: func(ctx context.Context, client *core.Client, m *ticketListModel) error {
 			m.Tickets = []ticketModel{}
-			page, err := firewallsv1.NewVaultClient(client).ListTickets(ctx, &firewallsv1.ListTicketsRequest{Parent: "vaults/" + m.Vault.ValueString()})
+			page, err := firewallsv1.NewVaultClient(client).ListTickets(ctx, &firewallsv1.ListTicketsRequest{Parent: framework.ParentPath(m.Vault)})
 			if err != nil {
 				return err
 			}

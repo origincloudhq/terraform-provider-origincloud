@@ -55,8 +55,9 @@ func securityGroupRuleSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"security_group": schema.StringAttribute{
-				MarkdownDescription: "The security group the security group rule is in. Changing it replaces the security group rule.",
+				MarkdownDescription: "The security group the security group rule is in. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/regions/{region}/securityGroups/{security_group}`. `project` and `region` must be the ones it is in. Changing it replaces the security group rule.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("network", "projects/{project}/regions/{region}/securityGroups/{security_group}", "security group")},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"name": schema.StringAttribute{
@@ -145,7 +146,7 @@ func securityGroupRuleFromProto(p *v1beta1.SecurityGroupRule, m *securityGroupRu
 	m.ID = id
 	m.Project = types.StringValue(values[0])
 	m.Region = types.StringValue(values[1])
-	m.SecurityGroup = types.StringValue(values[2])
+	m.SecurityGroup = framework.ParentOf("network", p.GetName())
 	m.Name = types.StringValue(p.GetName())
 	m.Direction = types.StringValue(p.GetDirection().String())
 	m.Protocol = types.StringValue(p.GetProtocol().String())
@@ -164,6 +165,7 @@ func securityGroupRuleResource() framework.ResourceSpec[securityGroupRuleModel, 
 		Pattern:    "projects/{project}/regions/{region}/securityGroups/{security_group}/rules/{rule}",
 		Service:    "network",
 		References: map[string]string{"peer_security_group": "network"},
+		Parent:     "security_group",
 		Schema:     securityGroupRuleSchema(),
 		Name:       func(m *securityGroupRuleModel) string { return m.Name.ValueString() },
 		ToProto:    securityGroupRuleToProto,
@@ -174,7 +176,7 @@ func securityGroupRuleResource() framework.ResourceSpec[securityGroupRuleModel, 
 		},
 		Create: func(ctx context.Context, client *core.Client, plan *securityGroupRuleModel) (*core.Operation[*v1beta1.SecurityGroupRule], error) {
 			return v1beta1.NewSecurityGroupRuleClient(client).CreateSecurityGroupRule(ctx, &v1beta1.CreateSecurityGroupRuleRequest{
-				Parent:            "projects/" + plan.Project.ValueString() + "/regions/" + plan.Region.ValueString() + "/securityGroups/" + plan.SecurityGroup.ValueString(),
+				Parent:            framework.ParentPath(plan.SecurityGroup),
 				SecurityGroupRule: securityGroupRuleToProto(plan),
 			})
 		},
@@ -245,8 +247,9 @@ func securityGroupRuleListSchema() schema1.Schema {
 				Required:            true,
 			},
 			"security_group": schema1.StringAttribute{
-				MarkdownDescription: "The security group whose security group rules to list.",
+				MarkdownDescription: "The security group whose security group rules to list. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/regions/{region}/securityGroups/{security_group}`. `project` and `region` must be the ones it is in.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("network", "projects/{project}/regions/{region}/securityGroups/{security_group}", "security group")},
 			},
 			"security_group_rules": schema1.ListNestedAttribute{
 				MarkdownDescription: "The security group rules listed, from every page.",
@@ -306,7 +309,7 @@ func securityGroupRuleListDataSource() framework.ListDataSourceSpec[securityGrou
 		Schema:   securityGroupRuleListSchema(),
 		List: func(ctx context.Context, client *core.Client, m *securityGroupRuleListModel) error {
 			m.SecurityGroupRules = []securityGroupRuleItemModel{}
-			for p, err := range v1beta1.NewSecurityGroupRuleClient(client).AllSecurityGroupRules(ctx, &v1beta1.ListSecurityGroupRulesRequest{Parent: "projects/" + m.Project.ValueString() + "/regions/" + m.Region.ValueString() + "/securityGroups/" + m.SecurityGroup.ValueString()}) {
+			for p, err := range v1beta1.NewSecurityGroupRuleClient(client).AllSecurityGroupRules(ctx, &v1beta1.ListSecurityGroupRulesRequest{Parent: framework.ParentPath(m.SecurityGroup)}) {
 				if err != nil {
 					return err
 				}

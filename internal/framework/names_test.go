@@ -292,3 +292,98 @@ func TestAResourceTakesTheStateOfTheTypeItReplaces(t *testing.T) {
 		}
 	}
 }
+
+const (
+	group     = "projects/p/regions/r/securityGroups/web"
+	groupFull = "//network.origincloudapis.eu/" + group
+	rule      = group + "/rules/ssh"
+)
+
+// A state that holds a child's parent as its bare id gets the parent's full
+// name, from the child's own name; a full name stays, and so does a state
+// without a name or a parent.
+func TestAParentOfVersion1IsUpgradedToItsFullName(t *testing.T) {
+	for _, tc := range []struct{ name, state, want string }{
+		{"a bare id", `{"id":"//network.origincloudapis.eu/` + rule + `","name":"` + rule + `","security_group":"web","project":"p"}`, groupFull},
+		{"a name that is full", `{"name":"//network.origincloudapis.eu/` + rule + `","security_group":"web"}`, groupFull},
+		{"a full name already", `{"name":"` + rule + `","security_group":"` + groupFull + `"}`, groupFull},
+		{"no parent", `{"name":"` + rule + `","security_group":null}`, ""},
+		{"no name", `{"security_group":"web"}`, "web"},
+	} {
+		upgraded, err := UpgradeRawParent("network", "security_group", []byte(tc.state))
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		var got map[string]any
+		if err := json.Unmarshal(upgraded, &got); err != nil {
+			t.Fatal(err)
+		}
+		if g, _ := got["security_group"].(string); g != tc.want {
+			t.Errorf("%s: the parent is %q, not %q", tc.name, g, tc.want)
+		}
+		again, err := UpgradeRawParent("network", "security_group", upgraded)
+		if err != nil || string(again) != string(upgraded) {
+			t.Errorf("%s: upgraded twice %s, %v", tc.name, again, err)
+		}
+	}
+	// A resource without a parent attribute has nothing to upgrade.
+	if got, err := UpgradeRawParent("pvs", "", []byte(`{"a":1}`)); err != nil || string(got) != `{"a":1}` {
+		t.Errorf("upgraded to %s, %v", got, err)
+	}
+}
+
+func TestAParentsFullNameAndPath(t *testing.T) {
+	if got := ParentOf("network", rule); got.ValueString() != groupFull {
+		t.Errorf("the parent of %s is %v", rule, got)
+	}
+	if got := ParentOf("network", "vaults/v"); !got.IsNull() {
+		t.Errorf("a name of one segment pair has the parent %v", got)
+	}
+	// The request takes the relative name, which a wildcard may end.
+	for _, tc := range []struct{ parent, want string }{
+		{groupFull, group},
+		{"//network.origincloudapis.eu/projects/p/regions/r/securityGroups/-", "projects/p/regions/r/securityGroups/-"},
+		{"web", "web"}, // refused by the plan, so never sent
+	} {
+		if got := ParentPath(types.StringValue(tc.parent)); got != tc.want {
+			t.Errorf("ParentPath(%q) = %q, want %q", tc.parent, got, tc.want)
+		}
+	}
+}
+
+func TestAParentReferenceMustBeTheParentsFullName(t *testing.T) {
+	const pattern = "projects/{project}/regions/{region}/securityGroups/{security_group}"
+	config := tfsdk.Config{
+		Schema: schema.Schema{Attributes: map[string]schema.Attribute{
+			"project":        schema.StringAttribute{Optional: true},
+			"region":         schema.StringAttribute{Optional: true},
+			"security_group": schema.StringAttribute{Optional: true},
+		}},
+		Raw: tftypes.NewValue(tftypes.Object{AttributeTypes: map[string]tftypes.Type{
+			"project": tftypes.String, "region": tftypes.String, "security_group": tftypes.String,
+		}}, map[string]tftypes.Value{
+			"project": tftypes.NewValue(tftypes.String, "p"), "region": tftypes.NewValue(tftypes.String, nil), "security_group": tftypes.NewValue(tftypes.String, nil),
+		}),
+	}
+	for _, tc := range []struct {
+		value types.String
+		valid bool
+	}{
+		{types.StringValue(groupFull), true},
+		{types.StringValue("//network.origincloudapis.eu/projects/p/regions/r/securityGroups/-"), true},
+		{types.StringNull(), true},
+		{types.StringUnknown(), true},
+		{types.StringValue("web"), false},
+		{types.StringValue(group), false},
+		{types.StringValue("//compute.origincloudapis.eu/" + group), false},
+		{types.StringValue("//network.origincloudapis.eu/projects/p/regions/r/vpcs/v"), false},
+		{types.StringValue("//network.origincloudapis.eu/projects/other/regions/r/securityGroups/web"), false}, // the project is p
+	} {
+		resp := &validator.StringResponse{}
+		ParentReference("network", pattern, "security group").ValidateString(context.Background(),
+			validator.StringRequest{Path: path.Root("security_group"), Config: config, ConfigValue: tc.value}, resp)
+		if resp.Diagnostics.HasError() == tc.valid {
+			t.Errorf("%v: %v", tc.value, resp.Diagnostics)
+		}
+	}
+}

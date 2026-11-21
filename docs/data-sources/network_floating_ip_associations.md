@@ -17,7 +17,7 @@ Lists a floating IP's associations: none or one.
 
 ### Required
 
-- `floating_ip` (String) The floating ip whose floating ip associations to list.
+- `floating_ip` (String) The floating ip whose floating ip associations to list. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/zones/{zone}/floatingIps/{floating_ip}`. `project` and `zone` must be the ones it is in.
 - `project` (String) The project whose floating ip associations to list.
 - `zone` (String) The zone whose floating ip associations to list.
 

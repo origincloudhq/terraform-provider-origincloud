@@ -6,6 +6,7 @@ package billingv1beta1
 import (
 	context "context"
 	schema "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	validator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	types "github.com/hashicorp/terraform-plugin-framework/types"
 	framework "github.com/origincloudhq/terraform-provider-origincloud/internal/framework"
 	v1beta1 "go.origincloud.eu/sdk/billing/v1beta1"
@@ -121,8 +122,9 @@ func legalDocumentVersionListSchema() schema.Schema {
 		MarkdownDescription: "Lists a legal document's published versions, the latest first.",
 		Attributes: map[string]schema.Attribute{
 			"legal_document": schema.StringAttribute{
-				MarkdownDescription: "The legal document whose legal document versions to list.",
+				MarkdownDescription: "The legal document whose legal document versions to list. Its `id`, the full resource name `//billing.origincloudapis.eu/legalDocuments/{legal_document}`.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("billing", "legalDocuments/{legal_document}", "legal document")},
 			},
 			"legal_document_versions": schema.ListNestedAttribute{
 				MarkdownDescription: "The legal document versions listed, from every page.",
@@ -186,7 +188,7 @@ func legalDocumentVersionListDataSource() framework.ListDataSourceSpec[legalDocu
 		Schema:   legalDocumentVersionListSchema(),
 		List: func(ctx context.Context, client *core.Client, m *legalDocumentVersionListModel) error {
 			m.LegalDocumentVersions = []legalDocumentVersionModel{}
-			for p, err := range v1beta1.NewLegalDocumentClient(client).AllLegalDocumentVersions(ctx, &v1beta1.ListLegalDocumentVersionsRequest{Parent: "legalDocuments/" + m.LegalDocument.ValueString()}) {
+			for p, err := range v1beta1.NewLegalDocumentClient(client).AllLegalDocumentVersions(ctx, &v1beta1.ListLegalDocumentVersionsRequest{Parent: framework.ParentPath(m.LegalDocument)}) {
 				if err != nil {
 					return err
 				}

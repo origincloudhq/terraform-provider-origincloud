@@ -17,7 +17,7 @@ The network interface a floating IP reaches.
 
 ### Required
 
-- `floating_ip` (String) The floating ip the floating ip association is in. Changing it replaces the floating ip association.
+- `floating_ip` (String) The floating ip the floating ip association is in. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/zones/{zone}/floatingIps/{floating_ip}`. `project` and `zone` must be the ones it is in. Changing it replaces the floating ip association.
 - `network_interface` (String) The full name of the network interface the address reaches, in the floating IP's project and zone. Changing it replaces the floating ip association.
 - `project` (String) The project the floating ip association is in. Changing it replaces the floating ip association.
 - `zone` (String) The zone the floating ip association is in. Changing it replaces the floating ip association.

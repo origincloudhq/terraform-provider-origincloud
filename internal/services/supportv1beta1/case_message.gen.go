@@ -6,6 +6,7 @@ package supportv1beta1
 import (
 	context "context"
 	schema "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	validator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	types "github.com/hashicorp/terraform-plugin-framework/types"
 	framework "github.com/origincloudhq/terraform-provider-origincloud/internal/framework"
 	core "go.origincloud.eu/sdk/core"
@@ -90,8 +91,9 @@ func caseMessageListSchema() schema.Schema {
 				Required:            true,
 			},
 			"case": schema.StringAttribute{
-				MarkdownDescription: "The case whose case messages to list.",
+				MarkdownDescription: "The case whose case messages to list. Its `id`, the full resource name `//support.origincloudapis.eu/organizations/{organization}/cases/{case}`. `organization` must be the one it is in.",
 				Required:            true,
+				Validators:          []validator.String{framework.ParentReference("support", "organizations/{organization}/cases/{case}", "case")},
 			},
 			"case_messages": schema.ListNestedAttribute{
 				MarkdownDescription: "The case messages listed, from every page.",
@@ -131,7 +133,7 @@ func caseMessageListDataSource() framework.ListDataSourceSpec[caseMessageListMod
 		Schema:   caseMessageListSchema(),
 		List: func(ctx context.Context, client *core.Client, m *caseMessageListModel) error {
 			m.CaseMessages = []caseMessageModel{}
-			for p, err := range v1beta1.NewCaseMessageClient(client).AllCaseMessages(ctx, &v1beta1.ListCaseMessagesRequest{Parent: "organizations/" + m.Organization.ValueString() + "/cases/" + m.Case.ValueString()}) {
+			for p, err := range v1beta1.NewCaseMessageClient(client).AllCaseMessages(ctx, &v1beta1.ListCaseMessagesRequest{Parent: framework.ParentPath(m.Case)}) {
 				if err != nil {
 					return err
 				}

@@ -19,7 +19,7 @@ Lists a VPC's resolver policy associations: none or one.
 
 - `project` (String) The project whose resolver policy associations to list.
 - `region` (String) The region whose resolver policy associations to list.
-- `vpc` (String) The vpc whose resolver policy associations to list.
+- `vpc` (String) The vpc whose resolver policy associations to list. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/regions/{region}/vpcs/{vpc}`. `project` and `region` must be the ones it is in.
 
 ### Read-Only
 

@@ -17,7 +17,7 @@ An ACL rule: accepts or drops the traffic it matches in one direction.
 
 ### Required
 
-- `acl` (String) The acl the acl rule is in. Changing it replaces the acl rule.
+- `acl` (String) The acl the acl rule is in. Its `id`, the full resource name `//network.origincloudapis.eu/projects/{project}/regions/{region}/acls/{acl}`. `project` and `region` must be the ones it is in. Changing it replaces the acl rule.
 - `action` (String) What the rule does with the traffic it matches. One of `ACCEPT`, `DROP`. Changing it replaces the acl rule.
 - `cidr_block` (String) The far side's range: where entering traffic comes from, or where leaving traffic goes to. Changing it replaces the acl rule.
 - `direction` (String) Which traffic the rule applies to. One of `INGRESS`, `EGRESS`. Changing it replaces the acl rule.
