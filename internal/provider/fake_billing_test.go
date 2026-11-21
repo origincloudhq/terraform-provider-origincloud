@@ -12,6 +12,7 @@ import (
 	"time"
 
 	billingv1beta1 "go.origincloud.eu/sdk/billing/v1beta1"
+	"google.golang.org/genproto/googleapis/type/date"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -29,6 +30,68 @@ var billingCountries = []*billingv1beta1.BillingCountry{
 	{Name: "billingCountries/DE", RegionCode: "DE", DisplayName: "Germany"},
 	{Name: "billingCountries/AT", RegionCode: "AT", DisplayName: "Austria", VatIdRequired: true},
 }
+
+// The legal documents the fake publishes: the terms, with two versions,
+// the second announced to take effect later, and a data processing
+// agreement with one; and the one acceptance of the default billing
+// account.
+var (
+	legalDocuments = []*billingv1beta1.LegalDocument{
+		{
+			Name: "legalDocuments/terms", DisplayName: "Terms of Service", AcceptanceRequired: true,
+			CurrentVersion: "//billing.origincloudapis.eu/legalDocuments/terms/versions/2026-06",
+			LatestVersion:  "//billing.origincloudapis.eu/legalDocuments/terms/versions/2026-12",
+		},
+		{
+			Name: "legalDocuments/dpa", DisplayName: "Data Processing Agreement", AcceptanceRequired: true,
+			CurrentVersion: "//billing.origincloudapis.eu/legalDocuments/dpa/versions/2026-06",
+			LatestVersion:  "//billing.origincloudapis.eu/legalDocuments/dpa/versions/2026-06",
+		},
+	}
+	legalVersions = []*billingv1beta1.LegalDocumentVersion{
+		{
+			Name: "legalDocuments/terms/versions/2026-06", DisplayName: "Terms of Service",
+			EffectiveDate: &date.Date{Year: 2026, Month: 6, Day: 1}, ChangeClass: billingv1beta1.LegalDocumentVersion_MATERIAL,
+			ChangeSummary: "First version", Sha256: "aa11", Markdown: "# Terms\n", Html: "<p>Terms</p>",
+			Uri: "https://example.test/legal/terms/2026-06", PdfUri: "https://example.test/legal/terms/2026-06.pdf",
+		},
+		{
+			Name: "legalDocuments/terms/versions/2026-12", DisplayName: "Terms of Service",
+			EffectiveDate: &date.Date{Year: 2026, Month: 12, Day: 1}, ChangeClass: billingv1beta1.LegalDocumentVersion_NOTICE,
+			ChangeSummary: "A new address", Sha256: "bb22", Markdown: "# Terms 2\n", Html: "<p>Terms 2</p>",
+			Uri: "https://example.test/legal/terms/2026-12", PdfUri: "https://example.test/legal/terms/2026-12.pdf",
+		},
+		{
+			Name: "legalDocuments/dpa/versions/2026-06", DisplayName: "Data Processing Agreement",
+			EffectiveDate: &date.Date{Year: 2026, Month: 6, Day: 1}, ChangeClass: billingv1beta1.LegalDocumentVersion_MATERIAL,
+			Sha256: "cc33", Markdown: "# DPA\n", Html: "<p>DPA</p>",
+		},
+	}
+	legalAcceptances = []*billingv1beta1.LegalAcceptance{
+		{
+			Name:                    defaultAccount + "/legalAcceptances/la-1",
+			LegalDocumentVersion:    "//billing.origincloudapis.eu/legalDocuments/terms/versions/2026-06",
+			Sha256:                  "aa11",
+			Accepter:                "//iam.origincloudapis.eu/users/u-me",
+			AcceptTime:              timestamppb.New(time.Date(2026, 6, 2, 8, 0, 0, 0, time.UTC)),
+			Method:                  billingv1beta1.LegalAcceptance_SIGNUP,
+			ActsAsBusiness:          true,
+			OrganizationDisplayName: "Acme GmbH",
+			BillingAddress:          &billingv1beta1.BillingAddress{Street: "Hauptstraße 1", City: "Berlin", PostalCode: "10115", RegionCode: "DE"},
+		},
+		{
+			Name:                    defaultAccount + "/legalAcceptances/la-2",
+			LegalDocumentVersion:    "//billing.origincloudapis.eu/legalDocuments/dpa/versions/2026-06",
+			Sha256:                  "cc33",
+			Accepter:                "//iam.origincloudapis.eu/users/u-me",
+			AcceptTime:              timestamppb.New(time.Date(2026, 6, 2, 8, 0, 1, 0, time.UTC)),
+			Method:                  billingv1beta1.LegalAcceptance_MIGRATION,
+			ActsAsBusiness:          true,
+			OrganizationDisplayName: "Acme GmbH",
+			VatId:                   "DE123456789",
+		},
+	}
+)
 
 // fakeBilling serves the billing service's REST API from memory, for the
 // organization acme, which has its default billing account, paying for its
@@ -98,6 +161,21 @@ func (f *fakeBilling) serve(w http.ResponseWriter, r *http.Request) {
 		writeMessage(w, &billingv1beta1.ListBillingCountriesResponse{BillingCountries: items, NextPageToken: next})
 	case len(s) == 2 && s[0] == "billingCountries" && r.Method == http.MethodGet:
 		writeNamed(w, path, billingCountries)
+	case path == "legalDocuments" && r.Method == http.MethodGet:
+		items, next := page(legalByName(legalDocuments), "legalDocuments/", r, func(*billingv1beta1.LegalDocument) bool { return true })
+		writeMessage(w, &billingv1beta1.ListLegalDocumentsResponse{LegalDocuments: items, NextPageToken: next})
+	case len(s) == 2 && s[0] == "legalDocuments" && r.Method == http.MethodGet:
+		writeNamed(w, path, legalDocuments)
+	case len(s) == 3 && s[0] == "legalDocuments" && s[2] == "versions" && r.Method == http.MethodGet:
+		items, next := page(legalByName(legalVersions), path+"/", r, func(*billingv1beta1.LegalDocumentVersion) bool { return true })
+		writeMessage(w, &billingv1beta1.ListLegalDocumentVersionsResponse{LegalDocumentVersions: items, NextPageToken: next})
+	case len(s) == 4 && s[0] == "legalDocuments" && s[2] == "versions" && r.Method == http.MethodGet:
+		writeNamed(w, path, legalVersions)
+	case len(s) == 5 && s[2] == "billingAccounts" && s[4] == "legalAcceptances" && r.Method == http.MethodGet:
+		items, next := page(legalByName(legalAcceptances), path+"/", r, func(*billingv1beta1.LegalAcceptance) bool { return true })
+		writeMessage(w, &billingv1beta1.ListLegalAcceptancesResponse{LegalAcceptances: items, NextPageToken: next})
+	case len(s) == 6 && s[2] == "billingAccounts" && s[4] == "legalAcceptances" && r.Method == http.MethodGet:
+		writeNamed(w, path, legalAcceptances)
 	case len(s) == 3 && s[0] == "organizations" && s[2] == "billingAccounts" && r.Method == http.MethodGet:
 		items, next := page(f.accounts, path+"/", r, func(*billingv1beta1.BillingAccount) bool { return true })
 		writeMessage(w, &billingv1beta1.ListBillingAccountsResponse{BillingAccounts: items, NextPageToken: next})
@@ -209,4 +287,13 @@ func wholeProfile(account *billingv1beta1.BillingAccount) string {
 		return "a billing address outside Germany needs a vat_id"
 	}
 	return ""
+}
+
+// legalByName returns the legal messages in all by their names.
+func legalByName[P interface{ GetName() string }](all []P) map[string]P {
+	byName := map[string]P{}
+	for _, p := range all {
+		byName[p.GetName()] = p
+	}
+	return byName
 }

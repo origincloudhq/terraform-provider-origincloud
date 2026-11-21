@@ -673,3 +673,261 @@ data "origincloud_iam_roles" "all" {}
 		},
 	})
 }
+
+const (
+	ciKey  = "origincloud_iam_service_account_key.ci"
+	ciKeys = "data.origincloud_iam_service_account_keys.ci"
+)
+
+// keyConfig returns a configuration of the provider calling fake, with an
+// EXTERNAL service account and keys on it: one, or none when none is set,
+// and more after them.
+func keyConfig(fake *fakeIAM, display string, keys bool, more string) string {
+	config := iamProvider(fake) + fmt.Sprintf(`
+resource "origincloud_iam_service_account" "ci" {
+  organization = "acme"
+  display_name = %q
+}
+`, display)
+	if keys {
+		config += `
+resource "origincloud_iam_service_account_key" "ci" {
+  organization    = "acme"
+  service_account = basename(origincloud_iam_service_account.ci.name)
+}
+`
+	}
+	return config + more
+}
+
+// checkCredentialsFile checks that the key's credentials file in the state
+// is the one the fake generated for it.
+func checkCredentialsFile(fake *fakeIAM) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		name := s.RootModule().Resources[ciKey].Primary.Attributes["name"]
+		fake.mu.Lock()
+		want := fake.credentials[name]
+		fake.mu.Unlock()
+		if want == "" {
+			return fmt.Errorf("the fake generated no credentials file for %s", name)
+		}
+		return resource.TestCheckResourceAttr(ciKey, "credentials_file", want)(s)
+	}
+}
+
+func TestServiceAccountKeysAreCreatedImportedReplacedAndDeleted(t *testing.T) {
+	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
+	fake := newFakeIAM(t)
+	created := keyConfig(fake, "CI", true, "")
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			// Created; the credentials file, which the API answers with
+			// only now, goes into the state as sensitive.
+			{
+				Config: created,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestMatchResourceAttr(ciKey, "name", regexp.MustCompile(`^organizations/acme/serviceAccounts/sa-[0-9]+/keys/key-[0-9]+$`)),
+					checkFullName(ciKey),
+					resource.TestCheckResourceAttr(ciKey, "algorithm", "ES256"),
+					resource.TestCheckResourceAttr(ciKey, "state", "ACTIVE"),
+					resource.TestCheckResourceAttr(ciKey, "creator", "//iam.origincloudapis.eu/users/u-me"),
+					resource.TestCheckResourceAttr(ciKey, "create_time", "2026-11-01T12:00:00Z"),
+					resource.TestCheckNoResourceAttr(ciKey, "delete_time"),
+					resource.TestCheckNoResourceAttr(ciKey, "last_use_time"),
+					checkCredentialsFile(fake),
+				),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectSensitiveValue(ciKey, tfjsonpath.New("credentials_file")),
+				},
+			},
+			// Refreshed, the file stays though no read answers with it.
+			{
+				RefreshState: true,
+				Check:        checkCredentialsFile(fake),
+			},
+			{
+				Config: created,
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectEmptyPlan(),
+				}},
+				Check: checkCredentialsFile(fake),
+			},
+			{
+				Config: created + `
+output "file" {
+  value = origincloud_iam_service_account_key.ci.credentials_file
+}
+`,
+				ExpectError: regexp.MustCompile(`Output refers to sensitive values`),
+			},
+			// Imported, a key has no credentials file.
+			{
+				Config:                  created,
+				ResourceName:            ciKey,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"credentials_file"},
+			},
+			{
+				Config:       created,
+				ResourceName: ciKey,
+				ImportState:  true,
+				ImportStateCheck: func(states []*terraform.InstanceState) error {
+					if file := states[0].Attributes["credentials_file"]; file != "" {
+						return fmt.Errorf("an imported key has the credentials file %q", file)
+					}
+					return nil
+				},
+			},
+			// A key deleted outside Terraform is DELETED, which is gone:
+			// the next apply creates another.
+			{
+				PreConfig: func() {
+					fake.mu.Lock()
+					defer fake.mu.Unlock()
+					for name := range fake.keys {
+						fake.keys[name].State = iamv1beta1.ServiceAccountKey_DELETED
+					}
+				},
+				Config: created,
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(ciKey, plancheck.ResourceActionCreate),
+				}},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestMatchResourceAttr(ciKey, "name", regexp.MustCompile(`/keys/key-[0-9]+$`)),
+					resource.TestCheckResourceAttr(ciKey, "state", "ACTIVE"),
+					checkCredentialsFile(fake),
+				),
+			},
+			// A new service account replaces the key: another account, and a
+			// key on it.
+			{
+				Config: keyConfig(fake, "CI pipeline", true, ""),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(ciServiceAccount, plancheck.ResourceActionReplace),
+					plancheck.ExpectResourceAction(ciKey, plancheck.ResourceActionReplace),
+				}},
+				Check: checkCredentialsFile(fake),
+			},
+		},
+		CheckDestroy: func(*terraform.State) error {
+			fake.mu.Lock()
+			defer fake.mu.Unlock()
+			for name, k := range fake.keys {
+				if k.GetState() != iamv1beta1.ServiceAccountKey_DELETED {
+					return fmt.Errorf("%s is %s", name, k.GetState())
+				}
+			}
+			if len(fake.keys) != 3 {
+				return fmt.Errorf("%d keys, not 3", len(fake.keys))
+			}
+			return nil
+		},
+	})
+}
+
+// A key create whose answer is lost is sent again with the same request
+// id; the private key went out with the lost answer only, so the API
+// refuses the repeat with CONFLICT, naming the key. The key goes into the
+// state tainted, and the next apply replaces it with one that has a file.
+func TestAServiceAccountKeyCreateWhoseAnswerIsLostIsReplacedByTheNextApply(t *testing.T) {
+	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
+	fake := newFakeIAM(t)
+	fake.loseKeyAnswer = true
+	config := keyConfig(fake, "CI", true, "")
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			{
+				Config:      config,
+				ExpectError: regexp.MustCompile(`(?s)CONFLICT:\s+the\s+key\s+organizations/acme/serviceAccounts/sa-1/keys/key-2\s+was\s+created\s+by\s+an\s+earlier\s+request.*tainted:\s+the\s+next\s+apply\s+replaces\s+it`),
+			},
+			{
+				Config:             config,
+				PlanOnly:           true,
+				ExpectNonEmptyPlan: true,
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PostApplyPreRefresh: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction(ciKey, plancheck.ResourceActionDestroyBeforeCreate),
+					},
+				},
+			},
+			{
+				Config: config,
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue(ciKey, tfjsonpath.New("name"), knownvalue.StringExact("organizations/acme/serviceAccounts/sa-1/keys/key-3")),
+				},
+				Check: checkCredentialsFile(fake),
+			},
+		},
+	})
+}
+
+func TestAKeyOfAWorkloadServiceAccountIsRefusedAndTheKeysAreListed(t *testing.T) {
+	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
+	fake := newFakeIAM(t)
+	lists := `
+resource "origincloud_iam_service_account_key" "second" {
+  organization    = "acme"
+  service_account = basename(origincloud_iam_service_account.ci.name)
+  depends_on      = [origincloud_iam_service_account_key.ci]
+}
+
+data "origincloud_iam_service_account_keys" "ci" {
+  organization    = "acme"
+  service_account = basename(origincloud_iam_service_account.ci.name)
+  depends_on      = [origincloud_iam_service_account_key.second]
+}
+`
+	unlisted := `
+data "origincloud_iam_service_account_keys" "ci" {
+  organization    = "acme"
+  service_account = basename(origincloud_iam_service_account.ci.name)
+}
+`
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			{
+				Config: iamProvider(fake) + `
+resource "origincloud_iam_service_account" "deploy" {
+  organization = "acme"
+  display_name = "Deploy"
+  type         = "WORKLOAD"
+}
+
+resource "origincloud_iam_service_account_key" "deploy" {
+  organization    = "acme"
+  service_account = basename(origincloud_iam_service_account.deploy.name)
+}
+`,
+				ExpectError: regexp.MustCompile(`a WORKLOAD one has no\s+key`),
+			},
+			// The fake answers one key per page: both are read, without a
+			// credentials file.
+			{
+				Config: keyConfig(fake, "CI", true, lists),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(ciKeys, "service_account_keys.#", "2"),
+					resource.TestCheckResourceAttrPair(ciKeys, "service_account_keys.0.name", ciKey, "name"),
+					resource.TestCheckResourceAttrPair(ciKeys, "service_account_keys.0.id", ciKey, "id"),
+					resource.TestCheckResourceAttrPair(ciKeys, "service_account_keys.1.name", "origincloud_iam_service_account_key.second", "name"),
+					resource.TestCheckResourceAttr(ciKeys, "service_account_keys.0.algorithm", "ES256"),
+					resource.TestCheckResourceAttr(ciKeys, "service_account_keys.0.state", "ACTIVE"),
+					resource.TestCheckNoResourceAttr(ciKeys, "service_account_keys.0.credentials_file"),
+				),
+			},
+			// A deleted key is left out of the list, once it is read again.
+			{
+				Config: keyConfig(fake, "CI", true, unlisted),
+			},
+			{
+				Config: keyConfig(fake, "CI", true, unlisted),
+				Check:  resource.TestCheckResourceAttr(ciKeys, "service_account_keys.#", "1"),
+			},
+		},
+	})
+}

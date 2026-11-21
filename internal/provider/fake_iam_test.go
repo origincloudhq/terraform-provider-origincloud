@@ -79,7 +79,11 @@ type iamBinding struct {
 // a connection that breaks off after the server acted does. A federated
 // credential is created only on an active WORKLOAD service account, with an
 // https issuer and a condition on an identity that never changes, as the
-// API checks; its delete leaves it DELETED.
+// API checks; its delete leaves it DELETED. A service account key is
+// created only on an active EXTERNAL service account, at most 10 that
+// aren't deleted; its credentials file is in its create's response only, a
+// repeat with the same request id is refused with 409 CONFLICT naming the
+// key, and its delete leaves it DELETED.
 type fakeIAM struct {
 	*httptest.Server
 
@@ -89,14 +93,19 @@ type fakeIAM struct {
 	bindings        map[string]*iamBinding
 	serviceAccounts map[string]*iamv1beta1.ServiceAccount
 	federated       map[string]*iamv1beta1.FederatedCredential
+	keys            map[string]*iamv1beta1.ServiceAccountKey
 	auditLog        []*iamv1beta1.AuditLogEntry
 	// secrets are the client secrets generated, by service account.
 	secrets map[string]string
+	// credentials are the credentials files generated, by key.
+	credentials map[string]string
 	// created are the resources each request id created.
 	created map[string]string
 	// loseCreateAnswer makes the next service account create close the
 	// connection instead of answering, once the account exists.
 	loseCreateAnswer bool
+	// loseKeyAnswer does the same for the next service account key create.
+	loseKeyAnswer bool
 	// calls are the mutations received, such as
 	// "DELETE organizations/acme/roleBindings/rb-1", and requestIDs their
 	// request ids, empty for a mutation that sent none.
@@ -116,7 +125,9 @@ func newFakeIAM(t *testing.T) *fakeIAM {
 		},
 		serviceAccounts: map[string]*iamv1beta1.ServiceAccount{},
 		federated:       map[string]*iamv1beta1.FederatedCredential{},
+		keys:            map[string]*iamv1beta1.ServiceAccountKey{},
 		secrets:         map[string]string{},
+		credentials:     map[string]string{},
 		created:         map[string]string{},
 	}
 	f.Server = httptest.NewServer(http.HandlerFunc(f.serve))
@@ -207,6 +218,16 @@ func (f *fakeIAM) serve(w http.ResponseWriter, r *http.Request) {
 		f.createFederatedCredential(w, strings.Join(s[:4], "/"), requestID, body)
 	case len(s) == 6 && s[0] == "organizations" && s[2] == "serviceAccounts" && s[4] == "federatedCredentials":
 		f.federatedCredential(w, r, path)
+	case len(s) == 5 && s[0] == "organizations" && s[2] == "serviceAccounts" && s[4] == "keys" && r.Method == http.MethodGet:
+		show := r.URL.Query().Get("showDeleted") == "true"
+		items, next := page(f.keys, path+"/", r, func(k *iamv1beta1.ServiceAccountKey) bool {
+			return show || k.GetState() != iamv1beta1.ServiceAccountKey_DELETED
+		})
+		writeMessage(w, &iamv1beta1.ListServiceAccountKeysResponse{ServiceAccountKeys: items, NextPageToken: next})
+	case len(s) == 5 && s[0] == "organizations" && s[2] == "serviceAccounts" && s[4] == "keys" && r.Method == http.MethodPost:
+		f.createServiceAccountKey(w, strings.Join(s[:4], "/"), requestID)
+	case len(s) == 6 && s[0] == "organizations" && s[2] == "serviceAccounts" && s[4] == "keys":
+		f.serviceAccountKey(w, r, path)
 	case len(s) == 3 && s[0] == "organizations" && s[2] == "auditLogEntries" && r.Method == http.MethodGet:
 		f.listAuditLog(w, r, path+"/")
 	case len(s) == 4 && s[0] == "organizations" && s[2] == "auditLogEntries" && r.Method == http.MethodGet:
@@ -438,6 +459,87 @@ func (f *fakeIAM) serviceAccount(w http.ResponseWriter, r *http.Request, name st
 				}
 			}
 			f.audit(strings.Split(name, "/")[1], "", "iam.service_account.revoke", a.GetMember(), nil)
+		}
+		writeMessage(w, &emptypb.Empty{})
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "INVALID_ARGUMENT", r.Method+" "+name+" isn't served")
+	}
+}
+
+func (f *fakeIAM) createServiceAccountKey(w http.ResponseWriter, account, requestID string) {
+	if name, ok := f.created[requestID]; ok && requestID != "" {
+		body, _ := json.Marshal(map[string]any{"error": map[string]any{
+			"code":    http.StatusConflict,
+			"status":  "FAILED_PRECONDITION",
+			"message": "the key " + name + " was created by an earlier request with this request_id; its private key was returned only to that request",
+			"details": []map[string]any{
+				{"@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": "CONFLICT", "domain": "origincloudapis.eu",
+					"metadata": map[string]string{"serviceAccountKey": name}},
+			},
+		}})
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write(body)
+		return
+	}
+	a, ok := f.serviceAccounts[account]
+	if !ok || a.GetState() != iamv1beta1.ServiceAccount_ACTIVE {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", account+" isn't an active service account")
+		return
+	}
+	if a.GetType() != iamv1beta1.ServiceAccount_EXTERNAL {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", account+" isn't an EXTERNAL service account: a WORKLOAD one has no key")
+		return
+	}
+	live := 0
+	for name, k := range f.keys {
+		if strings.HasPrefix(name, account+"/") && k.GetState() == iamv1beta1.ServiceAccountKey_ACTIVE {
+			live++
+		}
+	}
+	if live >= 10 {
+		writeError(w, http.StatusConflict, "CONFLICT", account+" has 10 keys already")
+		return
+	}
+	f.next++
+	k := &iamv1beta1.ServiceAccountKey{
+		Name:       fmt.Sprintf("%s/keys/key-%d", account, f.next),
+		Algorithm:  iamv1beta1.ServiceAccountKey_ES256,
+		State:      iamv1beta1.ServiceAccountKey_ACTIVE,
+		Creator:    "//iam.origincloudapis.eu/users/" + iamCaller,
+		CreateTime: timestamppb.New(time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)),
+	}
+	f.keys[k.Name] = k
+	f.created[requestID] = k.Name
+	created := proto.Clone(k).(*iamv1beta1.ServiceAccountKey)
+	created.CredentialsFile = `{"type":"service_account_key","name":"` + k.Name + `"}`
+	f.credentials[k.Name] = created.CredentialsFile
+	if f.loseKeyAnswer {
+		f.loseKeyAnswer = false
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			panic(err)
+		}
+		_ = conn.Close()
+		return
+	}
+	writeMessage(w, created)
+}
+
+func (f *fakeIAM) serviceAccountKey(w http.ResponseWriter, r *http.Request, name string) {
+	k, ok := f.keys[name]
+	if !ok {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", name+" doesn't exist")
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		writeMessage(w, k)
+	case http.MethodDelete:
+		// Deleting a deleted key succeeds.
+		if k.GetState() != iamv1beta1.ServiceAccountKey_DELETED {
+			k.State = iamv1beta1.ServiceAccountKey_DELETED
+			k.DeleteTime = timestamppb.New(time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC))
 		}
 		writeMessage(w, &emptypb.Empty{})
 	default:
