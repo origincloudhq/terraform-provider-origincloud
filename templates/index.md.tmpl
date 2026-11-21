@@ -55,7 +55,11 @@ It takes the first of:
    every exchange.
 2. The token `ORIGINCLOUD_OIDC_TOKEN` holds. It can't be renewed, so it
    serves until it expires.
-3. In a GitHub Actions job with `permissions: id-token: write`, the job's
+3. In an HCP Terraform run with dynamic credentials, the run's workload
+   identity token, `TFC_WORKLOAD_IDENTITY_TOKEN`, or the one of a tagged
+   audience, `TFC_WORKLOAD_IDENTITY_TOKEN_<TAG>`, when
+   `ORIGINCLOUD_TFC_WORKLOAD_IDENTITY_TAG` names the tag.
+4. In a GitHub Actions job with `permissions: id-token: write`, the job's
    token, which the provider asks GitHub for, for the audience
    `https://sts.origincloudapis.eu`. `ORIGINCLOUD_OIDC_AUDIENCE` asks for
    another audience, for a federated credential with an audience of its own.
@@ -71,6 +75,24 @@ The job needs `permissions: id-token: write`; nothing else is configured. See
 for the federated credential's conditions.
 
 {{ codefile "yaml" "examples/provider/github-actions.yml" }}
+
+### HCP Terraform
+
+The workspace sets the environment variable
+`TFC_WORKLOAD_IDENTITY_AUDIENCE` to `https://sts.origincloudapis.eu`, and
+HCP Terraform then gives each plan and apply a token in
+`TFC_WORKLOAD_IDENTITY_TOKEN`, which the provider takes with no other
+configuration. The federated credential uses the HCP Terraform preset: issuer
+`https://app.terraform.io`, with a condition on `terraform_organization_id`,
+and optionally on `terraform_workspace_id` and `terraform_run_phase`.
+
+A workspace that asks for tokens for other audiences too tags this one, with
+`TFC_WORKLOAD_IDENTITY_AUDIENCE_ORIGIN` for instance, and HCP Terraform
+then sets `TFC_WORKLOAD_IDENTITY_TOKEN_ORIGIN`. Set
+`ORIGINCLOUD_TFC_WORKLOAD_IDENTITY_TAG=ORIGIN` as an environment variable of
+the workspace, too, for the provider to read that token. With a tag set the
+provider reads that token alone, and fails naming the variable if the run has
+none.
 
 ### GitLab CI
 

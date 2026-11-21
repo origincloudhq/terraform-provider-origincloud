@@ -3,14 +3,14 @@
 page_title: "origincloud Provider"
 description: |-
   Manages Origin Cloud resources.
-  Credentials come from the environment, the first of: ORIGINCLOUD_ACCESS_TOKEN, an access token; ORIGINCLOUD_CLIENT_ID and ORIGINCLOUD_CLIENT_SECRET, a service account; a CI job's OIDC token, exchanged at the security token service for a WORKLOAD service account's access tokens; the session the origin CLI stored at its last origin id login; on an instance that runs as a service account, the instance's metadata service.
+  Credentials come from the environment, the first of: ORIGINCLOUD_ACCESS_TOKEN, an access token; ORIGINCLOUD_CLIENT_ID and ORIGINCLOUD_CLIENT_SECRET, a service account; a CI job's OIDC token, exchanged at the security token service for a WORKLOAD service account's access tokens (ORIGINCLOUD_OIDC_TOKEN_FILE, ORIGINCLOUD_OIDC_TOKEN, an HCP Terraform run's TFC_WORKLOAD_IDENTITY_TOKEN, or a GitHub Actions job's token); the session the origin CLI stored at its last origin id login; on an instance that runs as a service account, the instance's metadata service.
 ---
 
 # origincloud Provider
 
 Manages Origin Cloud resources.
 
-Credentials come from the environment, the first of: `ORIGINCLOUD_ACCESS_TOKEN`, an access token; `ORIGINCLOUD_CLIENT_ID` and `ORIGINCLOUD_CLIENT_SECRET`, a service account; a CI job's OIDC token, exchanged at the security token service for a `WORKLOAD` service account's access tokens; the session the `origin` CLI stored at its last `origin id login`; on an instance that runs as a service account, the instance's metadata service.
+Credentials come from the environment, the first of: `ORIGINCLOUD_ACCESS_TOKEN`, an access token; `ORIGINCLOUD_CLIENT_ID` and `ORIGINCLOUD_CLIENT_SECRET`, a service account; a CI job's OIDC token, exchanged at the security token service for a `WORKLOAD` service account's access tokens (`ORIGINCLOUD_OIDC_TOKEN_FILE`, `ORIGINCLOUD_OIDC_TOKEN`, an HCP Terraform run's `TFC_WORKLOAD_IDENTITY_TOKEN`, or a GitHub Actions job's token); the session the `origin` CLI stored at its last `origin id login`; on an instance that runs as a service account, the instance's metadata service.
 
 ## Example Usage
 
@@ -67,7 +67,11 @@ It takes the first of:
    every exchange.
 2. The token `ORIGINCLOUD_OIDC_TOKEN` holds. It can't be renewed, so it
    serves until it expires.
-3. In a GitHub Actions job with `permissions: id-token: write`, the job's
+3. In an HCP Terraform run with dynamic credentials, the run's workload
+   identity token, `TFC_WORKLOAD_IDENTITY_TOKEN`, or the one of a tagged
+   audience, `TFC_WORKLOAD_IDENTITY_TOKEN_<TAG>`, when
+   `ORIGINCLOUD_TFC_WORKLOAD_IDENTITY_TAG` names the tag.
+4. In a GitHub Actions job with `permissions: id-token: write`, the job's
    token, which the provider asks GitHub for, for the audience
    `https://sts.origincloudapis.eu`. `ORIGINCLOUD_OIDC_AUDIENCE` asks for
    another audience, for a federated credential with an audience of its own.
@@ -104,6 +108,24 @@ jobs:
       - run: terraform init
       - run: terraform apply -auto-approve
 ```
+
+### HCP Terraform
+
+The workspace sets the environment variable
+`TFC_WORKLOAD_IDENTITY_AUDIENCE` to `https://sts.origincloudapis.eu`, and
+HCP Terraform then gives each plan and apply a token in
+`TFC_WORKLOAD_IDENTITY_TOKEN`, which the provider takes with no other
+configuration. The federated credential uses the HCP Terraform preset: issuer
+`https://app.terraform.io`, with a condition on `terraform_organization_id`,
+and optionally on `terraform_workspace_id` and `terraform_run_phase`.
+
+A workspace that asks for tokens for other audiences too tags this one, with
+`TFC_WORKLOAD_IDENTITY_AUDIENCE_ORIGIN` for instance, and HCP Terraform
+then sets `TFC_WORKLOAD_IDENTITY_TOKEN_ORIGIN`. Set
+`ORIGINCLOUD_TFC_WORKLOAD_IDENTITY_TAG=ORIGIN` as an environment variable of
+the workspace, too, for the provider to read that token. With a tag set the
+provider reads that token alone, and fails naming the variable if the run has
+none.
 
 ### GitLab CI
 
