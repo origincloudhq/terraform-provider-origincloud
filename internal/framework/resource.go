@@ -70,6 +70,10 @@ type ResourceSpec[M any, P proto.Message] struct {
 	// for a child of another resource such as a security group's rule; the
 	// state of version 1 held the parent's bare id.
 	Parent string
+	// Oneofs are the members of each oneof among the top-level
+	// attributes; the state of version 2 held a member that isn't the one
+	// set as its zero value when its fields weren't a oneof yet.
+	Oneofs [][]string
 
 	// Pattern is the pattern of the resource's names, which an imported
 	// name must have, such as projects/{project}/zones/{zone}/volumes/{volume}.

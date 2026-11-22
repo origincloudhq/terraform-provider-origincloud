@@ -403,6 +403,7 @@ func keyResource() framework.ResourceSpec[keyModel, *firewallsv1.Key] {
 		TypeName:  "_keys_key",
 		Pattern:   "projects/{project}/keys/{key}",
 		Service:   "keys",
+		Oneofs:    [][]string{{"seed", "imported"}, {"sign", "encrypt"}, {"zone", "region"}},
 		Schema:    keySchema(),
 		Name:      func(m *keyModel) string { return m.Name.ValueString() },
 		ToProto:   keyToProto,

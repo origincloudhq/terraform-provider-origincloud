@@ -77,8 +77,7 @@ data sources are generated from the API definitions in
 | Data source | `origincloud_network_floating_ip_associations` | A floating IP's association |
 | Data source | `origincloud_network_resolver_policies` | The resolver policies in a region |
 | Data source | `origincloud_network_resolver_policy_associations` | A VPC's resolver policy association |
-| Resource | `origincloud_iam_service_account` | A credential of an organization for software, and its client secret |
-| Resource | `origincloud_iam_service_account_key` | A key pair an `EXTERNAL` service account authenticates with, and its credentials file |
+| Resource | `origincloud_iam_service_account` | An identity of an organization for software |
 | Resource | `origincloud_iam_role_binding` | One role granted to one member, organization-wide or in one project |
 | Resource | `origincloud_iam_federated_credential` | A `WORKLOAD` service account's trust in a CI provider's OIDC tokens |
 | Data source | `origincloud_iam_role` | A predefined set of permissions |
@@ -87,7 +86,8 @@ data sources are generated from the API definitions in
 | Data source | `origincloud_iam_permissions` | Every permission |
 | Data source | `origincloud_iam_role_bindings` | An organization's role bindings, or your own in every organization |
 | Data source | `origincloud_iam_service_accounts` | An organization's service accounts |
-| Data source | `origincloud_iam_service_account_keys` | A service account's keys |
+| Data source | `origincloud_iam_service_account_key` | A key an `EXTERNAL` service account authenticates with, by its public metadata |
+| Data source | `origincloud_iam_service_account_keys` | A service account's keys, by their public metadata |
 | Data source | `origincloud_iam_federated_credentials` | A service account's federated credentials |
 | Data source | `origincloud_iam_user` | You, as the platform knows you |
 | Data source | `origincloud_iam_audit_log_entry` | One recorded change to who may do what |
@@ -176,12 +176,15 @@ provider's own key, which both check.
 
 ## Configuration
 
-Credentials come from the environment, the first of:
+Credentials come from `credentials_file`, when it is set, and otherwise
+from the environment, the first of:
 
 1. `ORIGINCLOUD_ACCESS_TOKEN`: an access token, sent as it is.
-2. `ORIGINCLOUD_CLIENT_ID` and `ORIGINCLOUD_CLIENT_SECRET`: a service account's
-   credential, exchanged for access tokens as they expire. This is what
-   automation outside CI should use.
+2. `ORIGINCLOUD_CREDENTIALS_FILE`: the path of a service account key's
+   credentials file, which `origin iam service-accounts keys create` or the
+   console saved. The provider signs an assertion with the key and exchanges
+   it at the security token service for the account's access tokens, again
+   before each expires. This is what automation outside CI should use.
 3. A CI job's OIDC token, exchanged at the security token service
    (`https://sts.origincloudapis.eu`) for a `WORKLOAD` service account's
    access tokens, so that no secret is stored in the CI system: the token in
@@ -206,6 +209,14 @@ Credentials come from the environment, the first of:
 |---|---|
 | `region` | The region whose front door the provider calls, such as `eu-central1`. Every front door serves every resource; a region only picks the nearest. A global service, such as location, is always called at its regionless host. Defaults to `ORIGINCLOUD_REGION`, and to the regionless endpoint when that is unset. |
 | `endpoint` | The URL every call goes to instead, such as a test server's. |
+| `credentials_file` | The path of a service account key's credentials file, the provider's credentials before any of the environment's. |
+
+The provider has no resource that creates a service account key, and no
+data source returns one: the API answers with the private key once, which a
+resource would keep in the state. Create a key with the CLI or the console
+and hand its file over; the
+[provider's documentation](docs/index.md#why-there-is-no-key-resource) says
+more, and how to upgrade a state that holds a key from v0.21.
 
 ## Behaviour
 
@@ -216,9 +227,10 @@ Credentials come from the environment, the first of:
   attribute's description says when it does.
 - **Failed creates.** A resource whose creation failed after it came to exist,
   such as a volume whose storage couldn't be created, is kept in the state as
-  tainted, and the next apply replaces it. So is a service account whose
-  create answer was lost: the API refuses the repeated create, as the client
-  secret went out with the lost answer only.
+  tainted, and the next apply replaces it. So is a resource with a secret,
+  such as a generated key pair, whose create answer was lost: the API
+  refuses the repeated create, as the secret went out with the lost answer
+  only.
 - **Deleted resources.** A resource deleted outside Terraform, or left in a
   terminal state such as an instance's `TERMINATED`, leaves the state at the
   next refresh, and the next apply creates it again.

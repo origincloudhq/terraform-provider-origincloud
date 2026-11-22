@@ -23,9 +23,11 @@ import (
 
 // StateVersion is the version of every resource's state schema. Version 0
 // held the relative name as id, and a urn; version 1 held a child's parent
-// attribute as the parent's bare id. The upgrades from them stay, as the
-// readers of the old forms.
-const StateVersion = 2
+// attribute as the parent's bare id; version 2 held the members of a oneof
+// that weren't one yet, such as a route's gateways, as their zero values
+// when unset. The upgrades from them stay, as the readers of the old
+// forms.
+const StateVersion = 3
 
 // FullName returns the full resource name of the resource of service, a
 // short code such as "pvs", whose relative name the API answered with. A
@@ -155,13 +157,54 @@ func RelativeResourceName(service, name string) string {
 	return name
 }
 
-// UpgradeState upgrades the states of versions 0 and 1, which Terraform
+// UpgradeRawOneofs upgrades the JSON of a state written while the members
+// of a oneof, each of oneofs, were plain fields, which held the ones not
+// set as their zero values, "", false or 0: when exactly one member holds
+// another value, it is the one set, and the others become null, as a read
+// answers now. Any other state, such as one whose members are null
+// already, is left as it is.
+func UpgradeRawOneofs(oneofs [][]string, raw []byte) ([]byte, error) {
+	if len(oneofs) == 0 {
+		return raw, nil
+	}
+	var state map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &state); err != nil {
+		return nil, fmt.Errorf("the state isn't a JSON object: %w", err)
+	}
+	zero := func(v json.RawMessage) bool {
+		switch strings.TrimSpace(string(v)) {
+		case `""`, "false", "0":
+			return true
+		}
+		return false
+	}
+	for _, members := range oneofs {
+		set := 0
+		for _, m := range members {
+			if v, ok := state[m]; ok && string(v) != "null" && !zero(v) {
+				set++
+			}
+		}
+		if set != 1 {
+			continue
+		}
+		for _, m := range members {
+			if v, ok := state[m]; ok && zero(v) {
+				state[m] = json.RawMessage("null")
+			}
+		}
+	}
+	return json.Marshal(state)
+}
+
+// UpgradeState upgrades the states of versions 0, 1 and 2, which Terraform
 // hands over as JSON of the old schema: what it holds that the schema no
 // longer has is dropped, and what the schema has that it doesn't is null.
 func (r *Resource[M, P]) UpgradeState(context.Context) map[int64]resource.StateUpgrader {
 	return map[int64]resource.StateUpgrader{
 		0: {StateUpgrader: r.upgradeFromVersion0},
 		1: {StateUpgrader: r.upgradeFromVersion1},
+		2: {StateUpgrader: r.upgradeFromVersion2},
 	}
 }
 
@@ -171,13 +214,26 @@ func (r *Resource[M, P]) upgradeFromVersion0(ctx context.Context, req resource.U
 		if err != nil {
 			return nil, err
 		}
-		return UpgradeRawParent(r.spec.Service, r.spec.Parent, upgraded)
+		if upgraded, err = UpgradeRawParent(r.spec.Service, r.spec.Parent, upgraded); err != nil {
+			return nil, err
+		}
+		return UpgradeRawOneofs(r.spec.Oneofs, upgraded)
 	})
 }
 
 func (r *Resource[M, P]) upgradeFromVersion1(ctx context.Context, req resource.UpgradeStateRequest, resp *resource.UpgradeStateResponse) {
 	r.upgrade(ctx, req, resp, func(raw []byte) ([]byte, error) {
-		return UpgradeRawParent(r.spec.Service, r.spec.Parent, raw)
+		upgraded, err := UpgradeRawParent(r.spec.Service, r.spec.Parent, raw)
+		if err != nil {
+			return nil, err
+		}
+		return UpgradeRawOneofs(r.spec.Oneofs, upgraded)
+	})
+}
+
+func (r *Resource[M, P]) upgradeFromVersion2(ctx context.Context, req resource.UpgradeStateRequest, resp *resource.UpgradeStateResponse) {
+	r.upgrade(ctx, req, resp, func(raw []byte) ([]byte, error) {
+		return UpgradeRawOneofs(r.spec.Oneofs, raw)
 	})
 }
 

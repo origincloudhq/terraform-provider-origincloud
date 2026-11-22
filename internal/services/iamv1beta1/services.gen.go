@@ -14,7 +14,6 @@ func Resources() []func() resource.Resource {
 		framework.NewResource(federatedCredentialResource()),
 		framework.NewResource(roleBindingResource()),
 		framework.NewResource(serviceAccountResource()),
-		framework.NewResource(serviceAccountKeyResource()),
 	}
 }
 
@@ -30,6 +29,7 @@ func DataSources() []func() datasource.DataSource {
 		framework.NewListDataSource(roleListDataSource()),
 		framework.NewListDataSource(roleBindingListDataSource()),
 		framework.NewListDataSource(serviceAccountListDataSource()),
+		framework.NewDataSource(serviceAccountKeyDataSource()),
 		framework.NewListDataSource(serviceAccountKeyListDataSource()),
 		framework.NewDataSource(userDataSource()),
 	}

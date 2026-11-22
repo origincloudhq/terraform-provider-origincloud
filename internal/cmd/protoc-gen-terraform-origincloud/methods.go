@@ -50,7 +50,6 @@ var methodsNotManaged = []notManaged{
 	{"origincloud.dns.v1beta1.RecordSetService.BatchChangeRecordSets", "several record sets' changes at once, which each origincloud_dns_record_set makes on its own"},
 	{"origincloud.iam.v1beta1.PermissionService.TestIamPermissions", "a check of the caller's own permissions, not state"},
 	{"origincloud.network.v1beta1.ResolverPolicyService.SetDefaultResolverPolicy", "moves the project's default to another policy, which has no clear to pair it with"},
-	{"origincloud.iam.v1beta1.ServiceAccountService.RotateServiceAccountSecret", "an action that replaces the client secret, which origincloud_iam_service_account holds from its create"},
 	{"origincloud.iam.v1beta1.UserService.LookupUser", "finds a user by an email address, which origincloud_iam_user doesn't take"},
 	{"origincloud.kms.v1beta1.GrantService.RenewGrant", "extends a grant's lifetime, an action rather than configuration"},
 	{"origincloud.kms.v1beta1.KeyService.Decrypt", "a cryptographic operation on data, not state"},

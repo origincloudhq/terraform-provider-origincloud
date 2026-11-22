@@ -98,7 +98,11 @@ to the plugin or `internal/framework`.
   relative. It rewrites the `id`, and the references of the types the API
   names, to full names, and drops what the schema no longer has. Version 1
   held a child's parent as a bare id, which version 2 holds as the parent's
-  full name, derived from the child's own name. A change of
+  full name, derived from the child's own name. Version 2 held the members
+  of a oneof that were plain fields then, such as a security group rule's
+  peers, as their zero values when unset; version 3 holds them null, as a
+  read answers now, so that the first plan after the upgrade replaces
+  nothing. A change of
   a resource's state that needs its own upgrade raises the version and keeps
   this one. `testdata/v0.18.0` holds a state a release wrote, which the
   tests upgrade and plan.
@@ -247,6 +251,20 @@ to the plugin or `internal/framework`.
   lists it. Nothing in the API marks such a type, so each is declared in
   `outside.go`, with the reason, which generation checks against the API,
   as it does secrets: one the API doesn't create, or deletes, fails it.
+- A resource type whose create answers with a credential to the API, such
+  as a service account key's private key (its `credentials_file`), is a
+  **credential type**: as a resource, the credential would land in the
+  state, where anyone who can read it could act as the account. So
+  Terraform never creates, changes or deletes one; it is a data source,
+  with its plural's when the service lists it, and the credential's field
+  is in no schema. A key is created with the CLI or the console and handed
+  over. Nothing in the API marks such a type, so each is declared in
+  `credentials.go`, with its field and the reason, which generation checks
+  against the API, as it does secrets: one the API doesn't create, or
+  whose field isn't an output-only string, fails it. A test over the
+  provider's schema (`TestNoResourceOrDataSourceReturnsAPrivateKey`) fails
+  on any attribute that could hold a private key, or any sensitive one not
+  listed in it.
 - A resource that keeps a history of one field, such as a launch template's
   recipe (AIP-162), is a **revision**: the field is `REQUIRED` and
   `IMMUTABLE`, which would replace the resource when it changes, so each is

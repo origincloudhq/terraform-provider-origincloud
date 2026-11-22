@@ -3,12 +3,12 @@
 page_title: "origincloud_network_route Resource - origincloud"
 subcategory: ""
 description: |-
-  A route: traffic to destination leaves through one gateway. Set exactly one of internet_gateway and nat_gateway.
+  A route: traffic to destination leaves through one gateway. Set exactly one of internet_gateway and nat_gateway: they are the oneof target.
 ---
 
 # origincloud_network_route (Resource)
 
-A route: traffic to `destination` leaves through one gateway. Set exactly one of `internet_gateway` and `nat_gateway`.
+A route: traffic to `destination` leaves through one gateway. Set exactly one of `internet_gateway` and `nat_gateway`: they are the oneof `target`.
 
 
 
