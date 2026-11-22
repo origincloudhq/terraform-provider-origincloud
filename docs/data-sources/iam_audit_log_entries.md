@@ -28,6 +28,7 @@ Lists an organization's audit log entries, most recent first, optionally only a 
 
 Read-Only:
 
+- `acting_party` (String) Who acted for `actor` when the change was made: the hosted MCP server, by the SPIFFE id of its workload, when `actor` made the change through it. Empty when no one acted for `actor`.
 - `action` (String) What was done, as a permission key names it, such as `iam.role.assign`.
 - `actor` (String) The full name of who made the change: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, `//iam.origincloudapis.eu/serviceAgents/{service_agent}` for a platform service agent, or `//iam.origincloudapis.eu/services/{service}` for a change the platform made itself.
 - `details` (Map of String) Details of the change that depend on the action, such as the `role` granted or a service account's `display_name`.
