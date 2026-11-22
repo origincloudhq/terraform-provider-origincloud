@@ -377,12 +377,12 @@ func (f *fakeNetwork) check(parent string, m networkResource) *networkRefusal {
 		if m.Destination != "0.0.0.0/0" && m.Destination != "::/0" {
 			return networkInvalid("destination %q isn't a default route", m.Destination)
 		}
-		if (m.InternetGateway == "") == (m.NatGateway == "") {
+		if m.GetTarget() == nil {
 			return networkInvalid("set exactly one of internet_gateway and nat_gateway")
 		}
 		table := f.resources[parent].(*networkv1beta1.RouteTable)
-		if m.InternetGateway != "" && f.vpcOf(m.InternetGateway) != table.Vpc {
-			return networkInvalid("%s isn't in the route table's VPC", m.InternetGateway)
+		if igw := m.GetInternetGateway(); igw != "" && f.vpcOf(igw) != table.Vpc {
+			return networkInvalid("%s isn't in the route table's VPC", igw)
 		}
 	case *networkv1beta1.RouteTableAssociation:
 		if f.vpcOf(m.RouteTable) != f.vpcOf(parent) {
@@ -394,24 +394,19 @@ func (f *fakeNetwork) check(parent string, m networkResource) *networkRefusal {
 	case *networkv1beta1.SecurityGroup:
 		return networkInRegion(parent, m.Vpc)
 	case *networkv1beta1.SecurityGroupRule:
-		peers := 0
-		for _, set := range []bool{m.CidrBlock != "", m.PeerSecurityGroup != "", m.SameGroup} {
-			if set {
-				peers++
-			}
-		}
-		if peers != 1 {
+		if _, same := m.GetPeer().(*networkv1beta1.SecurityGroupRule_SameGroup); m.GetPeer() == nil || same && !m.GetSameGroup() {
 			return networkInvalid("set exactly one of cidr_block, peer_security_group and same_group")
 		}
-		if m.PeerSecurityGroup == parent {
+		peer := m.GetPeerSecurityGroup()
+		if peer == parent {
 			return networkInvalid("peer_security_group is the rule's own group: set same_group")
 		}
-		if m.PeerSecurityGroup != "" && f.vpcOf(m.PeerSecurityGroup) != f.vpcOf(parent) {
-			return networkInvalid("%s isn't in the group's VPC", m.PeerSecurityGroup)
+		if peer != "" && f.vpcOf(peer) != f.vpcOf(parent) {
+			return networkInvalid("%s isn't in the group's VPC", peer)
 		}
-		if m.CidrBlock != "" {
-			if _, err := netip.ParsePrefix(m.CidrBlock); err != nil {
-				return networkInvalid("cidr_block %q isn't an address range", m.CidrBlock)
+		if _, ok := m.GetPeer().(*networkv1beta1.SecurityGroupRule_CidrBlock); ok {
+			if _, err := netip.ParsePrefix(m.GetCidrBlock()); err != nil {
+				return networkInvalid("cidr_block %q isn't an address range", m.GetCidrBlock())
 			}
 		}
 		return networkPorts(m.FirstPort, m.LastPort)

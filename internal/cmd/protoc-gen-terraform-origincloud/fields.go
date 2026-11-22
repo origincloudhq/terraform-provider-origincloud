@@ -203,6 +203,9 @@ func attributes(t resourceType, forResource bool, prefix string) ([]attribute, e
 	}
 	s := scope{t: t, forResource: forResource, computed: !forResource, prefix: prefix, seen: []protoreflect.FullName{t.message.Desc.FullName()}}
 	for _, f := range t.message.Fields {
+		if isCredentialField(t, f) {
+			continue // never in the state
+		}
 		a, err := fieldAttribute(s, f)
 		if err == nil {
 			err = applySecret(t, &a, forResource)

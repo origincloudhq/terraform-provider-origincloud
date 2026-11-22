@@ -30,7 +30,7 @@ type routeModel struct {
 
 func routeSchema() schema.Schema {
 	return schema.Schema{
-		MarkdownDescription: "A route: traffic to `destination` leaves through one gateway. Set exactly one of `internet_gateway` and `nat_gateway`.",
+		MarkdownDescription: "A route: traffic to `destination` leaves through one gateway. Set exactly one of `internet_gateway` and `nat_gateway`: they are the oneof `target`.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				MarkdownDescription: "The route's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/routeTables/{route_table}/routes/{route}`: what an argument that refers to the route takes. `name` is the relative name, without the host.",
@@ -67,27 +67,32 @@ func routeSchema() schema.Schema {
 				MarkdownDescription: "The full name of the internet gateway of the table's VPC to send the traffic to. Changing it replaces the route.",
 				Optional:            true,
 				Computed:            true,
-				Validators:          []validator.String{framework.FullNameReference()},
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()},
+				Validators:          []validator.String{framework.FullNameReference(), framework.Oneof{Others: []string{"nat_gateway"}}},
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), framework.OneofOthers{"nat_gateway"}, stringplanmodifier.RequiresReplace()},
 			},
 			"nat_gateway": schema.StringAttribute{
 				MarkdownDescription: "The full name of the NAT gateway in the table's VPC to send the traffic to, for the IPv4 default route only: a NAT gateway translates IPv4 only. Named in the gateway's own zone; a name with another zone is refused with `INVALID_ARGUMENT`. Changing it replaces the route.",
 				Optional:            true,
 				Computed:            true,
-				Validators:          []validator.String{framework.FullNameReference()},
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()},
+				Validators:          []validator.String{framework.FullNameReference(), framework.Oneof{Others: []string{"internet_gateway"}}},
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), framework.OneofOthers{"internet_gateway"}, stringplanmodifier.RequiresReplace()},
 			},
 		},
 	}
 }
 
 func routeToProto(m *routeModel) *v1beta1.Route {
-	return &v1beta1.Route{
-		Name:            m.Name.ValueString(),
-		Destination:     m.Destination.ValueString(),
-		InternetGateway: m.InternetGateway.ValueString(),
-		NatGateway:      m.NatGateway.ValueString(),
+	out := &v1beta1.Route{
+		Name:        m.Name.ValueString(),
+		Destination: m.Destination.ValueString(),
 	}
+	switch {
+	case framework.IsSet(m.InternetGateway):
+		out.Target = &v1beta1.Route_InternetGateway{InternetGateway: m.InternetGateway.ValueString()}
+	case framework.IsSet(m.NatGateway):
+		out.Target = &v1beta1.Route_NatGateway{NatGateway: m.NatGateway.ValueString()}
+	}
+	return out
 }
 
 func routeFromProto(p *v1beta1.Route, m *routeModel) error {
@@ -105,8 +110,8 @@ func routeFromProto(p *v1beta1.Route, m *routeModel) error {
 	m.RouteTable = framework.ParentOf("network", p.GetName())
 	m.Name = types.StringValue(p.GetName())
 	m.Destination = types.StringValue(p.GetDestination())
-	m.InternetGateway = types.StringValue(p.GetInternetGateway())
-	m.NatGateway = types.StringValue(p.GetNatGateway())
+	m.InternetGateway = framework.When(framework.Is[*v1beta1.Route_InternetGateway](p.GetTarget()), types.StringValue(p.GetInternetGateway()), types.StringNull())
+	m.NatGateway = framework.When(framework.Is[*v1beta1.Route_NatGateway](p.GetTarget()), types.StringValue(p.GetNatGateway()), types.StringNull())
 	return nil
 }
 
@@ -117,6 +122,7 @@ func routeResource() framework.ResourceSpec[routeModel, *v1beta1.Route] {
 		Service:    "network",
 		References: map[string]string{"internet_gateway": "network", "nat_gateway": "network"},
 		Parent:     "route_table",
+		Oneofs:     [][]string{{"internet_gateway", "nat_gateway"}},
 		Schema:     routeSchema(),
 		Name:       func(m *routeModel) string { return m.Name.ValueString() },
 		ToProto:    routeToProto,
@@ -162,8 +168,8 @@ func routeItemFromProto(p *v1beta1.Route, m *routeItemModel) error {
 	m.ID = id
 	m.Name = types.StringValue(p.GetName())
 	m.Destination = types.StringValue(p.GetDestination())
-	m.InternetGateway = types.StringValue(p.GetInternetGateway())
-	m.NatGateway = types.StringValue(p.GetNatGateway())
+	m.InternetGateway = framework.When(framework.Is[*v1beta1.Route_InternetGateway](p.GetTarget()), types.StringValue(p.GetInternetGateway()), types.StringNull())
+	m.NatGateway = framework.When(framework.Is[*v1beta1.Route_NatGateway](p.GetTarget()), types.StringValue(p.GetNatGateway()), types.StringNull())
 	return nil
 }
 

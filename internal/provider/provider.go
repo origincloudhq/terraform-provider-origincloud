@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -27,8 +28,9 @@ type originCloud struct {
 }
 
 type config struct {
-	Region   types.String `tfsdk:"region"`
-	Endpoint types.String `tfsdk:"endpoint"`
+	Region          types.String `tfsdk:"region"`
+	Endpoint        types.String `tfsdk:"endpoint"`
+	CredentialsFile types.String `tfsdk:"credentials_file"`
 }
 
 func (p *originCloud) Metadata(_ context.Context, _ provider.MetadataRequest, resp *provider.MetadataResponse) {
@@ -39,8 +41,9 @@ func (p *originCloud) Metadata(_ context.Context, _ provider.MetadataRequest, re
 func (p *originCloud) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Manages Origin Cloud resources.\n\n" +
-			"Credentials come from the environment, the first of: `ORIGINCLOUD_ACCESS_TOKEN`, an access token; " +
-			"`ORIGINCLOUD_CLIENT_ID` and `ORIGINCLOUD_CLIENT_SECRET`, a service account; " +
+			"Credentials come from `credentials_file` when it is set, and otherwise from the environment, the first of: " +
+			"`ORIGINCLOUD_ACCESS_TOKEN`, an access token; " +
+			"`ORIGINCLOUD_CREDENTIALS_FILE`, the path of a service account key's credentials file; " +
 			"a CI job's OIDC token, exchanged at the security token service for a `WORKLOAD` service account's access tokens " +
 			"(`ORIGINCLOUD_OIDC_TOKEN_FILE`, `ORIGINCLOUD_OIDC_TOKEN`, an HCP Terraform run's `TFC_WORKLOAD_IDENTITY_TOKEN`, " +
 			"or a GitHub Actions job's token); " +
@@ -57,6 +60,14 @@ func (p *originCloud) Schema(_ context.Context, _ provider.SchemaRequest, resp *
 			"endpoint": schema.StringAttribute{
 				MarkdownDescription: "The URL every call goes to instead, such as a test server's.",
 				Optional:            true,
+			},
+			"credentials_file": schema.StringAttribute{
+				MarkdownDescription: "The path of a service account key's credentials file, the JSON file `origin iam service-accounts keys create` " +
+					"or the console saved: the provider calls the API as that service account, exchanging an assertion signed with the key " +
+					"at the security token service for access tokens, and a new one before each expires. " +
+					"Set, it comes before every credential of the environment; left out, `ORIGINCLOUD_CREDENTIALS_FILE` names the file. " +
+					"The provider reads the file, and the state never holds the key: no resource or data source creates or returns one.",
+				Optional: true,
 			},
 		},
 	}
@@ -76,6 +87,25 @@ func (p *originCloud) Configure(ctx context.Context, req provider.ConfigureReque
 	}
 	if p.httpClient != nil {
 		opts = append(opts, core.WithHTTPClient(p.httpClient))
+	}
+	switch {
+	case cfg.CredentialsFile.IsUnknown():
+		resp.Diagnostics.AddAttributeError(path.Root("credentials_file"), "Couldn't configure the Origin Cloud provider",
+			"credentials_file is known only after apply: the provider needs the file's path to plan, so give it a value known at plan time, or set ORIGINCLOUD_CREDENTIALS_FILE.")
+		return
+	case cfg.CredentialsFile.IsNull():
+	case cfg.CredentialsFile.ValueString() == "":
+		resp.Diagnostics.AddAttributeError(path.Root("credentials_file"), "Couldn't configure the Origin Cloud provider",
+			"credentials_file is empty: set it to the path of a service account key's credentials file, or leave it out.")
+		return
+	default:
+		credentials, err := core.CredentialsFromFile(cfg.CredentialsFile.ValueString())
+		if err != nil {
+			resp.Diagnostics.AddAttributeError(path.Root("credentials_file"), "Couldn't configure the Origin Cloud provider", err.Error())
+			return
+		}
+		credentials.HTTPClient = p.httpClient
+		opts = append(opts, core.WithCredentials(credentials))
 	}
 	client, err := core.NewClient(ctx, opts...)
 	if err != nil {

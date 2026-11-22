@@ -39,4 +39,4 @@ Read-Only:
 - `name` (String) The rule's resource name.
 - `peer_security_group` (String) The peer as another security group of the same VPC, by its full name: its members' addresses. The rule's own group is refused here with `INVALID_ARGUMENT`: it is `same_group`.
 - `protocol` (String) The traffic the rule allows. One of `ALL`, `TCP`, `UDP`, `ICMP`.
-- `same_group` (Boolean) The peer as the rule's own group's members.
+- `same_group` (Boolean) The peer as the rule's own group's members; only `true` is a peer.

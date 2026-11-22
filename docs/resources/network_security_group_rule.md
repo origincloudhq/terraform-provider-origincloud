@@ -3,12 +3,12 @@
 page_title: "origincloud_network_security_group_rule Resource - origincloud"
 subcategory: ""
 description: |-
-  A security group rule: the traffic it allows in one direction, to or from one peer. Set exactly one of cidr_block, peer_security_group and same_group.
+  A security group rule: the traffic it allows in one direction, to or from one peer. Set exactly one of cidr_block, peer_security_group and same_group: they are the oneof peer.
 ---
 
 # origincloud_network_security_group_rule (Resource)
 
-A security group rule: the traffic it allows in one direction, to or from one peer. Set exactly one of `cidr_block`, `peer_security_group` and `same_group`.
+A security group rule: the traffic it allows in one direction, to or from one peer. Set exactly one of `cidr_block`, `peer_security_group` and `same_group`: they are the oneof `peer`.
 
 
 
@@ -30,7 +30,7 @@ A security group rule: the traffic it allows in one direction, to or from one pe
 - `first_port` (Number) The first port the rule matches, for `TCP` and `UDP`. Each set of ports has one spelling, and the rule reads back in it: `first_port` 0 and `last_port` 0 match every port, a `last_port` of 0 the single port `first_port`, and a `first_port` below `last_port` the range between them. Any other spelling of a set is refused with `INVALID_ARGUMENT` naming the one to use: `first_port` 22 and `last_port` 22 is `first_port` 22 and `last_port` 0, and 0 or 1 to 65535 is 0 and 0. Changing it replaces the security group rule.
 - `last_port` (Number) The last port the rule matches, above `first_port`; 0 for the single port `first_port`, or with `first_port` 0 for every port. Changing it replaces the security group rule.
 - `peer_security_group` (String) The peer as another security group of the same VPC, by its full name: its members' addresses. The rule's own group is refused here with `INVALID_ARGUMENT`: it is `same_group`. Changing it replaces the security group rule.
-- `same_group` (Boolean) The peer as the rule's own group's members. Changing it replaces the security group rule.
+- `same_group` (Boolean) The peer as the rule's own group's members; only `true` is a peer. Changing it replaces the security group rule.
 
 ### Read-Only
 

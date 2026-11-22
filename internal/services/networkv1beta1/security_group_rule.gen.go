@@ -37,7 +37,7 @@ type securityGroupRuleModel struct {
 
 func securityGroupRuleSchema() schema.Schema {
 	return schema.Schema{
-		MarkdownDescription: "A security group rule: the traffic it allows in one direction, to or from one peer. Set exactly one of `cidr_block`, `peer_security_group` and `same_group`.",
+		MarkdownDescription: "A security group rule: the traffic it allows in one direction, to or from one peer. Set exactly one of `cidr_block`, `peer_security_group` and `same_group`: they are the oneof `peer`.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				MarkdownDescription: "The security group rule's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/securityGroups/{security_group}/rules/{rule}`: what an argument that refers to the security group rule takes. `name` is the relative name, without the host.",
@@ -95,20 +95,22 @@ func securityGroupRuleSchema() schema.Schema {
 				MarkdownDescription: "The peer as an address range: where admitted traffic comes from, or where sent traffic goes to. Changing it replaces the security group rule.",
 				Optional:            true,
 				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()},
+				Validators:          []validator.String{framework.Oneof{Others: []string{"peer_security_group", "same_group"}}},
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), framework.OneofOthers{"peer_security_group", "same_group"}, stringplanmodifier.RequiresReplace()},
 			},
 			"peer_security_group": schema.StringAttribute{
 				MarkdownDescription: "The peer as another security group of the same VPC, by its full name: its members' addresses. The rule's own group is refused here with `INVALID_ARGUMENT`: it is `same_group`. Changing it replaces the security group rule.",
 				Optional:            true,
 				Computed:            true,
-				Validators:          []validator.String{framework.FullNameReference()},
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()},
+				Validators:          []validator.String{framework.FullNameReference(), framework.Oneof{Others: []string{"cidr_block", "same_group"}}},
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), framework.OneofOthers{"cidr_block", "same_group"}, stringplanmodifier.RequiresReplace()},
 			},
 			"same_group": schema.BoolAttribute{
-				MarkdownDescription: "The peer as the rule's own group's members. Changing it replaces the security group rule.",
+				MarkdownDescription: "The peer as the rule's own group's members; only `true` is a peer. Changing it replaces the security group rule.",
 				Optional:            true,
 				Computed:            true,
-				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown(), boolplanmodifier.RequiresReplaceIfConfigured()},
+				Validators:          []validator.Bool{framework.Oneof{Others: []string{"cidr_block", "peer_security_group"}}},
+				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown(), framework.OneofOthers{"cidr_block", "peer_security_group"}, boolplanmodifier.RequiresReplace()},
 			},
 			"description": schema.StringAttribute{
 				MarkdownDescription: "What the rule is for. Changing it replaces the security group rule.",
@@ -121,17 +123,23 @@ func securityGroupRuleSchema() schema.Schema {
 }
 
 func securityGroupRuleToProto(m *securityGroupRuleModel) *v1beta1.SecurityGroupRule {
-	return &v1beta1.SecurityGroupRule{
-		Name:              m.Name.ValueString(),
-		Direction:         v1beta1.SecurityGroupRule_Direction(v1beta1.SecurityGroupRule_Direction_value[m.Direction.ValueString()]),
-		Protocol:          v1beta1.SecurityGroupRule_Protocol(v1beta1.SecurityGroupRule_Protocol_value[m.Protocol.ValueString()]),
-		FirstPort:         int32(m.FirstPort.ValueInt64()),
-		LastPort:          int32(m.LastPort.ValueInt64()),
-		CidrBlock:         m.CidrBlock.ValueString(),
-		PeerSecurityGroup: m.PeerSecurityGroup.ValueString(),
-		SameGroup:         m.SameGroup.ValueBool(),
-		Description:       m.Description.ValueString(),
+	out := &v1beta1.SecurityGroupRule{
+		Name:        m.Name.ValueString(),
+		Direction:   v1beta1.SecurityGroupRule_Direction(v1beta1.SecurityGroupRule_Direction_value[m.Direction.ValueString()]),
+		Protocol:    v1beta1.SecurityGroupRule_Protocol(v1beta1.SecurityGroupRule_Protocol_value[m.Protocol.ValueString()]),
+		FirstPort:   int32(m.FirstPort.ValueInt64()),
+		LastPort:    int32(m.LastPort.ValueInt64()),
+		Description: m.Description.ValueString(),
 	}
+	switch {
+	case framework.IsSet(m.CidrBlock):
+		out.Peer = &v1beta1.SecurityGroupRule_CidrBlock{CidrBlock: m.CidrBlock.ValueString()}
+	case framework.IsSet(m.PeerSecurityGroup):
+		out.Peer = &v1beta1.SecurityGroupRule_PeerSecurityGroup{PeerSecurityGroup: m.PeerSecurityGroup.ValueString()}
+	case framework.IsSet(m.SameGroup):
+		out.Peer = &v1beta1.SecurityGroupRule_SameGroup{SameGroup: m.SameGroup.ValueBool()}
+	}
+	return out
 }
 
 func securityGroupRuleFromProto(p *v1beta1.SecurityGroupRule, m *securityGroupRuleModel) error {
@@ -152,9 +160,9 @@ func securityGroupRuleFromProto(p *v1beta1.SecurityGroupRule, m *securityGroupRu
 	m.Protocol = types.StringValue(p.GetProtocol().String())
 	m.FirstPort = types.Int64Value(int64(p.GetFirstPort()))
 	m.LastPort = types.Int64Value(int64(p.GetLastPort()))
-	m.CidrBlock = types.StringValue(p.GetCidrBlock())
-	m.PeerSecurityGroup = types.StringValue(p.GetPeerSecurityGroup())
-	m.SameGroup = types.BoolValue(p.GetSameGroup())
+	m.CidrBlock = framework.When(framework.Is[*v1beta1.SecurityGroupRule_CidrBlock](p.GetPeer()), types.StringValue(p.GetCidrBlock()), types.StringNull())
+	m.PeerSecurityGroup = framework.When(framework.Is[*v1beta1.SecurityGroupRule_PeerSecurityGroup](p.GetPeer()), types.StringValue(p.GetPeerSecurityGroup()), types.StringNull())
+	m.SameGroup = framework.When(framework.Is[*v1beta1.SecurityGroupRule_SameGroup](p.GetPeer()), types.BoolValue(p.GetSameGroup()), types.BoolNull())
 	m.Description = types.StringValue(p.GetDescription())
 	return nil
 }
@@ -166,6 +174,7 @@ func securityGroupRuleResource() framework.ResourceSpec[securityGroupRuleModel, 
 		Service:    "network",
 		References: map[string]string{"peer_security_group": "network"},
 		Parent:     "security_group",
+		Oneofs:     [][]string{{"cidr_block", "peer_security_group", "same_group"}},
 		Schema:     securityGroupRuleSchema(),
 		Name:       func(m *securityGroupRuleModel) string { return m.Name.ValueString() },
 		ToProto:    securityGroupRuleToProto,
@@ -219,9 +228,9 @@ func securityGroupRuleItemFromProto(p *v1beta1.SecurityGroupRule, m *securityGro
 	m.Protocol = types.StringValue(p.GetProtocol().String())
 	m.FirstPort = types.Int64Value(int64(p.GetFirstPort()))
 	m.LastPort = types.Int64Value(int64(p.GetLastPort()))
-	m.CidrBlock = types.StringValue(p.GetCidrBlock())
-	m.PeerSecurityGroup = types.StringValue(p.GetPeerSecurityGroup())
-	m.SameGroup = types.BoolValue(p.GetSameGroup())
+	m.CidrBlock = framework.When(framework.Is[*v1beta1.SecurityGroupRule_CidrBlock](p.GetPeer()), types.StringValue(p.GetCidrBlock()), types.StringNull())
+	m.PeerSecurityGroup = framework.When(framework.Is[*v1beta1.SecurityGroupRule_PeerSecurityGroup](p.GetPeer()), types.StringValue(p.GetPeerSecurityGroup()), types.StringNull())
+	m.SameGroup = framework.When(framework.Is[*v1beta1.SecurityGroupRule_SameGroup](p.GetPeer()), types.BoolValue(p.GetSameGroup()), types.BoolNull())
 	m.Description = types.StringValue(p.GetDescription())
 	return nil
 }
@@ -289,7 +298,7 @@ func securityGroupRuleListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"same_group": schema1.BoolAttribute{
-							MarkdownDescription: "The peer as the rule's own group's members.",
+							MarkdownDescription: "The peer as the rule's own group's members; only `true` is a peer.",
 							Computed:            true,
 						},
 						"description": schema1.StringAttribute{

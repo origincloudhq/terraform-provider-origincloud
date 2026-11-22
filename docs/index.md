@@ -3,14 +3,14 @@
 page_title: "origincloud Provider"
 description: |-
   Manages Origin Cloud resources.
-  Credentials come from the environment, the first of: ORIGINCLOUD_ACCESS_TOKEN, an access token; ORIGINCLOUD_CLIENT_ID and ORIGINCLOUD_CLIENT_SECRET, a service account; a CI job's OIDC token, exchanged at the security token service for a WORKLOAD service account's access tokens (ORIGINCLOUD_OIDC_TOKEN_FILE, ORIGINCLOUD_OIDC_TOKEN, an HCP Terraform run's TFC_WORKLOAD_IDENTITY_TOKEN, or a GitHub Actions job's token); the session the origin CLI stored at its last origin id login; on an instance that runs as a service account, the instance's metadata service.
+  Credentials come from credentials_file when it is set, and otherwise from the environment, the first of: ORIGINCLOUD_ACCESS_TOKEN, an access token; ORIGINCLOUD_CREDENTIALS_FILE, the path of a service account key's credentials file; a CI job's OIDC token, exchanged at the security token service for a WORKLOAD service account's access tokens (ORIGINCLOUD_OIDC_TOKEN_FILE, ORIGINCLOUD_OIDC_TOKEN, an HCP Terraform run's TFC_WORKLOAD_IDENTITY_TOKEN, or a GitHub Actions job's token); the session the origin CLI stored at its last origin id login; on an instance that runs as a service account, the instance's metadata service.
 ---
 
 # origincloud Provider
 
 Manages Origin Cloud resources.
 
-Credentials come from the environment, the first of: `ORIGINCLOUD_ACCESS_TOKEN`, an access token; `ORIGINCLOUD_CLIENT_ID` and `ORIGINCLOUD_CLIENT_SECRET`, a service account; a CI job's OIDC token, exchanged at the security token service for a `WORKLOAD` service account's access tokens (`ORIGINCLOUD_OIDC_TOKEN_FILE`, `ORIGINCLOUD_OIDC_TOKEN`, an HCP Terraform run's `TFC_WORKLOAD_IDENTITY_TOKEN`, or a GitHub Actions job's token); the session the `origin` CLI stored at its last `origin id login`; on an instance that runs as a service account, the instance's metadata service.
+Credentials come from `credentials_file` when it is set, and otherwise from the environment, the first of: `ORIGINCLOUD_ACCESS_TOKEN`, an access token; `ORIGINCLOUD_CREDENTIALS_FILE`, the path of a service account key's credentials file; a CI job's OIDC token, exchanged at the security token service for a `WORKLOAD` service account's access tokens (`ORIGINCLOUD_OIDC_TOKEN_FILE`, `ORIGINCLOUD_OIDC_TOKEN`, an HCP Terraform run's `TFC_WORKLOAD_IDENTITY_TOKEN`, or a GitHub Actions job's token); the session the `origin` CLI stored at its last `origin id login`; on an instance that runs as a service account, the instance's metadata service.
 
 ## Example Usage
 
@@ -23,10 +23,12 @@ terraform {
   }
 }
 
-# Credentials come from the environment, such as ORIGINCLOUD_CLIENT_ID and
-# ORIGINCLOUD_CLIENT_SECRET for a service account, or a CI job's OIDC token.
+# Credentials come from credentials_file, a service account key's
+# credentials file, or else from the environment, such as
+# ORIGINCLOUD_CREDENTIALS_FILE or a CI job's OIDC token.
 provider "origincloud" {
-  region = "eu-central1"
+  region           = "eu-central1"
+  credentials_file = "/etc/origincloud/deployer.json"
 }
 ```
 
@@ -48,6 +50,40 @@ resource "origincloud_pvs_snapshot" "data" {
 An import takes either form. After v0.18, the state of a resource holds its
 full name as `id`, and has no `urn`: Terraform upgrades an older state the
 first time it reads it.
+
+## Authentication with a service account key
+
+Automation outside CI, such as a deployment server, acts as an `EXTERNAL`
+service account with one of its keys. Create the key with
+`origin iam service-accounts keys create`, or in the console: either saves
+its credentials file, the only copy of the private key, to a file you name.
+Give the provider the file's path, in `credentials_file` or in
+`ORIGINCLOUD_CREDENTIALS_FILE`. The provider signs an assertion with the key,
+exchanges it at the security token service for the account's access tokens,
+and exchanges another before each token expires, so a long apply isn't cut
+off. The audit log names the service account as the actor of every change.
+
+```terraform
+provider "origincloud" {
+  credentials_file = "/etc/origincloud/deployer.json"
+}
+```
+
+Keep the file like any secret: readable only by the user that runs
+Terraform, and out of version control. Set, `credentials_file` comes before
+every credential of the environment.
+
+### Why there is no key resource
+
+The API returns a key's private key once, in the answer to its creation.
+A resource would have to keep it in the state, where everyone who can read
+the state, or a backend that stores it, could act as the service account.
+So the provider offers no resource that creates a key, and no data source
+returns one: `origincloud_iam_service_account_key` and
+`origincloud_iam_service_account_keys` read a key's public metadata only.
+Create a key with the CLI or the console and hand the file to the system
+that needs it. In CI, use no key at all: the job's OIDC token is exchanged
+instead, as below.
 
 ## Authentication from CI
 
@@ -76,8 +112,8 @@ It takes the first of:
    `https://sts.origincloudapis.eu`. `ORIGINCLOUD_OIDC_AUDIENCE` asks for
    another audience, for a federated credential with an audience of its own.
 
-`ORIGINCLOUD_ACCESS_TOKEN` and `ORIGINCLOUD_CLIENT_ID` with
-`ORIGINCLOUD_CLIENT_SECRET` come first, so leave them unset in the job.
+`credentials_file`, `ORIGINCLOUD_ACCESS_TOKEN` and
+`ORIGINCLOUD_CREDENTIALS_FILE` come first, so leave them unset in the job.
 `ORIGINCLOUD_OIDC_DISABLED=true` leaves the CI job's token out.
 
 ### GitHub Actions
@@ -153,10 +189,36 @@ apply:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 ```
 
+## Upgrading from v0.21
+
+v0.22 removes the service account's client secret, which the API no longer
+has:
+
+- `ORIGINCLOUD_CLIENT_ID` and `ORIGINCLOUD_CLIENT_SECRET` are no longer read.
+  Give the provider a key's credentials file instead, as above.
+- `origincloud_iam_service_account` has no `client_id` or `client_secret`:
+  remove references to them.
+- The resource `origincloud_iam_service_account_key` is gone. A state that
+  holds one fails to plan until it is removed from the state, which leaves
+  the key in place: a `removed` block (Terraform 1.7 or later), or
+  `terraform state rm`.
+
+  ```terraform
+  removed {
+    from = origincloud_iam_service_account_key.deployer
+    lifecycle {
+      destroy = false
+    }
+  }
+  ```
+
+  Delete the key with the CLI or the console once nothing uses it.
+
 <!-- schema generated by tfplugindocs -->
 ## Schema
 
 ### Optional
 
+- `credentials_file` (String) The path of a service account key's credentials file, the JSON file `origin iam service-accounts keys create` or the console saved: the provider calls the API as that service account, exchanging an assertion signed with the key at the security token service for access tokens, and a new one before each expires. Set, it comes before every credential of the environment; left out, `ORIGINCLOUD_CREDENTIALS_FILE` names the file. The provider reads the file, and the state never holds the key: no resource or data source creates or returns one.
 - `endpoint` (String) The URL every call goes to instead, such as a test server's.
 - `region` (String) The region whose front door the provider calls, such as `eu-central1`. Every front door serves every resource; a region only picks the nearest. A global service, such as location, is always called at its regionless host. Defaults to `ORIGINCLOUD_REGION`, and to the regionless endpoint when that is unset.

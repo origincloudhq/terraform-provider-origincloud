@@ -18,19 +18,16 @@ import (
 
 // serviceAccountModel is origincloud_iam_service_account's state.
 type serviceAccountModel struct {
-	ID               types.String `tfsdk:"id"`
-	Organization     types.String `tfsdk:"organization"`
-	Name             types.String `tfsdk:"name"`
-	DisplayName      types.String `tfsdk:"display_name"`
-	Member           types.String `tfsdk:"member"`
-	ClientId         types.String `tfsdk:"client_id"`
-	ClientSecret     types.String `tfsdk:"client_secret"`
-	State            types.String `tfsdk:"state"`
-	Creator          types.String `tfsdk:"creator"`
-	CreateTime       types.String `tfsdk:"create_time"`
-	DeleteTime       types.String `tfsdk:"delete_time"`
-	Type             types.String `tfsdk:"type"`
-	SecretExpireTime types.String `tfsdk:"secret_expire_time"`
+	ID           types.String `tfsdk:"id"`
+	Organization types.String `tfsdk:"organization"`
+	Name         types.String `tfsdk:"name"`
+	DisplayName  types.String `tfsdk:"display_name"`
+	Member       types.String `tfsdk:"member"`
+	State        types.String `tfsdk:"state"`
+	Creator      types.String `tfsdk:"creator"`
+	CreateTime   types.String `tfsdk:"create_time"`
+	DeleteTime   types.String `tfsdk:"delete_time"`
+	Type         types.String `tfsdk:"type"`
 }
 
 func serviceAccountSchema() schema.Schema {
@@ -61,16 +58,6 @@ func serviceAccountSchema() schema.Schema {
 				MarkdownDescription: "The service account's full name, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, which a role binding names it by as a member.",
 				Computed:            true,
 			},
-			"client_id": schema.StringAttribute{
-				MarkdownDescription: "The OAuth 2.0 client id it authenticates with; empty for a `WORKLOAD` service account.",
-				Computed:            true,
-			},
-			"client_secret": schema.StringAttribute{
-				MarkdownDescription: "The OAuth 2.0 client secret it authenticates with. Set only in the response that created an `EXTERNAL` service account or rotated its secret, and empty everywhere else: it can't be read again.",
-				Computed:            true,
-				Sensitive:           true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-			},
 			"state": schema.StringAttribute{
 				MarkdownDescription: "Where the service account is in its lifecycle. One of `ACTIVE`, `DELETED`.",
 				Computed:            true,
@@ -93,10 +80,6 @@ func serviceAccountSchema() schema.Schema {
 				Computed:            true,
 				Validators:          []validator.String{framework.OneOf("EXTERNAL", "WORKLOAD")},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()},
-			},
-			"secret_expire_time": schema.StringAttribute{
-				MarkdownDescription: "When the client secret expires. From then on the secret is refused, so no new access token is issued with it, until RotateServiceAccountSecret issues a new one. Unset when the service account has no secret that expires, such as a `WORKLOAD` one. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.",
-				Computed:            true,
 			},
 		},
 	}
@@ -124,14 +107,11 @@ func serviceAccountFromProto(p *v1beta1.ServiceAccount, m *serviceAccountModel) 
 	m.Name = types.StringValue(p.GetName())
 	m.DisplayName = types.StringValue(p.GetDisplayName())
 	m.Member = types.StringValue(p.GetMember())
-	m.ClientId = types.StringValue(p.GetClientId())
-	m.ClientSecret = framework.Kept(m.ClientSecret, p.GetClientSecret())
 	m.State = types.StringValue(p.GetState().String())
 	m.Creator = types.StringValue(p.GetCreator())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
 	m.DeleteTime = framework.Timestamp(p.GetDeleteTime(), types.StringNull())
 	m.Type = types.StringValue(p.GetType().String())
-	m.SecretExpireTime = framework.Timestamp(p.GetSecretExpireTime(), types.StringNull())
 	return nil
 }
 
@@ -149,8 +129,7 @@ func serviceAccountResource() framework.ResourceSpec[serviceAccountModel, *v1bet
 			var mask []string
 			return mask
 		},
-		Gone:           func(p *v1beta1.ServiceAccount) bool { return p.GetState() == v1beta1.ServiceAccount_DELETED },
-		RefusesReplays: true,
+		Gone: func(p *v1beta1.ServiceAccount) bool { return p.GetState() == v1beta1.ServiceAccount_DELETED },
 		CreateSync: func(ctx context.Context, client *core.Client, plan *serviceAccountModel) (*v1beta1.ServiceAccount, error) {
 			return v1beta1.NewServiceAccountClient(client).CreateServiceAccount(ctx, &v1beta1.CreateServiceAccountRequest{
 				Parent:         "organizations/" + plan.Organization.ValueString(),
@@ -169,17 +148,15 @@ func serviceAccountResource() framework.ResourceSpec[serviceAccountModel, *v1bet
 
 // serviceAccountItemModel is an item of origincloud_iam_service_accounts.
 type serviceAccountItemModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	DisplayName      types.String `tfsdk:"display_name"`
-	Member           types.String `tfsdk:"member"`
-	ClientId         types.String `tfsdk:"client_id"`
-	State            types.String `tfsdk:"state"`
-	Creator          types.String `tfsdk:"creator"`
-	CreateTime       types.String `tfsdk:"create_time"`
-	DeleteTime       types.String `tfsdk:"delete_time"`
-	Type             types.String `tfsdk:"type"`
-	SecretExpireTime types.String `tfsdk:"secret_expire_time"`
+	ID          types.String `tfsdk:"id"`
+	Name        types.String `tfsdk:"name"`
+	DisplayName types.String `tfsdk:"display_name"`
+	Member      types.String `tfsdk:"member"`
+	State       types.String `tfsdk:"state"`
+	Creator     types.String `tfsdk:"creator"`
+	CreateTime  types.String `tfsdk:"create_time"`
+	DeleteTime  types.String `tfsdk:"delete_time"`
+	Type        types.String `tfsdk:"type"`
 }
 
 func serviceAccountItemFromProto(p *v1beta1.ServiceAccount, m *serviceAccountItemModel) error {
@@ -191,13 +168,11 @@ func serviceAccountItemFromProto(p *v1beta1.ServiceAccount, m *serviceAccountIte
 	m.Name = types.StringValue(p.GetName())
 	m.DisplayName = types.StringValue(p.GetDisplayName())
 	m.Member = types.StringValue(p.GetMember())
-	m.ClientId = types.StringValue(p.GetClientId())
 	m.State = types.StringValue(p.GetState().String())
 	m.Creator = types.StringValue(p.GetCreator())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
 	m.DeleteTime = framework.Timestamp(p.GetDeleteTime(), types.StringNull())
 	m.Type = types.StringValue(p.GetType().String())
-	m.SecretExpireTime = framework.Timestamp(p.GetSecretExpireTime(), types.StringNull())
 	return nil
 }
 
@@ -236,10 +211,6 @@ func serviceAccountListSchema() schema1.Schema {
 							MarkdownDescription: "The service account's full name, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, which a role binding names it by as a member.",
 							Computed:            true,
 						},
-						"client_id": schema1.StringAttribute{
-							MarkdownDescription: "The OAuth 2.0 client id it authenticates with; empty for a `WORKLOAD` service account.",
-							Computed:            true,
-						},
 						"state": schema1.StringAttribute{
 							MarkdownDescription: "Where the service account is in its lifecycle. One of `ACTIVE`, `DELETED`.",
 							Computed:            true,
@@ -258,10 +229,6 @@ func serviceAccountListSchema() schema1.Schema {
 						},
 						"type": schema1.StringAttribute{
 							MarkdownDescription: "How the service account authenticates; `EXTERNAL` when the create leaves it unset. One of `EXTERNAL`, `WORKLOAD`.",
-							Computed:            true,
-						},
-						"secret_expire_time": schema1.StringAttribute{
-							MarkdownDescription: "When the client secret expires. From then on the secret is refused, so no new access token is issued with it, until RotateServiceAccountSecret issues a new one. Unset when the service account has no secret that expires, such as a `WORKLOAD` one. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.",
 							Computed:            true,
 						},
 					},

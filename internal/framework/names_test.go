@@ -3,6 +3,7 @@ package framework
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -385,5 +386,43 @@ func TestAParentReferenceMustBeTheParentsFullName(t *testing.T) {
 		if resp.Diagnostics.HasError() == tc.valid {
 			t.Errorf("%v: %v", tc.value, resp.Diagnostics)
 		}
+	}
+}
+
+// A state written while a oneof's members were plain fields held the ones
+// not set as their zero values: with exactly one other value, it is the
+// member set, and the others become null. Any other state is left as it
+// is, such as one whose members are null already, or whose member set
+// holds a zero value itself.
+func TestUpgradeRawOneofsNullsTheMembersNotSet(t *testing.T) {
+	oneofs := [][]string{{"cidr_block", "peer_security_group", "same_group"}}
+	for _, tc := range []struct{ name, state, want string }{
+		{"a range", `{"cidr_block":"10.0.0.0/8","peer_security_group":"","same_group":false,"protocol":""}`,
+			`{"cidr_block":"10.0.0.0/8","peer_security_group":null,"protocol":"","same_group":null}`},
+		{"the same group", `{"cidr_block":"","peer_security_group":"","same_group":true}`,
+			`{"cidr_block":null,"peer_security_group":null,"same_group":true}`},
+		{"already null", `{"cidr_block":"10.0.0.0/8","peer_security_group":null,"same_group":null}`,
+			`{"cidr_block":"10.0.0.0/8","peer_security_group":null,"same_group":null}`},
+		{"none set", `{"cidr_block":"","peer_security_group":"","same_group":false}`,
+			`{"cidr_block":"","peer_security_group":"","same_group":false}`},
+		{"two set", `{"cidr_block":"10.0.0.0/8","peer_security_group":"//x","same_group":false}`,
+			`{"cidr_block":"10.0.0.0/8","peer_security_group":"//x","same_group":false}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := UpgradeRawOneofs(oneofs, []byte(tc.state))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var gotV, wantV any
+			if err := json.Unmarshal(got, &gotV); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal([]byte(tc.want), &wantV); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(gotV, wantV) {
+				t.Errorf("upgraded to %s, want %s", got, tc.want)
+			}
+		})
 	}
 }

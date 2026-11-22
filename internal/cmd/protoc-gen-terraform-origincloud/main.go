@@ -108,6 +108,9 @@ func generate(gen *protogen.Plugin) error {
 	if err := checkOutsideFound(gen.Files); err != nil {
 		return err
 	}
+	if err := checkCredentialsFound(gen.Files); err != nil {
+		return err
+	}
 	if err := checkMethodsCalled(gen.Files); err != nil {
 		return err
 	}
@@ -259,6 +262,9 @@ func generateFile(gen *protogen.Plugin, f *protogen.File, packages *[]*servicePa
 		shortcode, _, _ := strings.Cut(host, ".")
 		for _, t := range resourceTypes(f, s, shortcode) {
 			if err := applyOutside(&t); err != nil {
+				return fmt.Errorf("%s: %w", t.message.Desc.Name(), err)
+			}
+			if err := applyCredential(&t); err != nil {
 				return fmt.Errorf("%s: %w", t.message.Desc.Name(), err)
 			}
 			if err := choosePattern(&t); err != nil {
@@ -475,6 +481,9 @@ func generateResource(g *protogen.GeneratedFile, t resourceType) error {
 	}
 	if i := slices.IndexFunc(attrs, func(a attribute) bool { return a.parent != nil }); i >= 0 {
 		g.P("Parent: ", fmt.Sprintf("%q", attrs[i].name), ",")
+	}
+	if oneofs := topLevelOneofs(attrs); len(oneofs) > 0 {
+		g.P("Oneofs: [][]string{", strings.Join(oneofs, ", "), "},")
 	}
 	if id := t.idField(); id != nil {
 		g.P("ClientID: func(m *", model, ") ", g.QualifiedGoIdent(typesPackage.Ident("String")), " { return m.", camel(string(id.Desc.Name())), " },")
@@ -1260,4 +1269,27 @@ func upperFirst(s string) string {
 		return s
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+// topLevelOneofs returns the members of each oneof among attrs' top-level
+// attributes, in the order of their fields, as Go literals of their
+// names, for the upgrade of a state written before the fields were a
+// oneof.
+func topLevelOneofs(attrs []attribute) []string {
+	var order []*protogen.Oneof
+	members := map[*protogen.Oneof][]string{}
+	for _, a := range attrs {
+		if a.oneof == nil || a.inNested {
+			continue
+		}
+		if _, ok := members[a.oneof]; !ok {
+			order = append(order, a.oneof)
+		}
+		members[a.oneof] = append(members[a.oneof], a.name)
+	}
+	var oneofs []string
+	for _, o := range order {
+		oneofs = append(oneofs, "{"+quoted(members[o])+"}")
+	}
+	return oneofs
 }

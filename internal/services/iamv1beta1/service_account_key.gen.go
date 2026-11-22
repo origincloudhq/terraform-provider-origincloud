@@ -5,10 +5,7 @@ package iamv1beta1
 
 import (
 	context "context"
-	schema1 "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
-	schema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	planmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
-	stringplanmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	schema "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	validator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	types "github.com/hashicorp/terraform-plugin-framework/types"
 	framework "github.com/origincloudhq/terraform-provider-origincloud/internal/framework"
@@ -18,17 +15,14 @@ import (
 
 // serviceAccountKeyModel is origincloud_iam_service_account_key's state.
 type serviceAccountKeyModel struct {
-	ID              types.String `tfsdk:"id"`
-	Organization    types.String `tfsdk:"organization"`
-	ServiceAccount  types.String `tfsdk:"service_account"`
-	Name            types.String `tfsdk:"name"`
-	Algorithm       types.String `tfsdk:"algorithm"`
-	State           types.String `tfsdk:"state"`
-	Creator         types.String `tfsdk:"creator"`
-	CreateTime      types.String `tfsdk:"create_time"`
-	LastUseTime     types.String `tfsdk:"last_use_time"`
-	DeleteTime      types.String `tfsdk:"delete_time"`
-	CredentialsFile types.String `tfsdk:"credentials_file"`
+	ID          types.String `tfsdk:"id"`
+	Name        types.String `tfsdk:"name"`
+	Algorithm   types.String `tfsdk:"algorithm"`
+	State       types.String `tfsdk:"state"`
+	Creator     types.String `tfsdk:"creator"`
+	CreateTime  types.String `tfsdk:"create_time"`
+	LastUseTime types.String `tfsdk:"last_use_time"`
+	DeleteTime  types.String `tfsdk:"delete_time"`
 }
 
 func serviceAccountKeySchema() schema.Schema {
@@ -38,23 +32,10 @@ func serviceAccountKeySchema() schema.Schema {
 			"id": schema.StringAttribute{
 				MarkdownDescription: "The service account key's full resource name, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}/keys/{key}`: what an argument that refers to the service account key takes. `name` is the relative name, without the host.",
 				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-			},
-			"organization": schema.StringAttribute{
-				MarkdownDescription: "The organization the service account key is in. Changing it replaces the service account key.",
-				Required:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
-			},
-			"service_account": schema.StringAttribute{
-				MarkdownDescription: "The service account the service account key is in. Its `id`, the full resource name `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`. `organization` must be the one it is in. Changing it replaces the service account key.",
-				Required:            true,
-				Validators:          []validator.String{framework.ParentReference("iam", "organizations/{organization}/serviceAccounts/{service_account}", "service account")},
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "The key's resource name.",
-				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+				Required:            true,
 			},
 			"algorithm": schema.StringAttribute{
 				MarkdownDescription: "The algorithm the key signs with: `ES256`. One of `ES256`.",
@@ -80,34 +61,16 @@ func serviceAccountKeySchema() schema.Schema {
 				MarkdownDescription: "When the key was deleted; unset while it is active. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.",
 				Computed:            true,
 			},
-			"credentials_file": schema.StringAttribute{
-				MarkdownDescription: "The credentials file, in the response that created the key and never again: a JSON document to save as it is. It holds `type` (`service_account_key`), `name` (the key's full name), `service_account` (the service account's full name), `algorithm` (`ES256`), `private_key` (the private key in PEM, `-----BEGIN PRIVATE KEY-----`) and `sts_endpoint` (`https://sts.origincloudapis.eu`, where its assertions are exchanged). The platform keeps no copy. Empty in every other response.",
-				Computed:            true,
-				Sensitive:           true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-			},
 		},
-	}
-}
-
-func serviceAccountKeyToProto(m *serviceAccountKeyModel) *v1beta1.ServiceAccountKey {
-	return &v1beta1.ServiceAccountKey{
-		Name: m.Name.ValueString(),
 	}
 }
 
 func serviceAccountKeyFromProto(p *v1beta1.ServiceAccountKey, m *serviceAccountKeyModel) error {
-	values, err := framework.NameValues("organizations/{organization}/serviceAccounts/{service_account}/keys/{key}", p.GetName())
-	if err != nil {
-		return err
-	}
 	id, err := framework.FullName("iam", p.GetName())
 	if err != nil {
 		return err
 	}
 	m.ID = id
-	m.Organization = types.StringValue(values[0])
-	m.ServiceAccount = framework.ParentOf("iam", p.GetName())
 	m.Name = types.StringValue(p.GetName())
 	m.Algorithm = types.StringValue(p.GetAlgorithm().String())
 	m.State = types.StringValue(p.GetState().String())
@@ -115,124 +78,75 @@ func serviceAccountKeyFromProto(p *v1beta1.ServiceAccountKey, m *serviceAccountK
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
 	m.LastUseTime = framework.Timestamp(p.GetLastUseTime(), types.StringNull())
 	m.DeleteTime = framework.Timestamp(p.GetDeleteTime(), types.StringNull())
-	m.CredentialsFile = framework.Kept(m.CredentialsFile, p.GetCredentialsFile())
 	return nil
 }
 
-func serviceAccountKeyResource() framework.ResourceSpec[serviceAccountKeyModel, *v1beta1.ServiceAccountKey] {
-	return framework.ResourceSpec[serviceAccountKeyModel, *v1beta1.ServiceAccountKey]{
+func serviceAccountKeyDataSource() framework.DataSourceSpec[serviceAccountKeyModel, *v1beta1.ServiceAccountKey] {
+	return framework.DataSourceSpec[serviceAccountKeyModel, *v1beta1.ServiceAccountKey]{
 		TypeName:  "_iam_service_account_key",
-		Pattern:   "organizations/{organization}/serviceAccounts/{service_account}/keys/{key}",
-		Service:   "iam",
-		Parent:    "service_account",
 		Schema:    serviceAccountKeySchema(),
 		Name:      func(m *serviceAccountKeyModel) string { return m.Name.ValueString() },
-		ToProto:   serviceAccountKeyToProto,
 		FromProto: serviceAccountKeyFromProto,
-		UpdateMask: func(plan, state *serviceAccountKeyModel) []string {
-			var mask []string
-			return mask
-		},
-		Gone:           func(p *v1beta1.ServiceAccountKey) bool { return p.GetState() == v1beta1.ServiceAccountKey_DELETED },
-		RefusesReplays: true,
-		CreateSync: func(ctx context.Context, client *core.Client, plan *serviceAccountKeyModel) (*v1beta1.ServiceAccountKey, error) {
-			return v1beta1.NewServiceAccountKeyClient(client).CreateServiceAccountKey(ctx, &v1beta1.CreateServiceAccountKeyRequest{
-				Parent:            framework.ParentPath(plan.ServiceAccount),
-				ServiceAccountKey: serviceAccountKeyToProto(plan),
-			})
-		},
 		Get: func(ctx context.Context, client *core.Client, name string) (*v1beta1.ServiceAccountKey, error) {
 			return v1beta1.NewServiceAccountKeyClient(client).GetServiceAccountKey(ctx, &v1beta1.GetServiceAccountKeyRequest{Name: name})
 		},
-		Delete: func(ctx context.Context, client *core.Client, name string) error {
-			_, err := v1beta1.NewServiceAccountKeyClient(client).DeleteServiceAccountKey(ctx, &v1beta1.DeleteServiceAccountKeyRequest{Name: name})
-			return err
-		},
 	}
-}
-
-// serviceAccountKeyItemModel is an item of origincloud_iam_service_account_keys.
-type serviceAccountKeyItemModel struct {
-	ID          types.String `tfsdk:"id"`
-	Name        types.String `tfsdk:"name"`
-	Algorithm   types.String `tfsdk:"algorithm"`
-	State       types.String `tfsdk:"state"`
-	Creator     types.String `tfsdk:"creator"`
-	CreateTime  types.String `tfsdk:"create_time"`
-	LastUseTime types.String `tfsdk:"last_use_time"`
-	DeleteTime  types.String `tfsdk:"delete_time"`
-}
-
-func serviceAccountKeyItemFromProto(p *v1beta1.ServiceAccountKey, m *serviceAccountKeyItemModel) error {
-	id, err := framework.FullName("iam", p.GetName())
-	if err != nil {
-		return err
-	}
-	m.ID = id
-	m.Name = types.StringValue(p.GetName())
-	m.Algorithm = types.StringValue(p.GetAlgorithm().String())
-	m.State = types.StringValue(p.GetState().String())
-	m.Creator = types.StringValue(p.GetCreator())
-	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
-	m.LastUseTime = framework.Timestamp(p.GetLastUseTime(), types.StringNull())
-	m.DeleteTime = framework.Timestamp(p.GetDeleteTime(), types.StringNull())
-	return nil
 }
 
 // serviceAccountKeyListModel is origincloud_iam_service_account_keys's state.
 type serviceAccountKeyListModel struct {
-	Organization       types.String                 `tfsdk:"organization"`
-	ServiceAccount     types.String                 `tfsdk:"service_account"`
-	ServiceAccountKeys []serviceAccountKeyItemModel `tfsdk:"service_account_keys"`
+	Organization       types.String             `tfsdk:"organization"`
+	ServiceAccount     types.String             `tfsdk:"service_account"`
+	ServiceAccountKeys []serviceAccountKeyModel `tfsdk:"service_account_keys"`
 }
 
-func serviceAccountKeyListSchema() schema1.Schema {
-	return schema1.Schema{
+func serviceAccountKeyListSchema() schema.Schema {
+	return schema.Schema{
 		MarkdownDescription: "Lists a service account's keys, oldest first, by their public metadata; never a private key. Deleted ones are listed only when `show_deleted` is set. Needs `iam.service_account_key.list` on the organization.",
-		Attributes: map[string]schema1.Attribute{
-			"organization": schema1.StringAttribute{
+		Attributes: map[string]schema.Attribute{
+			"organization": schema.StringAttribute{
 				MarkdownDescription: "The organization whose service account keys to list.",
 				Required:            true,
 			},
-			"service_account": schema1.StringAttribute{
+			"service_account": schema.StringAttribute{
 				MarkdownDescription: "The service account whose service account keys to list. Its `id`, the full resource name `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`. `organization` must be the one it is in.",
 				Required:            true,
 				Validators:          []validator.String{framework.ParentReference("iam", "organizations/{organization}/serviceAccounts/{service_account}", "service account")},
 			},
-			"service_account_keys": schema1.ListNestedAttribute{
+			"service_account_keys": schema.ListNestedAttribute{
 				MarkdownDescription: "The service account keys listed, from every page.",
 				Computed:            true,
-				NestedObject: schema1.NestedAttributeObject{
-					Attributes: map[string]schema1.Attribute{
-						"id": schema1.StringAttribute{
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"id": schema.StringAttribute{
 							MarkdownDescription: "The service account key's full resource name, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}/keys/{key}`: what an argument that refers to the service account key takes. `name` is the relative name, without the host.",
 							Computed:            true,
 						},
-						"name": schema1.StringAttribute{
+						"name": schema.StringAttribute{
 							MarkdownDescription: "The key's resource name.",
 							Computed:            true,
 						},
-						"algorithm": schema1.StringAttribute{
+						"algorithm": schema.StringAttribute{
 							MarkdownDescription: "The algorithm the key signs with: `ES256`. One of `ES256`.",
 							Computed:            true,
 						},
-						"state": schema1.StringAttribute{
+						"state": schema.StringAttribute{
 							MarkdownDescription: "Where the key is in its lifecycle. One of `ACTIVE`, `DELETED`.",
 							Computed:            true,
 						},
-						"creator": schema1.StringAttribute{
+						"creator": schema.StringAttribute{
 							MarkdownDescription: "The full name of who created the key: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, `//iam.origincloudapis.eu/serviceAgents/{service_agent}` for a platform service agent, or `//iam.origincloudapis.eu/services/{service}` for a change the platform made itself.",
 							Computed:            true,
 						},
-						"create_time": schema1.StringAttribute{
+						"create_time": schema.StringAttribute{
 							MarkdownDescription: "When the key was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.",
 							Computed:            true,
 						},
-						"last_use_time": schema1.StringAttribute{
+						"last_use_time": schema.StringAttribute{
 							MarkdownDescription: "When an assertion signed with the key was last exchanged; unset while none has been. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.",
 							Computed:            true,
 						},
-						"delete_time": schema1.StringAttribute{
+						"delete_time": schema.StringAttribute{
 							MarkdownDescription: "When the key was deleted; unset while it is active. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.",
 							Computed:            true,
 						},
@@ -248,7 +162,7 @@ func serviceAccountKeyListDataSource() framework.ListDataSourceSpec[serviceAccou
 		TypeName: "_iam_service_account_keys",
 		Schema:   serviceAccountKeyListSchema(),
 		List: func(ctx context.Context, client *core.Client, m *serviceAccountKeyListModel) error {
-			m.ServiceAccountKeys = []serviceAccountKeyItemModel{}
+			m.ServiceAccountKeys = []serviceAccountKeyModel{}
 			for p, err := range v1beta1.NewServiceAccountKeyClient(client).AllServiceAccountKeys(ctx, &v1beta1.ListServiceAccountKeysRequest{Parent: framework.ParentPath(m.ServiceAccount)}) {
 				if err != nil {
 					return err
@@ -256,8 +170,8 @@ func serviceAccountKeyListDataSource() framework.ListDataSourceSpec[serviceAccou
 				if p.GetState() == v1beta1.ServiceAccountKey_DELETED {
 					continue
 				}
-				var item serviceAccountKeyItemModel
-				if err := serviceAccountKeyItemFromProto(p, &item); err != nil {
+				var item serviceAccountKeyModel
+				if err := serviceAccountKeyFromProto(p, &item); err != nil {
 					return err
 				}
 				m.ServiceAccountKeys = append(m.ServiceAccountKeys, item)

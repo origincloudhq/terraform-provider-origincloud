@@ -188,12 +188,12 @@ func TestANetworkIsCreatedUpdatedReplacedAndDestroyedInDependencyOrder(t *testin
 					resource.TestCheckResourceAttr("origincloud_network_subnet.web", "ipv4_dns_servers.0", "172.16.0.1"),
 					resource.TestCheckResourceAttr("origincloud_network_route_table.public", "local_routes.0", "172.16.0.0/16"),
 					resource.TestCheckResourceAttrPair("origincloud_network_route.default", "internet_gateway", "origincloud_network_internet_gateway.main", "id"),
-					resource.TestCheckResourceAttr("origincloud_network_route.default", "nat_gateway", ""),
+					resource.TestCheckNoResourceAttr("origincloud_network_route.default", "nat_gateway"),
 					checkNetworkAssociationName("origincloud_network_route_table_association.web", "origincloud_network_subnet.web", "routeTableAssociations", "origincloud_network_route_table.public"),
 					resource.TestCheckResourceAttr("origincloud_network_security_group_rule.ssh", "cidr_block", "198.51.100.0/24"),
 					resource.TestCheckResourceAttr("origincloud_network_security_group_rule.ssh", "last_port", "0"),
-					resource.TestCheckResourceAttr("origincloud_network_security_group_rule.ssh", "peer_security_group", ""),
-					resource.TestCheckResourceAttr("origincloud_network_security_group_rule.ssh", "same_group", "false"),
+					resource.TestCheckNoResourceAttr("origincloud_network_security_group_rule.ssh", "peer_security_group"),
+					resource.TestCheckNoResourceAttr("origincloud_network_security_group_rule.ssh", "same_group"),
 					resource.TestCheckResourceAttr("origincloud_network_acl_rule.https", "action", "ACCEPT"),
 					checkNetworkAssociationName("origincloud_network_acl_association.web", "origincloud_network_subnet.web", "aclAssociations", "origincloud_network_acl.web"),
 				),
@@ -478,24 +478,26 @@ func TestASecurityGroupRuleHasExactlyOnePeer(t *testing.T) {
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: factories(),
 		Steps: []resource.TestStep{
-			// The peers left out read back empty, and plan no change.
+			// The peers left out read back null, and plan no change.
 			{
 				Config: peersConfig(fake, fromGroup, ""),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrPair("origincloud_network_security_group_rule.from_lb", "peer_security_group", "origincloud_network_security_group.lb", "id"),
-					resource.TestCheckResourceAttr("origincloud_network_security_group_rule.from_lb", "cidr_block", ""),
-					resource.TestCheckResourceAttr("origincloud_network_security_group_rule.from_lb", "same_group", "false"),
+					resource.TestCheckNoResourceAttr("origincloud_network_security_group_rule.from_lb", "cidr_block"),
+					resource.TestCheckNoResourceAttr("origincloud_network_security_group_rule.from_lb", "same_group"),
 					resource.TestCheckResourceAttr("origincloud_network_security_group_rule.from_lb", "description", ""),
 					resource.TestCheckResourceAttr("origincloud_network_security_group_rule.within", "same_group", "true"),
-					resource.TestCheckResourceAttr("origincloud_network_security_group_rule.within", "cidr_block", ""),
-					resource.TestCheckResourceAttr("origincloud_network_security_group_rule.within", "peer_security_group", ""),
+					resource.TestCheckNoResourceAttr("origincloud_network_security_group_rule.within", "cidr_block"),
+					resource.TestCheckNoResourceAttr("origincloud_network_security_group_rule.within", "peer_security_group"),
 				),
 			},
-			// The provider doesn't check the peers: the API's refusals
-			// reach the user.
+			// The peers are a oneof: two of them are refused at the plan,
+			// naming the others. One left out isn't, as the members aren't
+			// REQUIRED: the API's refusal reaches the user.
 			{
 				Config:      peersConfig(fake, fromGroup, extraSecurityGroupRule(fromGroup+"\n  "+fromRange)),
-				ExpectError: exactlyOne,
+				PlanOnly:    true,
+				ExpectError: regexp.MustCompile(`(?s)Conflicting oneof members.*at most one of this and cidr_block, same_group\s+may be set`),
 			},
 			{
 				Config:      peersConfig(fake, fromGroup, extraSecurityGroupRule("")),
@@ -515,7 +517,7 @@ func TestASecurityGroupRuleHasExactlyOnePeer(t *testing.T) {
 				}},
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("origincloud_network_security_group_rule.from_lb", "cidr_block", "10.0.0.0/8"),
-					resource.TestCheckResourceAttr("origincloud_network_security_group_rule.from_lb", "peer_security_group", ""),
+					resource.TestCheckNoResourceAttr("origincloud_network_security_group_rule.from_lb", "peer_security_group"),
 				),
 			},
 			{
@@ -525,7 +527,7 @@ func TestASecurityGroupRuleHasExactlyOnePeer(t *testing.T) {
 				}},
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("origincloud_network_security_group_rule.from_lb", "same_group", "true"),
-					resource.TestCheckResourceAttr("origincloud_network_security_group_rule.from_lb", "cidr_block", ""),
+					resource.TestCheckNoResourceAttr("origincloud_network_security_group_rule.from_lb", "cidr_block"),
 				),
 			},
 			// Back to the other group, which is deleted after the rule

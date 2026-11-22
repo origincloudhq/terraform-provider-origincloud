@@ -769,6 +769,65 @@ func TestTypesCreatedOutsideAreCheckedAgainstTheAPI(t *testing.T) {
 	}
 }
 
+// widgetToken is an output-only string field of a widget, which its create
+// answers with.
+const widgetToken = `name: "token" number: 9 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: OUTPUT_ONLY }`
+
+// A type declared a credential type, whose create answers with a
+// credential, is never created, changed or deleted: it is read only, by
+// its data sources, which leave the credential out.
+func TestACredentialTypeIsReadOnlyAndItsCredentialIsLeftOut(t *testing.T) {
+	saved := credentials
+	credentials = []credential{{"test.widgets.v1.Widget", "token", "a test"}}
+	t.Cleanup(func() { credentials = saved })
+	files, failure := run(t, withField("Widget", widgetToken))
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	services := files["internal/services/widgetsv1/services.gen.go"]
+	contains(t, "services.gen.go", services,
+		"framework.NewDataSource(widgetDataSource()),",
+		"framework.NewListDataSource(widgetListDataSource()),")
+	if strings.Contains(services, "widgetResource") {
+		t.Error("a credential type is a resource")
+	}
+	code := files["internal/services/widgetsv1/widget.gen.go"]
+	for _, absent := range []string{`"token"`, "CreateWidget", "UpdateWidget", "DeleteWidget"} {
+		if strings.Contains(code, absent) {
+			t.Errorf("widget.gen.go has %s", absent)
+		}
+	}
+}
+
+// A credential type that the API hasn't, doesn't create, or whose field
+// is missing or isn't an output-only string fails generation; one of a
+// package the API hasn't yet waits for it.
+func TestCredentialTypesAreCheckedAgainstTheAPI(t *testing.T) {
+	const settable = `name: "token" number: 9 label: LABEL_OPTIONAL type: TYPE_STRING options { [google.api.field_behavior]: OPTIONAL }`
+	for _, tc := range []struct {
+		name   string
+		c      credential
+		change func(*descriptorpb.FileDescriptorProto)
+		want   string // empty: generation succeeds
+	}{
+		{"no such type", credential{"test.widgets.v1.Gizmo", "token", "a test"}, nil, "credential type: no resource type test.widgets.v1.Gizmo"},
+		{"not created", credential{"test.widgets.v1.Gadget", "token", "a test"}, nil, "Gadget: declared a credential type, but there is no CreateGadget"},
+		{"no such field", credential{"test.widgets.v1.Widget", "token", "a test"}, nil, "Widget: declared a credential type, but there is no field token"},
+		{"a settable field", credential{"test.widgets.v1.Widget", "token", "a test"}, withField("Widget", settable), "Widget: declared a credential type, but its field token isn't an output-only string"},
+		{"a package the API hasn't yet", credential{"test.gizmos.v1.Gizmo", "token", "a test"}, nil, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			saved := credentials
+			credentials = []credential{tc.c}
+			t.Cleanup(func() { credentials = saved })
+			_, failure := run(t, tc.change)
+			if tc.want == "" && failure != "" || !strings.Contains(failure, tc.want) {
+				t.Errorf("generation failed with %q, want %q", failure, tc.want)
+			}
+		})
+	}
+}
+
 // The API refuses a create repeated with its request id where the answer
 // carries a secret, which only the first one does; it answers any other
 // with the resource.

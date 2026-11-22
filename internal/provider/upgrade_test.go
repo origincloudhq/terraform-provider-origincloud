@@ -231,7 +231,9 @@ func configuredFor(t *testing.T, configured map[string]map[string]bool, typeName
 // A state of schema version 1, written before a child's parent attribute
 // took the parent's full name, holds the parent's bare id. It is upgraded
 // to the full name, which the configuration writes, and plans no changes,
-// without a refresh; one of version 0 gets there as well.
+// without a refresh; one of version 0 gets there as well. One of version
+// 2, written before a rule's peers were a oneof, holds the peers not set
+// as "" and false: they become null, so that the rule isn't replaced.
 //
 // The state is written by hand after the form of version 1: the parent is
 // a bare id, the id and the references are full names.
@@ -258,9 +260,12 @@ func TestAStateWithABareParentIsUpgradedAndPlansNoChanges(t *testing.T) {
 	const typeName = "origincloud_network_security_group_rule"
 	schema := schemas.ResourceSchemas[typeName]
 
-	for _, version := range []int64{0, 1} {
+	for _, version := range []int64{0, 1, 2} {
 		t.Run(fmt.Sprintf("from version %d", version), func(t *testing.T) {
 			old := maps.Clone(attributes)
+			if version == 2 {
+				old["security_group"] = full("network", group)
+			}
 			if version == 0 {
 				old["id"] = rule
 				old["urn"] = "urn:origincloud:network:securityGroupRule/" + rule
@@ -286,6 +291,9 @@ func TestAStateWithABareParentIsUpgradedAndPlansNoChanges(t *testing.T) {
 			var parent string
 			if err := attrs["security_group"].As(&parent); err != nil || parent != full("network", group) {
 				t.Fatalf("the upgraded parent is %q (%v), not the group's full name", parent, err)
+			}
+			if !attrs["peer_security_group"].IsNull() || !attrs["same_group"].IsNull() {
+				t.Errorf("the peers not set are %v and %v, not null", attrs["peer_security_group"], attrs["same_group"])
 			}
 
 			set := map[string]bool{"project": true, "region": true, "security_group": true, "direction": true, "protocol": true, "first_port": true, "cidr_block": true}

@@ -201,6 +201,7 @@ func recordSetResource() framework.ResourceSpec[recordSetModel, *v1beta1.RecordS
 		Pattern:   "projects/{project}/hostedZones/{hosted_zone}/recordSets/{record_set}",
 		Service:   "dns",
 		Parent:    "hosted_zone",
+		Oneofs:    [][]string{{"basic", "alias"}},
 		Schema:    recordSetSchema(),
 		Name:      func(m *recordSetModel) string { return m.Name.ValueString() },
 		ToProto:   recordSetToProto,

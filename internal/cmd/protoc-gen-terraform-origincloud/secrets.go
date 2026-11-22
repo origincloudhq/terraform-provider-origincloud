@@ -10,9 +10,11 @@ import (
 )
 
 // A secret is an output-only string field the API answers with only once,
-// in the response that generated it, such as a key pair's private key or a
-// service account's client secret: its attribute is sensitive, and keeps
-// the value from the create on, since the API never returns it again.
+// in the response that generated it, such as an SSH key pair's generated
+// private key: its attribute is sensitive, and keeps the value from the
+// create on, since the API never returns it again. A credential to the API
+// is never a secret but a credential type's (credentials.go), which no
+// schema holds.
 //
 // Nothing in the API marks such a field, so each is declared here by the
 // API's names, and checked against the API when generating: a secret whose
@@ -28,8 +30,6 @@ type secret struct {
 
 var secrets = []secret{
 	{"origincloud.compute.v1beta1.KeyPair", "private_key"},
-	{"origincloud.iam.v1beta1.ServiceAccount", "client_secret"},
-	{"origincloud.iam.v1beta1.ServiceAccountKey", "credentials_file"},
 }
 
 // secretsFound are the secrets whose fields were generated.
