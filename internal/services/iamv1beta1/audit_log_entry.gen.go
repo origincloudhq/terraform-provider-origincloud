@@ -14,15 +14,16 @@ import (
 
 // auditLogEntryModel is origincloud_iam_audit_log_entry's state.
 type auditLogEntryModel struct {
-	ID        types.String `tfsdk:"id"`
-	Name      types.String `tfsdk:"name"`
-	Project   types.String `tfsdk:"project"`
-	Actor     types.String `tfsdk:"actor"`
-	Action    types.String `tfsdk:"action"`
-	Target    types.String `tfsdk:"target"`
-	Outcome   types.String `tfsdk:"outcome"`
-	OccurTime types.String `tfsdk:"occur_time"`
-	Details   types.Map    `tfsdk:"details"`
+	ID          types.String `tfsdk:"id"`
+	Name        types.String `tfsdk:"name"`
+	Project     types.String `tfsdk:"project"`
+	Actor       types.String `tfsdk:"actor"`
+	Action      types.String `tfsdk:"action"`
+	Target      types.String `tfsdk:"target"`
+	Outcome     types.String `tfsdk:"outcome"`
+	OccurTime   types.String `tfsdk:"occur_time"`
+	Details     types.Map    `tfsdk:"details"`
+	ActingParty types.String `tfsdk:"acting_party"`
 }
 
 func auditLogEntrySchema() schema.Schema {
@@ -66,6 +67,10 @@ func auditLogEntrySchema() schema.Schema {
 				Computed:            true,
 				ElementType:         types.StringType,
 			},
+			"acting_party": schema.StringAttribute{
+				MarkdownDescription: "Who acted for `actor` when the change was made: the hosted MCP server, by the SPIFFE id of its workload, when `actor` made the change through it. Empty when no one acted for `actor`.",
+				Computed:            true,
+			},
 		},
 	}
 }
@@ -84,6 +89,7 @@ func auditLogEntryFromProto(p *v1beta1.AuditLogEntry, m *auditLogEntryModel) err
 	m.Outcome = types.StringValue(p.GetOutcome().String())
 	m.OccurTime = framework.Timestamp(p.GetOccurTime(), types.StringNull())
 	m.Details = framework.StringMap(p.GetDetails())
+	m.ActingParty = types.StringValue(p.GetActingParty())
 	return nil
 }
 
@@ -154,6 +160,10 @@ func auditLogEntryListSchema() schema.Schema {
 							MarkdownDescription: "Details of the change that depend on the action, such as the `role` granted or a service account's `display_name`.",
 							Computed:            true,
 							ElementType:         types.StringType,
+						},
+						"acting_party": schema.StringAttribute{
+							MarkdownDescription: "Who acted for `actor` when the change was made: the hosted MCP server, by the SPIFFE id of its workload, when `actor` made the change through it. Empty when no one acted for `actor`.",
+							Computed:            true,
 						},
 					},
 				},
