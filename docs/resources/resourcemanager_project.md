@@ -19,7 +19,10 @@ A project: the namespace an organization's resources are created in.
 
 - `display_name` (String) The name the console shows. Not empty.
 - `organization` (String) The full name of the organization the project belongs to, `//resourcemanager.origincloudapis.eu/organizations/{organization}`. Changing it replaces the project.
-- `project_id` (String) The project's id, the last segment of its name: 6 to 16 lowercase letters, digits and hyphens, starting with a letter and not ending with a hyphen, such as `acme-prod`. The project's id, the last segment of its name. Changing it replaces the project.
+
+### Optional
+
+- `project_id` (String) The project's id, the last segment of its name: 6 to 16 lowercase letters, digits and hyphens, starting with a letter and not ending with a hyphen, such as `acme-prod`. An id is never used twice: one a project has or had is refused as a `CONFLICT`. Left out, the server generates one, such as `escots-052954863`, and the project returned carries it in its `name`. The project's id, the last segment of its name; left out, the API chooses it. Changing it replaces the project.
 
 ### Read-Only
 

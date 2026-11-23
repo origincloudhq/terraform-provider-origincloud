@@ -38,9 +38,10 @@ func projectSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"project_id": schema.StringAttribute{
-				MarkdownDescription: "The project's id, the last segment of its name: 6 to 16 lowercase letters, digits and hyphens, starting with a letter and not ending with a hyphen, such as `acme-prod`. The project's id, the last segment of its name. Changing it replaces the project.",
-				Required:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
+				MarkdownDescription: "The project's id, the last segment of its name: 6 to 16 lowercase letters, digits and hyphens, starting with a letter and not ending with a hyphen, such as `acme-prod`. An id is never used twice: one a project has or had is refused as a `CONFLICT`. Left out, the server generates one, such as `escots-052954863`, and the project returned carries it in its `name`. The project's id, the last segment of its name; left out, the API chooses it. Changing it replaces the project.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()},
 			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "The project's resource name, `projects/{project}`. The id, chosen when the project is created, is unique across the platform and never used again, not even after the project is deleted.",
