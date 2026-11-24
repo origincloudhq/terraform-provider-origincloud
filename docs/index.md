@@ -223,7 +223,8 @@ token can impersonate an account; a service account's can't impersonate
 another.
 
 Set, `impersonate_service_account` comes before the variable, and `""`
-impersonates no one even when the variable is set. The state holds no
+impersonates no one even when the variable is set, so an argument taken
+from an empty Terraform variable runs with the person's own rights. The state holds no
 token: the exchanged tokens stay in the provider's memory.
 
 ## Upgrading from v0.21
