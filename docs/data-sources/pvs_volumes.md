@@ -43,6 +43,7 @@ Read-Only:
 
 - `attachment` (String) When `state` is `IN_USE`, the id of the volume attachment holding it.
 - `creator` (String) The principal that created the volume, by its full name on iam: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent's or service's name when the platform created it.
+- `encryption` (Attributes) How the volume is encrypted at rest; unset for a volume that isn't encrypted. (see [below for nested schema](#nestedatt--volumes--encryption))
 - `id` (String) The volume's full resource name, `//pvs.origincloudapis.eu/projects/{project}/zones/{zone}/volumes/{volume}`: what an argument that refers to the volume takes. `name` is the relative name, without the host.
 - `iops` (Number) The most I/O operations per second the volume serves, reads and writes combined: a ceiling, not a guaranteed rate. 0 when it isn't limited.
 - `name` (String) The volume's resource name.
@@ -57,3 +58,11 @@ Read-Only:
 - `storage_class` (String) The storage class by its full name, `//pvs.origincloudapis.eu/storageClasses/{storage_class}`. The default class when left empty.
 - `tags` (Map of String) Labels of your own, at most 50. The `origin:name` tag is the name the console shows.
 - `throughput_mibps` (Number) The most MiB per second the volume transfers, reads and writes combined: a ceiling, not a guaranteed rate. 0 when it isn't limited.
+
+<a id="nestedatt--volumes--encryption"></a>
+### Nested Schema for `volumes.encryption`
+
+Read-Only:
+
+- `format` (String) The on-disk format. One of `LUKS2`, `QCOW_LUKS`.
+- `kms_key` (String) The full name of the KMS key that wraps the volume's data key, the project's volumes key: `//kms.origincloudapis.eu/projects/{project}/regions/{region}/keys/{key}`.

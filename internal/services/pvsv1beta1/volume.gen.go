@@ -5,6 +5,7 @@ package pvsv1beta1
 
 import (
 	context "context"
+	attr "github.com/hashicorp/terraform-plugin-framework/attr"
 	schema1 "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	schema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	planmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -37,6 +38,7 @@ type volumeModel struct {
 	ThroughputMibps types.Int64  `tfsdk:"throughput_mibps"`
 	Creator         types.String `tfsdk:"creator"`
 	Tags            types.Map    `tfsdk:"tags"`
+	Encryption      types.Object `tfsdk:"encryption"`
 }
 
 func volumeSchema() schema.Schema {
@@ -128,8 +130,43 @@ func volumeSchema() schema.Schema {
 				ElementType:         types.StringType,
 				Validators:          []validator.Map{framework.ElementCheck{}},
 			},
+			"encryption": schema.SingleNestedAttribute{
+				MarkdownDescription: "How the volume is encrypted at rest; unset for a volume that isn't encrypted.",
+				Computed:            true,
+				Attributes: map[string]schema.Attribute{
+					"format": schema.StringAttribute{
+						MarkdownDescription: "The on-disk format. One of `LUKS2`, `QCOW_LUKS`.",
+						Computed:            true,
+					},
+					"kms_key": schema.StringAttribute{
+						MarkdownDescription: "The full name of the KMS key that wraps the volume's data key, the project's volumes key: `//kms.origincloudapis.eu/projects/{project}/regions/{region}/keys/{key}`.",
+						Computed:            true,
+					},
+				},
+			},
 		},
 	}
+}
+
+func volume_EncryptionAttrTypes() map[string]attr.Type {
+	return map[string]attr.Type{
+		"format":  types.StringType,
+		"kms_key": types.StringType,
+	}
+}
+
+func volume_EncryptionFromProto(p *v1beta1.Encryption, prior types.Object) types.Object {
+	return types.ObjectValueMust(volume_EncryptionAttrTypes(), map[string]attr.Value{
+		"format":  types.StringValue(p.GetFormat().String()),
+		"kms_key": types.StringValue(p.GetKmsKey()),
+	})
+}
+
+func volume_EncryptionToProto(o types.Object) *v1beta1.Encryption {
+	if o.IsNull() || o.IsUnknown() {
+		return nil
+	}
+	return &v1beta1.Encryption{}
 }
 
 func volumeToProto(m *volumeModel) *v1beta1.Volume {
@@ -169,6 +206,7 @@ func volumeFromProto(p *v1beta1.Volume, m *volumeModel) error {
 	m.ThroughputMibps = types.Int64Value(int64(p.GetThroughputMibps()))
 	m.Creator = types.StringValue(p.GetCreator())
 	m.Tags = framework.Optional(m.Tags, framework.StringMap(p.GetTags()), len(p.GetTags()) == 0)
+	m.Encryption = framework.Object(p.GetEncryption(), types.ObjectNull(volume_EncryptionAttrTypes()), volume_EncryptionAttrTypes(), volume_EncryptionFromProto)
 	return nil
 }
 
@@ -238,6 +276,28 @@ type volumeItemModel struct {
 	ThroughputMibps types.Int64  `tfsdk:"throughput_mibps"`
 	Creator         types.String `tfsdk:"creator"`
 	Tags            types.Map    `tfsdk:"tags"`
+	Encryption      types.Object `tfsdk:"encryption"`
+}
+
+func volumeItem_EncryptionAttrTypes() map[string]attr.Type {
+	return map[string]attr.Type{
+		"format":  types.StringType,
+		"kms_key": types.StringType,
+	}
+}
+
+func volumeItem_EncryptionFromProto(p *v1beta1.Encryption, prior types.Object) types.Object {
+	return types.ObjectValueMust(volumeItem_EncryptionAttrTypes(), map[string]attr.Value{
+		"format":  types.StringValue(p.GetFormat().String()),
+		"kms_key": types.StringValue(p.GetKmsKey()),
+	})
+}
+
+func volumeItem_EncryptionToProto(o types.Object) *v1beta1.Encryption {
+	if o.IsNull() || o.IsUnknown() {
+		return nil
+	}
+	return &v1beta1.Encryption{}
 }
 
 func volumeItemFromProto(p *v1beta1.Volume, m *volumeItemModel) error {
@@ -261,6 +321,7 @@ func volumeItemFromProto(p *v1beta1.Volume, m *volumeItemModel) error {
 	m.ThroughputMibps = types.Int64Value(int64(p.GetThroughputMibps()))
 	m.Creator = types.StringValue(p.GetCreator())
 	m.Tags = framework.StringMap(p.GetTags())
+	m.Encryption = framework.Object(p.GetEncryption(), types.ObjectNull(volumeItem_EncryptionAttrTypes()), volumeItem_EncryptionAttrTypes(), volumeItem_EncryptionFromProto)
 	return nil
 }
 
@@ -352,6 +413,20 @@ func volumeListSchema() schema1.Schema {
 							MarkdownDescription: "Labels of your own, at most 50. The `origin:name` tag is the name the console shows.",
 							Computed:            true,
 							ElementType:         types.StringType,
+						},
+						"encryption": schema1.SingleNestedAttribute{
+							MarkdownDescription: "How the volume is encrypted at rest; unset for a volume that isn't encrypted.",
+							Computed:            true,
+							Attributes: map[string]schema1.Attribute{
+								"format": schema1.StringAttribute{
+									MarkdownDescription: "The on-disk format. One of `LUKS2`, `QCOW_LUKS`.",
+									Computed:            true,
+								},
+								"kms_key": schema1.StringAttribute{
+									MarkdownDescription: "The full name of the KMS key that wraps the volume's data key, the project's volumes key: `//kms.origincloudapis.eu/projects/{project}/regions/{region}/keys/{key}`.",
+									Computed:            true,
+								},
+							},
 						},
 					},
 				},
