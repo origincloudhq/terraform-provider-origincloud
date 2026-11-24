@@ -26,6 +26,7 @@ type roleBindingModel struct {
 	Project      types.String `tfsdk:"project"`
 	Creator      types.String `tfsdk:"creator"`
 	CreateTime   types.String `tfsdk:"create_time"`
+	State        types.String `tfsdk:"state"`
 }
 
 func roleBindingSchema() schema.Schema {
@@ -43,12 +44,12 @@ func roleBindingSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"name": schema.StringAttribute{
-				MarkdownDescription: "The binding's resource name.",
+				MarkdownDescription: "The binding's resource name. A pending binding keeps its name when it becomes active.",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"member": schema.StringAttribute{
-				MarkdownDescription: "The full name of who holds the role: a user, `//iam.origincloudapis.eu/users/{user}`, one of the organization's service accounts, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent, `//iam.origincloudapis.eu/serviceAgents/{service_agent}`. Changing it replaces the role binding.",
+				MarkdownDescription: "The full name of who holds the role: a user, `//iam.origincloudapis.eu/users/{user}`, one of the organization's service accounts, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent, `//iam.origincloudapis.eu/serviceAgents/{service_agent}`. A pending binding's member is `user:{email}`, the address it was granted to, until it becomes active. Changing it replaces the role binding.",
 				Required:            true,
 				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
@@ -72,6 +73,10 @@ func roleBindingSchema() schema.Schema {
 			},
 			"create_time": schema.StringAttribute{
 				MarkdownDescription: "When the binding was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.",
+				Computed:            true,
+			},
+			"state": schema.StringAttribute{
+				MarkdownDescription: "Whether the binding grants its role yet. One of `ACTIVE`, `PENDING`.",
 				Computed:            true,
 			},
 		},
@@ -104,6 +109,7 @@ func roleBindingFromProto(p *v1beta1.RoleBinding, m *roleBindingModel) error {
 	m.Project = types.StringValue(p.GetProject())
 	m.Creator = types.StringValue(p.GetCreator())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
+	m.State = types.StringValue(p.GetState().String())
 	return nil
 }
 
@@ -146,6 +152,7 @@ type roleBindingItemModel struct {
 	Project    types.String `tfsdk:"project"`
 	Creator    types.String `tfsdk:"creator"`
 	CreateTime types.String `tfsdk:"create_time"`
+	State      types.String `tfsdk:"state"`
 }
 
 func roleBindingItemFromProto(p *v1beta1.RoleBinding, m *roleBindingItemModel) error {
@@ -160,6 +167,7 @@ func roleBindingItemFromProto(p *v1beta1.RoleBinding, m *roleBindingItemModel) e
 	m.Project = types.StringValue(p.GetProject())
 	m.Creator = types.StringValue(p.GetCreator())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
+	m.State = types.StringValue(p.GetState().String())
 	return nil
 }
 
@@ -171,7 +179,7 @@ type roleBindingListModel struct {
 
 func roleBindingListSchema() schema1.Schema {
 	return schema1.Schema{
-		MarkdownDescription: "Lists an organization's role bindings, oldest first, optionally only a member's or a project's. Needs `iam.member.list` on the organization. With the parent `organizations/-` it lists the caller's own bindings in every organization and needs no permission; `member` must be empty there.",
+		MarkdownDescription: "Lists an organization's role bindings, active and pending, oldest first, optionally only a member's or a project's. Needs `iam.member.list` on the organization. With the parent `organizations/-` it lists the caller's own active bindings in every organization and needs no permission; `member` must be empty there.",
 		Attributes: map[string]schema1.Attribute{
 			"organization": schema1.StringAttribute{
 				MarkdownDescription: "The organization whose role bindings to list.",
@@ -187,11 +195,11 @@ func roleBindingListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"name": schema1.StringAttribute{
-							MarkdownDescription: "The binding's resource name.",
+							MarkdownDescription: "The binding's resource name. A pending binding keeps its name when it becomes active.",
 							Computed:            true,
 						},
 						"member": schema1.StringAttribute{
-							MarkdownDescription: "The full name of who holds the role: a user, `//iam.origincloudapis.eu/users/{user}`, one of the organization's service accounts, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent, `//iam.origincloudapis.eu/serviceAgents/{service_agent}`.",
+							MarkdownDescription: "The full name of who holds the role: a user, `//iam.origincloudapis.eu/users/{user}`, one of the organization's service accounts, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent, `//iam.origincloudapis.eu/serviceAgents/{service_agent}`. A pending binding's member is `user:{email}`, the address it was granted to, until it becomes active.",
 							Computed:            true,
 						},
 						"role": schema1.StringAttribute{
@@ -208,6 +216,10 @@ func roleBindingListSchema() schema1.Schema {
 						},
 						"create_time": schema1.StringAttribute{
 							MarkdownDescription: "When the binding was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.",
+							Computed:            true,
+						},
+						"state": schema1.StringAttribute{
+							MarkdownDescription: "Whether the binding grants its role yet. One of `ACTIVE`, `PENDING`.",
 							Computed:            true,
 						},
 					},
