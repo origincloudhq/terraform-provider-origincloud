@@ -21,7 +21,8 @@ One recorded change.
 
 ### Read-Only
 
-- `acting_party` (String) Who acted for `actor` when the change was made: the hosted MCP server, by the SPIFFE id of its workload, when `actor` made the change through it. Empty when no one acted for `actor`.
+- `acting_parties` (List of String) Every party that acted for `actor` when the change was made, outermost first. For a change a person made as the service account `actor` with a token impersonating it, the person, then the hosted MCP server when the person made it through it. For a change `actor` made through the MCP server with its own token, the MCP server alone. Empty when no one acted for `actor`, and on every entry recorded before the chain was recorded, which name `acting_party` alone.
+- `acting_party` (String) Who acted for `actor` when the change was made: the first of `acting_parties`. That is the hosted MCP server, by the SPIFFE id of its workload, when `actor` made the change through it, and the person, by full resource name, when the person made it as the service account `actor` with a token impersonating it. Empty when no one acted for `actor`.
 - `action` (String) What was done, as a permission key names it, such as `iam.role.assign`.
 - `actor` (String) The full name of who made the change: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, `//iam.origincloudapis.eu/serviceAgents/{service_agent}` for a platform service agent, or `//iam.origincloudapis.eu/services/{service}` for a change the platform made itself.
 - `details` (Map of String) Details of the change that depend on the action, such as the `role` granted or a service account's `display_name`.
