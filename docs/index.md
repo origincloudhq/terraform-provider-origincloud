@@ -4,6 +4,7 @@ page_title: "origincloud Provider"
 description: |-
   Manages Origin Cloud resources.
   Credentials come from credentials_file when it is set, and otherwise from the environment, the first of: ORIGINCLOUD_ACCESS_TOKEN, an access token; ORIGINCLOUD_CREDENTIALS_FILE, the path of a service account key's credentials file; a CI job's OIDC token, exchanged at the security token service for a WORKLOAD service account's access tokens (ORIGINCLOUD_OIDC_TOKEN_FILE, ORIGINCLOUD_OIDC_TOKEN, an HCP Terraform run's TFC_WORKLOAD_IDENTITY_TOKEN, or a GitHub Actions job's token); the session the origin CLI stored at its last origin id login; on an instance that runs as a service account, the instance's metadata service.
+  With impersonate_service_account, or ORIGINCLOUD_IMPERSONATE_SERVICE_ACCOUNT, the provider acts as that service account instead, exchanging the token of those credentials, a person's, at the security token service for the account's.
 ---
 
 # origincloud Provider
@@ -11,6 +12,8 @@ description: |-
 Manages Origin Cloud resources.
 
 Credentials come from `credentials_file` when it is set, and otherwise from the environment, the first of: `ORIGINCLOUD_ACCESS_TOKEN`, an access token; `ORIGINCLOUD_CREDENTIALS_FILE`, the path of a service account key's credentials file; a CI job's OIDC token, exchanged at the security token service for a `WORKLOAD` service account's access tokens (`ORIGINCLOUD_OIDC_TOKEN_FILE`, `ORIGINCLOUD_OIDC_TOKEN`, an HCP Terraform run's `TFC_WORKLOAD_IDENTITY_TOKEN`, or a GitHub Actions job's token); the session the `origin` CLI stored at its last `origin id login`; on an instance that runs as a service account, the instance's metadata service.
+
+With `impersonate_service_account`, or `ORIGINCLOUD_IMPERSONATE_SERVICE_ACCOUNT`, the provider acts as that service account instead, exchanging the token of those credentials, a person's, at the security token service for the account's.
 
 ## Example Usage
 
@@ -189,6 +192,40 @@ apply:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 ```
 
+## Impersonating a service account
+
+A person who runs Terraform on their own machine, logged in with
+`origin id login`, can plan and apply with a service account's rights
+rather than their own, such as the narrow ones of the account the pipeline
+deploys with, without a key. Name the account by its full name in
+`impersonate_service_account`, or in
+`ORIGINCLOUD_IMPERSONATE_SERVICE_ACCOUNT`:
+
+```terraform
+provider "origincloud" {
+  impersonate_service_account = "//iam.origincloudapis.eu/organizations/acme/serviceAccounts/sa-deploy"
+}
+```
+
+The provider takes the token of the credentials it finds, the CLI's
+session, and exchanges it at the security token service,
+`https://sts.origincloudapis.eu`, for the account's access token, and for a
+new one before each expires: an account's token lives five minutes at
+most. Every call then acts as the account. The audit log names the account
+as the `actor` of each change and the person as its `acting_party`.
+
+The person needs `iam.service_account.get_access_token` on the account:
+the role `roles/iam.service-account-token-creator`, bound on the account,
+or on its project or organization. Without it, the exchange is refused and
+the plan fails, naming the account and the role, before the provider sends
+any call: it never falls back to the person's own token. Only a person's
+token can impersonate an account; a service account's can't impersonate
+another.
+
+Set, `impersonate_service_account` comes before the variable, and `""`
+impersonates no one even when the variable is set. The state holds no
+token: the exchanged tokens stay in the provider's memory.
+
 ## Upgrading from v0.21
 
 v0.22 removes the service account's client secret, which the API no longer
@@ -221,4 +258,5 @@ has:
 
 - `credentials_file` (String) The path of a service account key's credentials file, the JSON file `origin iam service-accounts keys create` or the console saved: the provider calls the API as that service account, exchanging an assertion signed with the key at the security token service for access tokens, and a new one before each expires. Set, it comes before every credential of the environment; left out, `ORIGINCLOUD_CREDENTIALS_FILE` names the file. The provider reads the file, and the state never holds the key: no resource or data source creates or returns one.
 - `endpoint` (String) The URL every call goes to instead, such as a test server's.
+- `impersonate_service_account` (String) The full name of a service account to act as, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`: the provider exchanges the token of the credentials it found, a person's such as the `origin id login` session, at the security token service for the account's access tokens, and a new one before each expires, so that the plan and apply have the account's roles only. The person needs `iam.service_account.get_access_token` on the account, the role `roles/iam.service-account-token-creator`. The audit log names the service account as the actor and the person as the acting party. A refused exchange fails the plan: the provider never falls back to the person's own token. Left out, `ORIGINCLOUD_IMPERSONATE_SERVICE_ACCOUNT` names the account; set to `""`, the provider impersonates no one, even with the variable set.
 - `region` (String) The region whose front door the provider calls, such as `eu-central1`. Every front door serves every resource; a region only picks the nearest. A global service, such as location, is always called at its regionless host. Defaults to `ORIGINCLOUD_REGION`, and to the regionless endpoint when that is unset.

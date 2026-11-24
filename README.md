@@ -210,6 +210,21 @@ from the environment, the first of:
 | `region` | The region whose front door the provider calls, such as `eu-central1`. Every front door serves every resource; a region only picks the nearest. A global service, such as location, is always called at its regionless host. Defaults to `ORIGINCLOUD_REGION`, and to the regionless endpoint when that is unset. |
 | `endpoint` | The URL every call goes to instead, such as a test server's. |
 | `credentials_file` | The path of a service account key's credentials file, the provider's credentials before any of the environment's. |
+| `impersonate_service_account` | The full name of a service account to act as, with the token of the credentials above, a person's: see below. Defaults to `ORIGINCLOUD_IMPERSONATE_SERVICE_ACCOUNT`; `""` impersonates no one. |
+
+A person who runs Terraform on their own machine can act as a service
+account instead of with their own rights: with only an `origin id login`
+session and `impersonate_service_account`, or
+`ORIGINCLOUD_IMPERSONATE_SERVICE_ACCOUNT`, set to the account's full name,
+the provider exchanges the session's token at the security token service
+for the account's, so that `terraform plan` and `apply` have only the
+account's roles. The person needs the role
+`roles/iam.service-account-token-creator` on the account. The audit log
+names the account as the actor and the person as the acting party. A
+refused exchange fails the plan; the provider never falls back to the
+person's own token, and no token lands in the state. The
+[provider's documentation](docs/index.md#impersonating-a-service-account)
+says more.
 
 The provider has no resource that creates a service account key, and no
 data source returns one: the API answers with the private key once, which a
