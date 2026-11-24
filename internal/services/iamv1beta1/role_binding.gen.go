@@ -49,7 +49,7 @@ func roleBindingSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"member": schema.StringAttribute{
-				MarkdownDescription: "The full name of who holds the role: a user, `//iam.origincloudapis.eu/users/{user}`, one of the organization's service accounts, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent, `//iam.origincloudapis.eu/serviceAgents/{service_agent}`. A pending binding's member is `user:{email}`, the address it was granted to, until it becomes active. Changing it replaces the role binding.",
+				MarkdownDescription: "The full name of who holds the role: a user, `//iam.origincloudapis.eu/users/{user}`, one of the organization's service accounts, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent, `//iam.origincloudapis.eu/serviceAgents/{service_agent}`. A pending binding's member is `user:{email}`, the address it was granted to, as typed, until it becomes active. On create, `user:{email}` names a user by email address: see CreateRoleBinding. Changing it replaces the role binding.",
 				Required:            true,
 				Validators:          []validator.String{framework.FullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
@@ -199,7 +199,7 @@ func roleBindingListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"member": schema1.StringAttribute{
-							MarkdownDescription: "The full name of who holds the role: a user, `//iam.origincloudapis.eu/users/{user}`, one of the organization's service accounts, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent, `//iam.origincloudapis.eu/serviceAgents/{service_agent}`. A pending binding's member is `user:{email}`, the address it was granted to, until it becomes active.",
+							MarkdownDescription: "The full name of who holds the role: a user, `//iam.origincloudapis.eu/users/{user}`, one of the organization's service accounts, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent, `//iam.origincloudapis.eu/serviceAgents/{service_agent}`. A pending binding's member is `user:{email}`, the address it was granted to, as typed, until it becomes active. On create, `user:{email}` names a user by email address: see CreateRoleBinding.",
 							Computed:            true,
 						},
 						"role": schema1.StringAttribute{

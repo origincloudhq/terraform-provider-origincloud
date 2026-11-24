@@ -17,7 +17,7 @@ One role granted to one member, organization-wide or in one project. A binding c
 
 ### Required
 
-- `member` (String) The full name of who holds the role: a user, `//iam.origincloudapis.eu/users/{user}`, one of the organization's service accounts, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent, `//iam.origincloudapis.eu/serviceAgents/{service_agent}`. A pending binding's member is `user:{email}`, the address it was granted to, until it becomes active. Changing it replaces the role binding.
+- `member` (String) The full name of who holds the role: a user, `//iam.origincloudapis.eu/users/{user}`, one of the organization's service accounts, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent, `//iam.origincloudapis.eu/serviceAgents/{service_agent}`. A pending binding's member is `user:{email}`, the address it was granted to, as typed, until it becomes active. On create, `user:{email}` names a user by email address: see CreateRoleBinding. Changing it replaces the role binding.
 - `organization` (String) The organization the role binding is in. Changing it replaces the role binding.
 - `role` (String) The full name of the role granted, `//iam.origincloudapis.eu/roles/{role}`. Changing it replaces the role binding.
 
