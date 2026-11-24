@@ -17,7 +17,7 @@ One role granted to one member, organization-wide or in one project. A binding c
 
 ### Required
 
-- `member` (String) The full name of who holds the role: a user, `//iam.origincloudapis.eu/users/{user}`, one of the organization's service accounts, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent, `//iam.origincloudapis.eu/serviceAgents/{service_agent}`. Changing it replaces the role binding.
+- `member` (String) The full name of who holds the role: a user, `//iam.origincloudapis.eu/users/{user}`, one of the organization's service accounts, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent, `//iam.origincloudapis.eu/serviceAgents/{service_agent}`. A pending binding's member is `user:{email}`, the address it was granted to, until it becomes active. Changing it replaces the role binding.
 - `organization` (String) The organization the role binding is in. Changing it replaces the role binding.
 - `role` (String) The full name of the role granted, `//iam.origincloudapis.eu/roles/{role}`. Changing it replaces the role binding.
 
@@ -30,4 +30,5 @@ One role granted to one member, organization-wide or in one project. A binding c
 - `create_time` (String) When the binding was created. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
 - `creator` (String) The full name of who created the binding: `//iam.origincloudapis.eu/users/{user}`, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, `//iam.origincloudapis.eu/serviceAgents/{service_agent}` for a platform service agent, or `//iam.origincloudapis.eu/services/{service}` for a change the platform made itself.
 - `id` (String) The role binding's full resource name, `//iam.origincloudapis.eu/organizations/{organization}/roleBindings/{role_binding}`: what an argument that refers to the role binding takes. `name` is the relative name, without the host.
-- `name` (String) The binding's resource name.
+- `name` (String) The binding's resource name. A pending binding keeps its name when it becomes active.
+- `state` (String) Whether the binding grants its role yet. One of `ACTIVE`, `PENDING`.
