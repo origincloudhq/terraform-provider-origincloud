@@ -14,16 +14,17 @@ import (
 
 // auditLogEntryModel is origincloud_iam_audit_log_entry's state.
 type auditLogEntryModel struct {
-	ID          types.String `tfsdk:"id"`
-	Name        types.String `tfsdk:"name"`
-	Project     types.String `tfsdk:"project"`
-	Actor       types.String `tfsdk:"actor"`
-	Action      types.String `tfsdk:"action"`
-	Target      types.String `tfsdk:"target"`
-	Outcome     types.String `tfsdk:"outcome"`
-	OccurTime   types.String `tfsdk:"occur_time"`
-	Details     types.Map    `tfsdk:"details"`
-	ActingParty types.String `tfsdk:"acting_party"`
+	ID            types.String `tfsdk:"id"`
+	Name          types.String `tfsdk:"name"`
+	Project       types.String `tfsdk:"project"`
+	Actor         types.String `tfsdk:"actor"`
+	Action        types.String `tfsdk:"action"`
+	Target        types.String `tfsdk:"target"`
+	Outcome       types.String `tfsdk:"outcome"`
+	OccurTime     types.String `tfsdk:"occur_time"`
+	Details       types.Map    `tfsdk:"details"`
+	ActingParty   types.String `tfsdk:"acting_party"`
+	ActingParties types.List   `tfsdk:"acting_parties"`
 }
 
 func auditLogEntrySchema() schema.Schema {
@@ -68,8 +69,13 @@ func auditLogEntrySchema() schema.Schema {
 				ElementType:         types.StringType,
 			},
 			"acting_party": schema.StringAttribute{
-				MarkdownDescription: "Who acted for `actor` when the change was made: the hosted MCP server, by the SPIFFE id of its workload, when `actor` made the change through it. Empty when no one acted for `actor`.",
+				MarkdownDescription: "Who acted for `actor` when the change was made: the first of `acting_parties`. That is the hosted MCP server, by the SPIFFE id of its workload, when `actor` made the change through it, and the person, by full resource name, when the person made it as the service account `actor` with a token impersonating it. Empty when no one acted for `actor`.",
 				Computed:            true,
+			},
+			"acting_parties": schema.ListAttribute{
+				MarkdownDescription: "Every party that acted for `actor` when the change was made, outermost first. For a change a person made as the service account `actor` with a token impersonating it, the person, then the hosted MCP server when the person made it through it. For a change `actor` made through the MCP server with its own token, the MCP server alone. Empty when no one acted for `actor`, and on every entry recorded before the chain was recorded, which name `acting_party` alone.",
+				Computed:            true,
+				ElementType:         types.StringType,
 			},
 		},
 	}
@@ -90,6 +96,7 @@ func auditLogEntryFromProto(p *v1beta1.AuditLogEntry, m *auditLogEntryModel) err
 	m.OccurTime = framework.Timestamp(p.GetOccurTime(), types.StringNull())
 	m.Details = framework.StringMap(p.GetDetails())
 	m.ActingParty = types.StringValue(p.GetActingParty())
+	m.ActingParties = framework.StringList(p.GetActingParties())
 	return nil
 }
 
@@ -162,8 +169,13 @@ func auditLogEntryListSchema() schema.Schema {
 							ElementType:         types.StringType,
 						},
 						"acting_party": schema.StringAttribute{
-							MarkdownDescription: "Who acted for `actor` when the change was made: the hosted MCP server, by the SPIFFE id of its workload, when `actor` made the change through it. Empty when no one acted for `actor`.",
+							MarkdownDescription: "Who acted for `actor` when the change was made: the first of `acting_parties`. That is the hosted MCP server, by the SPIFFE id of its workload, when `actor` made the change through it, and the person, by full resource name, when the person made it as the service account `actor` with a token impersonating it. Empty when no one acted for `actor`.",
 							Computed:            true,
+						},
+						"acting_parties": schema.ListAttribute{
+							MarkdownDescription: "Every party that acted for `actor` when the change was made, outermost first. For a change a person made as the service account `actor` with a token impersonating it, the person, then the hosted MCP server when the person made it through it. For a change `actor` made through the MCP server with its own token, the MCP server alone. Empty when no one acted for `actor`, and on every entry recorded before the chain was recorded, which name `acting_party` alone.",
+							Computed:            true,
+							ElementType:         types.StringType,
 						},
 					},
 				},
