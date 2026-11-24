@@ -176,6 +176,7 @@ func withoutCredentials(t *testing.T) {
 	for _, v := range []string{
 		"ORIGINCLOUD_ACCESS_TOKEN", "ORIGINCLOUD_CREDENTIALS_FILE", "ORIGINCLOUD_OIDC_TOKEN_FILE", "ORIGINCLOUD_OIDC_TOKEN",
 		"TFC_WORKLOAD_IDENTITY_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL", "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
+		"ORIGINCLOUD_IMPERSONATE_SERVICE_ACCOUNT", "ORIGINCLOUD_STS_ENDPOINT",
 	} {
 		t.Setenv(v, "")
 	}
@@ -183,6 +184,7 @@ func withoutCredentials(t *testing.T) {
 	t.Setenv("ORIGINCLOUD_METADATA_DISABLED", "true")
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
 }
 
 // keyConfig returns a configuration of the provider calling fake with the

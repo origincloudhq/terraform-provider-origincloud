@@ -137,6 +137,41 @@ for the federated credential's conditions.
 
 {{ codefile "yaml" "examples/provider/gitlab-ci.yml" }}
 
+## Impersonating a service account
+
+A person who runs Terraform on their own machine, logged in with
+`origin id login`, can plan and apply with a service account's rights
+rather than their own, such as the narrow ones of the account the pipeline
+deploys with, without a key. Name the account by its full name in
+`impersonate_service_account`, or in
+`ORIGINCLOUD_IMPERSONATE_SERVICE_ACCOUNT`:
+
+```terraform
+provider "origincloud" {
+  impersonate_service_account = "//iam.origincloudapis.eu/organizations/acme/serviceAccounts/sa-deploy"
+}
+```
+
+The provider takes the token of the credentials it finds, the CLI's
+session, and exchanges it at the security token service,
+`https://sts.origincloudapis.eu`, for the account's access token, and for a
+new one before each expires: an account's token lives five minutes at
+most. Every call then acts as the account. The audit log names the account
+as the `actor` of each change and the person as its `acting_party`.
+
+The person needs `iam.service_account.get_access_token` on the account:
+the role `roles/iam.service-account-token-creator`, bound on the account,
+or on its project or organization. Without it, the exchange is refused and
+the plan fails, naming the account and the role, before the provider sends
+any call: it never falls back to the person's own token. Only a person's
+token can impersonate an account; a service account's can't impersonate
+another.
+
+Set, `impersonate_service_account` comes before the variable, and `""`
+impersonates no one even when the variable is set, so an argument taken
+from an empty Terraform variable runs with the person's own rights. The state holds no
+token: the exchanged tokens stay in the provider's memory.
+
 ## Upgrading from v0.21
 
 v0.22 removes the service account's client secret, which the API no longer

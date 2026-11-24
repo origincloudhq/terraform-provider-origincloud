@@ -101,8 +101,9 @@ type fakeIAM struct {
 	// the actor of what it does; without tokens, it names iamCaller.
 	tokens  map[string]fakeToken
 	refused int
-	// actor is the principal of the call being served.
-	actor string
+	// actor is the principal of the call being served, and actingParty
+	// who acted for it, empty when no one did.
+	actor, actingParty string
 	// calls are the mutations received, such as
 	// "DELETE organizations/acme/roleBindings/rb-1", and requestIDs their
 	// request ids, empty for a mutation that sent none.
@@ -167,13 +168,16 @@ func (f *fakeIAM) deleteUser(user string) {
 // fakeToken is an access token a fake security token service handed out.
 type fakeToken struct {
 	principal string
-	expiry    time.Time
+	// actingParty acts for principal, such as the person who impersonates
+	// a service account; empty when no one does.
+	actingParty string
+	expiry      time.Time
 }
 
 func (f *fakeIAM) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.actor = "//iam.origincloudapis.eu/users/" + iamCaller
+	f.actor, f.actingParty = "//iam.origincloudapis.eu/users/"+iamCaller, ""
 	if f.tokens != nil {
 		token, ok := f.tokens[strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")]
 		if !ok || !time.Now().Before(token.expiry) {
@@ -181,7 +185,7 @@ func (f *fakeIAM) serve(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "the access token is missing, unknown or expired")
 			return
 		}
-		f.actor = token.principal
+		f.actor, f.actingParty = token.principal, token.actingParty
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/v1beta1/")
 	s := strings.Split(path, "/")
@@ -575,7 +579,7 @@ func (f *fakeIAM) deleteFederatedCredential(name string) {
 func (f *fakeIAM) audit(organization, project, action, target string, details map[string]string) {
 	f.auditLog = append(f.auditLog, &iamv1beta1.AuditLogEntry{
 		Name:    fmt.Sprintf("organizations/%s/auditLogEntries/e-%d", organization, len(f.auditLog)+1),
-		Project: project, Actor: f.actor, Action: action, Target: target,
+		Project: project, Actor: f.actor, ActingParty: f.actingParty, Action: action, Target: target,
 		Outcome:   iamv1beta1.AuditLogEntry_SUCCEEDED,
 		OccurTime: timestamppb.New(time.Date(2026, 11, 1, 12, 0, len(f.auditLog), 0, time.UTC)),
 		Details:   details,
