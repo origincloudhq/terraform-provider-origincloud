@@ -40,6 +40,7 @@ Read-Only:
 - `interface_addresses` (Attributes List) Each network interface's private addresses, in the order of `network_interfaces`; an interface not attached yet has none. (see [below for nested schema](#nestedatt--instances--interface_addresses))
 - `key_pair` (String) The full name of the key pair whose public key is installed for `login_user`, in the instance's project.
 - `launch_template` (String) The full name of the launch template version the instance was launched from, `//compute.origincloudapis.eu/projects/{project}/launchTemplates/{launch_template}@{version}`, with the number the launch resolved `@default` or `@latest` to. Empty for an instance launched without a template. The template may since have been changed or deleted.
+- `local_disks` (Attributes List) Disks on the machine the instance runs on, beside its boot volume, created blank at launch; at most 16. A local disk is temporary: it comes back empty after every stop and start and after its machine restarts, and it is deleted with the instance. It can't be the boot disk, snapshotted, resized or detached, and an instance with one isn't moved to another machine while it runs. Each appears among the instance's volume attachments. (see [below for nested schema](#nestedatt--instances--local_disks))
 - `login_user` (String) The account to log in as: a user created at first boot that holds the key pair. A POSIX user name of at most 32 lowercase letters, digits, underscores and hyphens, starting with a letter or an underscore, and not `root`. The image's `default_user` when left empty.
 - `name` (String) The instance's resource name.
 - `network_interfaces` (List of String) The network interfaces' full names, in device order, the boot interface first; exactly one today. Each is an existing interface in the instance's project and zone that nothing else holds, created with the network service: its subnet and security groups are the instance's. Terminating the instance releases it, and it stays. An instance launched from a recipe with an interface spec, or before interfaces were named at launch, shows the interface created for it once it exists, which is deleted with the instance.
@@ -86,3 +87,12 @@ Read-Only:
 - `ipv4_address` (String) Its private IPv4 address.
 - `ipv6_address` (String) Its IPv6 address.
 - `network_interface` (String) The network interface's full name.
+
+
+<a id="nestedatt--instances--local_disks"></a>
+### Nested Schema for `instances.local_disks`
+
+Read-Only:
+
+- `device` (String) The device name the guest sees the disk under, `vda` to `vdz` but `vdc`, and none the boot volume or another local disk has. The first free one, in the order the disks are listed, when left empty.
+- `size_gib` (Number) The size in GiB, at least 1.

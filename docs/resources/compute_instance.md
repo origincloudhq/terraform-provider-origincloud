@@ -65,6 +65,7 @@ resource "origincloud_compute_instance" "from_template" {
 - `instance_type` (String) The instance type by its full name, `//compute.origincloudapis.eu/instanceTypes/{instance_type}`, such as `//compute.origincloudapis.eu/instanceTypes/gp1.core.2`: one whose `available` is true. Changing it needs the instance `STOPPED`. Required unless `launch_template` is set; left out, it is the template's.
 - `key_pair` (String) The full name of the key pair whose public key is installed for `login_user`, in the instance's project. Changing it replaces the instance. Required unless `launch_template` is set; left out, it is the template's.
 - `launch_template` (String) The full name of the launch template version the instance was launched from, `//compute.origincloudapis.eu/projects/{project}/launchTemplates/{launch_template}@{version}`, with the number the launch resolved `@default` or `@latest` to. Empty for an instance launched without a template. The template may since have been changed or deleted. Set it to launch the instance from a template: `//compute.origincloudapis.eu/projects/{project}/launchTemplates/{launch_template}` for its default version, or with `@{version}`, `@default` or `@latest` after it for that version. The arguments set with it override the version's for this launch only. The state keeps what was configured while the template is the one launched from.
+- `local_disks` (Attributes List) Disks on the machine the instance runs on, beside its boot volume, created blank at launch; at most 16. A local disk is temporary: it comes back empty after every stop and start and after its machine restarts, and it is deleted with the instance. It can't be the boot disk, snapshotted, resized or detached, and an instance with one isn't moved to another machine while it runs. Each appears among the instance's volume attachments. Changing it replaces the instance. (see [below for nested schema](#nestedatt--local_disks))
 - `login_user` (String) The account to log in as: a user created at first boot that holds the key pair. A POSIX user name of at most 32 lowercase letters, digits, underscores and hyphens, starting with a letter or an underscore, and not `root`. The image's `default_user` when left empty. Changing it replaces the instance.
 - `network_interfaces` (List of String) The network interfaces' full names, in device order, the boot interface first; exactly one today. Each is an existing interface in the instance's project and zone that nothing else holds, created with the network service: its subnet and security groups are the instance's. Terminating the instance releases it, and it stays. An instance launched from a recipe with an interface spec, or before interfaces were named at launch, shows the interface created for it once it exists, which is deleted with the instance. Changing it replaces the instance. Required unless `launch_template` is set; left out, it is the template's.
 - `service_account` (String) The full name of the service account the instance runs as, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`: a `WORKLOAD` service account of the instance's organization that isn't deleted. Launching with one, or updating the instance to one, needs `iam.service_account.act_as` on the organization as well; an update that leaves it empty removes it, and a terminated instance's can't change. Empty for an instance that runs as none. Left out, it keeps its current value, the template's when launched from one; set it empty to clear it.
@@ -92,6 +93,18 @@ Optional:
 Read-Only:
 
 - `volume` (String) The volume's full name, in the instance's project and zone.
+
+
+<a id="nestedatt--local_disks"></a>
+### Nested Schema for `local_disks`
+
+Required:
+
+- `size_gib` (Number) The size in GiB, at least 1.
+
+Optional:
+
+- `device` (String) The device name the guest sees the disk under, `vda` to `vdz` but `vdc`, and none the boot volume or another local disk has. The first free one, in the order the disks are listed, when left empty.
 
 
 <a id="nestedatt--health"></a>

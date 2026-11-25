@@ -140,6 +140,24 @@ func launchTemplateSchema() schema.Schema {
 							},
 						},
 					},
+					"local_disks": schema.ListNestedAttribute{
+						MarkdownDescription: "Disks on the machine the instance runs on, beside its boot volume, created blank at launch; at most 16. A local disk is temporary: it comes back empty after every stop and start and after its machine restarts, and it is deleted with the instance.",
+						Optional:            true,
+						Validators:          []validator.List{framework.ElementCheck{}},
+						NestedObject: schema.NestedAttributeObject{
+							Attributes: map[string]schema.Attribute{
+								"size_gib": schema.Int64Attribute{
+									MarkdownDescription: "The size in GiB, at least 1.",
+									Required:            true,
+									Validators:          []validator.Int64{framework.Int32()},
+								},
+								"device": schema.StringAttribute{
+									MarkdownDescription: "The device name the guest sees the disk under, `vda` to `vdz` but `vdc`, and none the boot volume or another local disk has. The first free one, in the order the disks are listed, when left empty.",
+									Optional:            true,
+								},
+							},
+						},
+					},
 				},
 			},
 			"default_version": schema.Int64Attribute{
@@ -190,6 +208,7 @@ func launchTemplate_LaunchTemplateDataAttrTypes() map[string]attr.Type {
 		"service_account":    types.StringType,
 		"tags":               types.MapType{ElemType: types.StringType},
 		"network_interfaces": types.ListType{ElemType: types.ObjectType{AttrTypes: launchTemplate_LaunchTemplateData_NetworkInterfacesAttrTypes()}},
+		"local_disks":        types.ListType{ElemType: types.ObjectType{AttrTypes: launchTemplate_LaunchTemplateData_LocalDisksAttrTypes()}},
 	}
 }
 
@@ -204,6 +223,7 @@ func launchTemplate_LaunchTemplateDataFromProto(p *v1beta1.LaunchTemplateData, p
 		"service_account":    framework.Optional(framework.Attr(prior, "service_account", types.StringNull()), types.StringValue(p.GetServiceAccount()), p.GetServiceAccount() == ""),
 		"tags":               framework.Optional(framework.Attr(prior, "tags", types.MapNull(types.StringType)), framework.StringMap(p.GetTags()), len(p.GetTags()) == 0),
 		"network_interfaces": framework.Optional(framework.Attr(prior, "network_interfaces", types.ListNull(types.ObjectType{AttrTypes: launchTemplate_LaunchTemplateData_NetworkInterfacesAttrTypes()})), framework.MessageList(launchTemplate_LaunchTemplateData_NetworkInterfacesAttrTypes(), p.GetNetworkInterfaces(), framework.Attr(prior, "network_interfaces", types.ListNull(types.ObjectType{AttrTypes: launchTemplate_LaunchTemplateData_NetworkInterfacesAttrTypes()})), launchTemplate_LaunchTemplateData_NetworkInterfacesFromProto), len(p.GetNetworkInterfaces()) == 0),
+		"local_disks":        framework.Optional(framework.Attr(prior, "local_disks", types.ListNull(types.ObjectType{AttrTypes: launchTemplate_LaunchTemplateData_LocalDisksAttrTypes()})), framework.MessageList(launchTemplate_LaunchTemplateData_LocalDisksAttrTypes(), p.GetLocalDisks(), framework.Attr(prior, "local_disks", types.ListNull(types.ObjectType{AttrTypes: launchTemplate_LaunchTemplateData_LocalDisksAttrTypes()})), launchTemplate_LaunchTemplateData_LocalDisksFromProto), len(p.GetLocalDisks()) == 0),
 	})
 }
 
@@ -222,6 +242,9 @@ func launchTemplate_LaunchTemplateDataToProto(o types.Object) *v1beta1.LaunchTem
 		Tags:           framework.StringMapToProto(framework.Attr(o, "tags", types.MapNull(types.StringType))),
 		NetworkInterfaces: framework.Elements(framework.Attr(o, "network_interfaces", types.ListNull(types.ObjectType{AttrTypes: launchTemplate_LaunchTemplateData_NetworkInterfacesAttrTypes()})), func(e attr.Value) *v1beta1.LaunchTemplateNetworkInterface {
 			return launchTemplate_LaunchTemplateData_NetworkInterfacesToProto(e.(types.Object))
+		}),
+		LocalDisks: framework.Elements(framework.Attr(o, "local_disks", types.ListNull(types.ObjectType{AttrTypes: launchTemplate_LaunchTemplateData_LocalDisksAttrTypes()})), func(e attr.Value) *v1beta1.LocalDisk {
+			return launchTemplate_LaunchTemplateData_LocalDisksToProto(e.(types.Object))
 		}),
 	}
 }
@@ -299,6 +322,30 @@ func launchTemplate_LaunchTemplateData_NetworkInterfaces_SpecToProto(o types.Obj
 	return &v1beta1.NetworkInterfaceSpec{
 		Subnet:         framework.Attr(o, "subnet", types.StringNull()).ValueString(),
 		SecurityGroups: framework.Elements(framework.Attr(o, "security_groups", types.ListNull(types.StringType)), func(e attr.Value) string { return e.(types.String).ValueString() }),
+	}
+}
+
+func launchTemplate_LaunchTemplateData_LocalDisksAttrTypes() map[string]attr.Type {
+	return map[string]attr.Type{
+		"size_gib": types.Int64Type,
+		"device":   types.StringType,
+	}
+}
+
+func launchTemplate_LaunchTemplateData_LocalDisksFromProto(p *v1beta1.LocalDisk, prior types.Object) types.Object {
+	return types.ObjectValueMust(launchTemplate_LaunchTemplateData_LocalDisksAttrTypes(), map[string]attr.Value{
+		"size_gib": types.Int64Value(int64(p.GetSizeGib())),
+		"device":   framework.Optional(framework.Attr(prior, "device", types.StringNull()), types.StringValue(p.GetDevice()), p.GetDevice() == ""),
+	})
+}
+
+func launchTemplate_LaunchTemplateData_LocalDisksToProto(o types.Object) *v1beta1.LocalDisk {
+	if o.IsNull() || o.IsUnknown() {
+		return nil
+	}
+	return &v1beta1.LocalDisk{
+		SizeGib: int32(framework.Attr(o, "size_gib", types.Int64Null()).ValueInt64()),
+		Device:  framework.Attr(o, "device", types.StringNull()).ValueString(),
 	}
 }
 
@@ -489,6 +536,22 @@ func launchTemplateByNameSchema() schema1.Schema {
 							},
 						},
 					},
+					"local_disks": schema1.ListNestedAttribute{
+						MarkdownDescription: "Disks on the machine the instance runs on, beside its boot volume, created blank at launch; at most 16. A local disk is temporary: it comes back empty after every stop and start and after its machine restarts, and it is deleted with the instance.",
+						Computed:            true,
+						NestedObject: schema1.NestedAttributeObject{
+							Attributes: map[string]schema1.Attribute{
+								"size_gib": schema1.Int64Attribute{
+									MarkdownDescription: "The size in GiB, at least 1.",
+									Computed:            true,
+								},
+								"device": schema1.StringAttribute{
+									MarkdownDescription: "The device name the guest sees the disk under, `vda` to `vdz` but `vdc`, and none the boot volume or another local disk has. The first free one, in the order the disks are listed, when left empty.",
+									Computed:            true,
+								},
+							},
+						},
+					},
 				},
 			},
 			"default_version": schema1.Int64Attribute{
@@ -535,6 +598,7 @@ func launchTemplateByName_LaunchTemplateDataAttrTypes() map[string]attr.Type {
 		"service_account":    types.StringType,
 		"tags":               types.MapType{ElemType: types.StringType},
 		"network_interfaces": types.ListType{ElemType: types.ObjectType{AttrTypes: launchTemplateByName_LaunchTemplateData_NetworkInterfacesAttrTypes()}},
+		"local_disks":        types.ListType{ElemType: types.ObjectType{AttrTypes: launchTemplateByName_LaunchTemplateData_LocalDisksAttrTypes()}},
 	}
 }
 
@@ -549,6 +613,7 @@ func launchTemplateByName_LaunchTemplateDataFromProto(p *v1beta1.LaunchTemplateD
 		"service_account":    types.StringValue(p.GetServiceAccount()),
 		"tags":               framework.StringMap(p.GetTags()),
 		"network_interfaces": framework.MessageList(launchTemplateByName_LaunchTemplateData_NetworkInterfacesAttrTypes(), p.GetNetworkInterfaces(), types.ListNull(types.ObjectType{AttrTypes: launchTemplateByName_LaunchTemplateData_NetworkInterfacesAttrTypes()}), launchTemplateByName_LaunchTemplateData_NetworkInterfacesFromProto),
+		"local_disks":        framework.MessageList(launchTemplateByName_LaunchTemplateData_LocalDisksAttrTypes(), p.GetLocalDisks(), types.ListNull(types.ObjectType{AttrTypes: launchTemplateByName_LaunchTemplateData_LocalDisksAttrTypes()}), launchTemplateByName_LaunchTemplateData_LocalDisksFromProto),
 	})
 }
 
@@ -620,6 +685,27 @@ func launchTemplateByName_LaunchTemplateData_NetworkInterfaces_SpecToProto(o typ
 		return nil
 	}
 	return &v1beta1.NetworkInterfaceSpec{}
+}
+
+func launchTemplateByName_LaunchTemplateData_LocalDisksAttrTypes() map[string]attr.Type {
+	return map[string]attr.Type{
+		"size_gib": types.Int64Type,
+		"device":   types.StringType,
+	}
+}
+
+func launchTemplateByName_LaunchTemplateData_LocalDisksFromProto(p *v1beta1.LocalDisk, prior types.Object) types.Object {
+	return types.ObjectValueMust(launchTemplateByName_LaunchTemplateData_LocalDisksAttrTypes(), map[string]attr.Value{
+		"size_gib": types.Int64Value(int64(p.GetSizeGib())),
+		"device":   types.StringValue(p.GetDevice()),
+	})
+}
+
+func launchTemplateByName_LaunchTemplateData_LocalDisksToProto(o types.Object) *v1beta1.LocalDisk {
+	if o.IsNull() || o.IsUnknown() {
+		return nil
+	}
+	return &v1beta1.LocalDisk{}
 }
 
 func launchTemplateByNameFromProto(p *v1beta1.LaunchTemplate, m *launchTemplateByNameModel) error {
@@ -753,6 +839,22 @@ func launchTemplateRevisionsSchema() schema1.Schema {
 										},
 									},
 								},
+								"local_disks": schema1.ListNestedAttribute{
+									MarkdownDescription: "Disks on the machine the instance runs on, beside its boot volume, created blank at launch; at most 16. A local disk is temporary: it comes back empty after every stop and start and after its machine restarts, and it is deleted with the instance.",
+									Computed:            true,
+									NestedObject: schema1.NestedAttributeObject{
+										Attributes: map[string]schema1.Attribute{
+											"size_gib": schema1.Int64Attribute{
+												MarkdownDescription: "The size in GiB, at least 1.",
+												Computed:            true,
+											},
+											"device": schema1.StringAttribute{
+												MarkdownDescription: "The device name the guest sees the disk under, `vda` to `vdz` but `vdc`, and none the boot volume or another local disk has. The first free one, in the order the disks are listed, when left empty.",
+												Computed:            true,
+											},
+										},
+									},
+								},
 							},
 						},
 						"default_version": schema1.Int64Attribute{
@@ -841,6 +943,7 @@ func launchTemplateItem_LaunchTemplateDataAttrTypes() map[string]attr.Type {
 		"service_account":    types.StringType,
 		"tags":               types.MapType{ElemType: types.StringType},
 		"network_interfaces": types.ListType{ElemType: types.ObjectType{AttrTypes: launchTemplateItem_LaunchTemplateData_NetworkInterfacesAttrTypes()}},
+		"local_disks":        types.ListType{ElemType: types.ObjectType{AttrTypes: launchTemplateItem_LaunchTemplateData_LocalDisksAttrTypes()}},
 	}
 }
 
@@ -855,6 +958,7 @@ func launchTemplateItem_LaunchTemplateDataFromProto(p *v1beta1.LaunchTemplateDat
 		"service_account":    types.StringValue(p.GetServiceAccount()),
 		"tags":               framework.StringMap(p.GetTags()),
 		"network_interfaces": framework.MessageList(launchTemplateItem_LaunchTemplateData_NetworkInterfacesAttrTypes(), p.GetNetworkInterfaces(), types.ListNull(types.ObjectType{AttrTypes: launchTemplateItem_LaunchTemplateData_NetworkInterfacesAttrTypes()}), launchTemplateItem_LaunchTemplateData_NetworkInterfacesFromProto),
+		"local_disks":        framework.MessageList(launchTemplateItem_LaunchTemplateData_LocalDisksAttrTypes(), p.GetLocalDisks(), types.ListNull(types.ObjectType{AttrTypes: launchTemplateItem_LaunchTemplateData_LocalDisksAttrTypes()}), launchTemplateItem_LaunchTemplateData_LocalDisksFromProto),
 	})
 }
 
@@ -926,6 +1030,27 @@ func launchTemplateItem_LaunchTemplateData_NetworkInterfaces_SpecToProto(o types
 		return nil
 	}
 	return &v1beta1.NetworkInterfaceSpec{}
+}
+
+func launchTemplateItem_LaunchTemplateData_LocalDisksAttrTypes() map[string]attr.Type {
+	return map[string]attr.Type{
+		"size_gib": types.Int64Type,
+		"device":   types.StringType,
+	}
+}
+
+func launchTemplateItem_LaunchTemplateData_LocalDisksFromProto(p *v1beta1.LocalDisk, prior types.Object) types.Object {
+	return types.ObjectValueMust(launchTemplateItem_LaunchTemplateData_LocalDisksAttrTypes(), map[string]attr.Value{
+		"size_gib": types.Int64Value(int64(p.GetSizeGib())),
+		"device":   types.StringValue(p.GetDevice()),
+	})
+}
+
+func launchTemplateItem_LaunchTemplateData_LocalDisksToProto(o types.Object) *v1beta1.LocalDisk {
+	if o.IsNull() || o.IsUnknown() {
+		return nil
+	}
+	return &v1beta1.LocalDisk{}
 }
 
 func launchTemplateItemFromProto(p *v1beta1.LaunchTemplate, m *launchTemplateItemModel) error {
@@ -1042,6 +1167,22 @@ func launchTemplateListSchema() schema1.Schema {
 											},
 											"network_interface": schema1.StringAttribute{
 												MarkdownDescription: "The full name of an existing interface, `//network.origincloudapis.eu/projects/{project}/zones/{zone}/networkInterfaces/{network_interface}`, in the launch's project and zone, that nothing else holds. It brings its own subnet and security groups. Terminating the instance releases it, and it stays.",
+												Computed:            true,
+											},
+										},
+									},
+								},
+								"local_disks": schema1.ListNestedAttribute{
+									MarkdownDescription: "Disks on the machine the instance runs on, beside its boot volume, created blank at launch; at most 16. A local disk is temporary: it comes back empty after every stop and start and after its machine restarts, and it is deleted with the instance.",
+									Computed:            true,
+									NestedObject: schema1.NestedAttributeObject{
+										Attributes: map[string]schema1.Attribute{
+											"size_gib": schema1.Int64Attribute{
+												MarkdownDescription: "The size in GiB, at least 1.",
+												Computed:            true,
+											},
+											"device": schema1.StringAttribute{
+												MarkdownDescription: "The device name the guest sees the disk under, `vda` to `vdz` but `vdc`, and none the boot volume or another local disk has. The first free one, in the order the disks are listed, when left empty.",
 												Computed:            true,
 											},
 										},
