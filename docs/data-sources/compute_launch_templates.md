@@ -49,6 +49,7 @@ Read-Only:
 - `image_family` (String) The full name of the image family to launch the current public image of, `//compute.origincloudapis.eu/imageFamilies/{image_family}`. Set exactly one of `image` and `image_family`.
 - `instance_type` (String) The instance type by its full name, `//compute.origincloudapis.eu/instanceTypes/{instance_type}`, such as `//compute.origincloudapis.eu/instanceTypes/gp1.core.2`: one whose `available` is true.
 - `key_pair` (String) The full name of the key pair whose public key is installed for `login_user`, in the launch's project.
+- `local_disks` (Attributes List) Disks on the machine the instance runs on, beside its boot volume, created blank at launch; at most 16. A local disk is temporary: it comes back empty after every stop and start and after its machine restarts, and it is deleted with the instance. (see [below for nested schema](#nestedatt--launch_templates--launch_template_data--local_disks))
 - `login_user` (String) The account to log in as: a user created at first boot that holds the key pair. A POSIX user name of at most 32 lowercase letters, digits, underscores and hyphens, starting with a letter or an underscore, and not `root`. The image's `default_user` when left empty.
 - `network_interfaces` (Attributes List) The instance's network interfaces, in device order, the boot interface first; at most one today. Left empty, the instance gets one interface created from an empty spec: in the project's default subnet, with the VPC's default security group. (see [below for nested schema](#nestedatt--launch_templates--launch_template_data--network_interfaces))
 - `service_account` (String) The full name of the service account the instance runs as, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`: a `WORKLOAD` service account of the project's organization that isn't deleted. Launching with one needs `iam.service_account.act_as` on the organization as well. Empty for an instance that runs as none.
@@ -61,6 +62,15 @@ Read-Only:
 
 - `size_gib` (Number) The size in GiB, at least the image's size; the image's size when left at 0. A smaller size is refused rather than raised.
 - `storage_class` (String) The storage class by its full name, `//pvs.origincloudapis.eu/storageClasses/{storage_class}`; the default class when left empty.
+
+
+<a id="nestedatt--launch_templates--launch_template_data--local_disks"></a>
+### Nested Schema for `launch_templates.launch_template_data.local_disks`
+
+Read-Only:
+
+- `device` (String) The device name the guest sees the disk under, `vda` to `vdz` but `vdc`, and none the boot volume or another local disk has. The first free one, in the order the disks are listed, when left empty.
+- `size_gib` (Number) The size in GiB, at least 1.
 
 
 <a id="nestedatt--launch_templates--launch_template_data--network_interfaces"></a>

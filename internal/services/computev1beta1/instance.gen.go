@@ -44,6 +44,7 @@ type instanceModel struct {
 	InterfaceAddresses types.List   `tfsdk:"interface_addresses"`
 	ServiceAccount     types.String `tfsdk:"service_account"`
 	LaunchTemplate     types.String `tfsdk:"launch_template"`
+	LocalDisks         types.List   `tfsdk:"local_disks"`
 }
 
 func instanceSchema() schema.Schema {
@@ -230,6 +231,28 @@ func instanceSchema() schema.Schema {
 				Validators:          []validator.String{framework.VersionedFullNameReference()},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), framework.StringReplaceTemplate(framework.TemplateSpelling)},
 			},
+			"local_disks": schema.ListNestedAttribute{
+				MarkdownDescription: "Disks on the machine the instance runs on, beside its boot volume, created blank at launch; at most 16. A local disk is temporary: it comes back empty after every stop and start and after its machine restarts, and it is deleted with the instance. It can't be the boot disk, snapshotted, resized or detached, and an instance with one isn't moved to another machine while it runs. Each appears among the instance's volume attachments. Changing it replaces the instance.",
+				Optional:            true,
+				Computed:            true,
+				Validators:          []validator.List{framework.ElementCheck{}},
+				PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown(), framework.ListReplaceIfSent(func(plan, state types.List) bool {
+					return framework.SameMessages(framework.Elements(plan, func(e attr.Value) *v1beta1.LocalDisk { return instance_LocalDisksToProto(e.(types.Object)) }), framework.Elements(state, func(e attr.Value) *v1beta1.LocalDisk { return instance_LocalDisksToProto(e.(types.Object)) }))
+				}, true)},
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"size_gib": schema.Int64Attribute{
+							MarkdownDescription: "The size in GiB, at least 1.",
+							Required:            true,
+							Validators:          []validator.Int64{framework.Int32()},
+						},
+						"device": schema.StringAttribute{
+							MarkdownDescription: "The device name the guest sees the disk under, `vda` to `vdz` but `vdc`, and none the boot volume or another local disk has. The first free one, in the order the disks are listed, when left empty.",
+							Optional:            true,
+						},
+					},
+				},
+			},
 		},
 	}
 }
@@ -329,6 +352,30 @@ func instance_InterfaceAddressesToProto(o types.Object) *v1beta1.InterfaceAddres
 	return &v1beta1.InterfaceAddresses{}
 }
 
+func instance_LocalDisksAttrTypes() map[string]attr.Type {
+	return map[string]attr.Type{
+		"size_gib": types.Int64Type,
+		"device":   types.StringType,
+	}
+}
+
+func instance_LocalDisksFromProto(p *v1beta1.LocalDisk, prior types.Object) types.Object {
+	return types.ObjectValueMust(instance_LocalDisksAttrTypes(), map[string]attr.Value{
+		"size_gib": types.Int64Value(int64(p.GetSizeGib())),
+		"device":   framework.Optional(framework.Attr(prior, "device", types.StringNull()), types.StringValue(p.GetDevice()), p.GetDevice() == ""),
+	})
+}
+
+func instance_LocalDisksToProto(o types.Object) *v1beta1.LocalDisk {
+	if o.IsNull() || o.IsUnknown() {
+		return nil
+	}
+	return &v1beta1.LocalDisk{
+		SizeGib: int32(framework.Attr(o, "size_gib", types.Int64Null()).ValueInt64()),
+		Device:  framework.Attr(o, "device", types.StringNull()).ValueString(),
+	}
+}
+
 func instanceToProto(m *instanceModel) *v1beta1.Instance {
 	return &v1beta1.Instance{
 		Name:              m.Name.ValueString(),
@@ -342,6 +389,7 @@ func instanceToProto(m *instanceModel) *v1beta1.Instance {
 		Tags:              framework.StringMapToProto(m.Tags),
 		ServiceAccount:    m.ServiceAccount.ValueString(),
 		LaunchTemplate:    m.LaunchTemplate.ValueString(),
+		LocalDisks:        framework.Elements(m.LocalDisks, func(e attr.Value) *v1beta1.LocalDisk { return instance_LocalDisksToProto(e.(types.Object)) }),
 	}
 }
 
@@ -374,6 +422,7 @@ func instanceFromProto(p *v1beta1.Instance, m *instanceModel) error {
 	m.InterfaceAddresses = framework.MessageList(instance_InterfaceAddressesAttrTypes(), p.GetInterfaceAddresses(), types.ListNull(types.ObjectType{AttrTypes: instance_InterfaceAddressesAttrTypes()}), instance_InterfaceAddressesFromProto)
 	m.ServiceAccount = types.StringValue(p.GetServiceAccount())
 	m.LaunchTemplate = types.StringValue(p.GetLaunchTemplate())
+	m.LocalDisks = framework.MessageList(instance_LocalDisksAttrTypes(), p.GetLocalDisks(), m.LocalDisks, instance_LocalDisksFromProto)
 	return nil
 }
 
@@ -462,6 +511,7 @@ type instanceItemModel struct {
 	InterfaceAddresses types.List   `tfsdk:"interface_addresses"`
 	ServiceAccount     types.String `tfsdk:"service_account"`
 	LaunchTemplate     types.String `tfsdk:"launch_template"`
+	LocalDisks         types.List   `tfsdk:"local_disks"`
 }
 
 func instanceItem_BootVolumeAttrTypes() map[string]attr.Type {
@@ -556,6 +606,27 @@ func instanceItem_InterfaceAddressesToProto(o types.Object) *v1beta1.InterfaceAd
 	return &v1beta1.InterfaceAddresses{}
 }
 
+func instanceItem_LocalDisksAttrTypes() map[string]attr.Type {
+	return map[string]attr.Type{
+		"size_gib": types.Int64Type,
+		"device":   types.StringType,
+	}
+}
+
+func instanceItem_LocalDisksFromProto(p *v1beta1.LocalDisk, prior types.Object) types.Object {
+	return types.ObjectValueMust(instanceItem_LocalDisksAttrTypes(), map[string]attr.Value{
+		"size_gib": types.Int64Value(int64(p.GetSizeGib())),
+		"device":   types.StringValue(p.GetDevice()),
+	})
+}
+
+func instanceItem_LocalDisksToProto(o types.Object) *v1beta1.LocalDisk {
+	if o.IsNull() || o.IsUnknown() {
+		return nil
+	}
+	return &v1beta1.LocalDisk{}
+}
+
 func instanceItemFromProto(p *v1beta1.Instance, m *instanceItemModel) error {
 	id, err := framework.FullName("compute", p.GetName())
 	if err != nil {
@@ -579,6 +650,7 @@ func instanceItemFromProto(p *v1beta1.Instance, m *instanceItemModel) error {
 	m.InterfaceAddresses = framework.MessageList(instanceItem_InterfaceAddressesAttrTypes(), p.GetInterfaceAddresses(), types.ListNull(types.ObjectType{AttrTypes: instanceItem_InterfaceAddressesAttrTypes()}), instanceItem_InterfaceAddressesFromProto)
 	m.ServiceAccount = types.StringValue(p.GetServiceAccount())
 	m.LaunchTemplate = types.StringValue(p.GetLaunchTemplate())
+	m.LocalDisks = framework.MessageList(instanceItem_LocalDisksAttrTypes(), p.GetLocalDisks(), types.ListNull(types.ObjectType{AttrTypes: instanceItem_LocalDisksAttrTypes()}), instanceItem_LocalDisksFromProto)
 	return nil
 }
 
@@ -739,6 +811,22 @@ func instanceListSchema() schema1.Schema {
 						"launch_template": schema1.StringAttribute{
 							MarkdownDescription: "The full name of the launch template version the instance was launched from, `//compute.origincloudapis.eu/projects/{project}/launchTemplates/{launch_template}@{version}`, with the number the launch resolved `@default` or `@latest` to. Empty for an instance launched without a template. The template may since have been changed or deleted.",
 							Computed:            true,
+						},
+						"local_disks": schema1.ListNestedAttribute{
+							MarkdownDescription: "Disks on the machine the instance runs on, beside its boot volume, created blank at launch; at most 16. A local disk is temporary: it comes back empty after every stop and start and after its machine restarts, and it is deleted with the instance. It can't be the boot disk, snapshotted, resized or detached, and an instance with one isn't moved to another machine while it runs. Each appears among the instance's volume attachments.",
+							Computed:            true,
+							NestedObject: schema1.NestedAttributeObject{
+								Attributes: map[string]schema1.Attribute{
+									"size_gib": schema1.Int64Attribute{
+										MarkdownDescription: "The size in GiB, at least 1.",
+										Computed:            true,
+									},
+									"device": schema1.StringAttribute{
+										MarkdownDescription: "The device name the guest sees the disk under, `vda` to `vdz` but `vdc`, and none the boot volume or another local disk has. The first free one, in the order the disks are listed, when left empty.",
+										Computed:            true,
+									},
+								},
+							},
 						},
 					},
 				},
