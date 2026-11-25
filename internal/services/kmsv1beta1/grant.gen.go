@@ -73,7 +73,7 @@ func grantSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"grantee": schema.StringAttribute{
-				MarkdownDescription: "The platform host the grant is for, by the SPIFFE ID its certificate names, which ends in `/zones/{zone}/hosts/{host}`. Changing it replaces the grant.",
+				MarkdownDescription: "The platform host or zone workload the grant is for, by the SPIFFE ID its certificate names, which ends in `/zones/{zone}/hosts/{host}` or `/zones/{zone}/workloads/{workload}`. Changing it replaces the grant.",
 				Required:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
@@ -258,7 +258,7 @@ func grantListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"grantee": schema1.StringAttribute{
-							MarkdownDescription: "The platform host the grant is for, by the SPIFFE ID its certificate names, which ends in `/zones/{zone}/hosts/{host}`.",
+							MarkdownDescription: "The platform host or zone workload the grant is for, by the SPIFFE ID its certificate names, which ends in `/zones/{zone}/hosts/{host}` or `/zones/{zone}/workloads/{workload}`.",
 							Computed:            true,
 						},
 						"encryption_context": schema1.MapAttribute{

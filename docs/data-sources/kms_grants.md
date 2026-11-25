@@ -34,7 +34,7 @@ Read-Only:
 - `delegate` (String) Who made the grant.
 - `encryption_context` (Map of String) The encryption context a use must carry, exactly; never empty.
 - `expire_time` (String) When the grant stops opening anything unless renewed before. An RFC 3339 timestamp, such as `2026-11-01T12:00:00Z`.
-- `grantee` (String) The platform host the grant is for, by the SPIFFE ID its certificate names, which ends in `/zones/{zone}/hosts/{host}`.
+- `grantee` (String) The platform host or zone workload the grant is for, by the SPIFFE ID its certificate names, which ends in `/zones/{zone}/hosts/{host}` or `/zones/{zone}/workloads/{workload}`.
 - `id` (String) The grant's full resource name, `//kms.origincloudapis.eu/projects/{project}/regions/{region}/keys/{key}/grants/{grant}`: what an argument that refers to the grant takes. `name` is the relative name, without the host.
 - `name` (String) The grant's resource name.
 - `operation` (String) What the host may do with the key. One of `DECRYPT`.
