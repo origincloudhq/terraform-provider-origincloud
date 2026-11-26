@@ -66,8 +66,10 @@ func vpcSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()},
 			},
 			"ipv6_cidr_block": schema.StringAttribute{
-				MarkdownDescription: "The IPv6 range the platform assigned, a `/56`. Each subnet gets a `/72` of it.",
+				MarkdownDescription: "The private IPv6 range, unique local space (RFC 4193) from `/48` to `/60`, overlapping none of the organization's other VPCs. A globally routable `/56` from the zone's pool when left empty. Each subnet gets a range 16 bits longer: a `/64` of a `/48`, a `/72` of a `/56`. Changing it replaces the vpc.",
+				Optional:            true,
 				Computed:            true,
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()},
 			},
 			"subnet_ipv4_prefix_length": schema.Int64Attribute{
 				MarkdownDescription: "The prefix length of every subnet's IPv4 range.",
@@ -111,6 +113,7 @@ func vpcToProto(m *vpcModel) *v1beta1.Vpc {
 	return &v1beta1.Vpc{
 		Name:          m.Name.ValueString(),
 		Ipv4CidrBlock: m.Ipv4CidrBlock.ValueString(),
+		Ipv6CidrBlock: m.Ipv6CidrBlock.ValueString(),
 		Tags:          framework.StringMapToProto(m.Tags),
 	}
 }
@@ -258,7 +261,7 @@ func vpcListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"ipv6_cidr_block": schema1.StringAttribute{
-							MarkdownDescription: "The IPv6 range the platform assigned, a `/56`. Each subnet gets a `/72` of it.",
+							MarkdownDescription: "The private IPv6 range, unique local space (RFC 4193) from `/48` to `/60`, overlapping none of the organization's other VPCs. A globally routable `/56` from the zone's pool when left empty. Each subnet gets a range 16 bits longer: a `/64` of a `/48`, a `/72` of a `/56`.",
 							Computed:            true,
 						},
 						"subnet_ipv4_prefix_length": schema1.Int64Attribute{

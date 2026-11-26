@@ -35,7 +35,7 @@ Read-Only:
 - `id` (String) The vpc's full resource name, `//network.origincloudapis.eu/projects/{project}/regions/{region}/vpcs/{vpc}`: what an argument that refers to the vpc takes. `name` is the relative name, without the host.
 - `internet_gateway` (String) The full name of the VPC's internet gateway; empty while it has none.
 - `ipv4_cidr_block` (String) The private IPv4 range (RFC 1918), from `/16` to `/28`. A free `/16` of the `172.16` private block when left empty. Subnets are carved from it in equal sizes.
-- `ipv6_cidr_block` (String) The IPv6 range the platform assigned, a `/56`. Each subnet gets a `/72` of it.
+- `ipv6_cidr_block` (String) The private IPv6 range, unique local space (RFC 4193) from `/48` to `/60`, overlapping none of the organization's other VPCs. A globally routable `/56` from the zone's pool when left empty. Each subnet gets a range 16 bits longer: a `/64` of a `/48`, a `/72` of a `/56`.
 - `name` (String) The VPC's resource name.
 - `project_default` (Boolean) Whether this is the project's default VPC. Unlike a VPC you create, the platform creates it with defaults: an internet gateway, and a security group, an ACL and a main route table marked as created with the VPC (`vpc_default` on the group and the ACL, `main` on the route table).
 - `resolver_policy` (String) The full name of the resolver policy the VPC's resolver relays through, as the VPC's resolver policy association (a `ResolverPolicyAssociation`) sets it. Empty while it has none: the VPC then relays through the project's default resolver policy in its region.

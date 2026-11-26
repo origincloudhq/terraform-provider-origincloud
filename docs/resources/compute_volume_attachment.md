@@ -24,7 +24,7 @@ A volume an instance holds.
 
 ### Optional
 
-- `device` (String) The device name the guest sees the volume under, `vda` to `vdz`. The first free one when left empty. Changing it replaces the volume attachment.
+- `device` (String) The slot the volume's disk takes on the instance, `vda` to `vdz` but `vdc`; the first free one when left empty. It is a hint at most, not the name the guest gives the disk: a guest names its disks in the order it finds them, so a disk attached to a running instance often gets another name. In the guest, the disk's serial is the volume's id, which a Linux guest links as `/dev/disk/by-id/virtio-<volume-id>`. Changing it replaces the volume attachment.
 
 ### Read-Only
 

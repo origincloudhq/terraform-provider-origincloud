@@ -152,7 +152,7 @@ func launchTemplateSchema() schema.Schema {
 									Validators:          []validator.Int64{framework.Int32()},
 								},
 								"device": schema.StringAttribute{
-									MarkdownDescription: "The device name the guest sees the disk under, `vda` to `vdz` but `vdc`, and none the boot volume or another local disk has. The first free one, in the order the disks are listed, when left empty.",
+									MarkdownDescription: "The slot the disk takes on the instance, `vda` to `vdz` but `vdc`, and none the boot volume or another local disk has; the first free one, in the order the disks are listed, when left empty. It is a hint at most, not the name the guest gives the disk. In the guest, the disk's serial is its volume's id, which a Linux guest links as `/dev/disk/by-id/virtio-<volume-id>`.",
 									Optional:            true,
 								},
 							},
@@ -546,7 +546,7 @@ func launchTemplateByNameSchema() schema1.Schema {
 									Computed:            true,
 								},
 								"device": schema1.StringAttribute{
-									MarkdownDescription: "The device name the guest sees the disk under, `vda` to `vdz` but `vdc`, and none the boot volume or another local disk has. The first free one, in the order the disks are listed, when left empty.",
+									MarkdownDescription: "The slot the disk takes on the instance, `vda` to `vdz` but `vdc`, and none the boot volume or another local disk has; the first free one, in the order the disks are listed, when left empty. It is a hint at most, not the name the guest gives the disk. In the guest, the disk's serial is its volume's id, which a Linux guest links as `/dev/disk/by-id/virtio-<volume-id>`.",
 									Computed:            true,
 								},
 							},
@@ -849,7 +849,7 @@ func launchTemplateRevisionsSchema() schema1.Schema {
 												Computed:            true,
 											},
 											"device": schema1.StringAttribute{
-												MarkdownDescription: "The device name the guest sees the disk under, `vda` to `vdz` but `vdc`, and none the boot volume or another local disk has. The first free one, in the order the disks are listed, when left empty.",
+												MarkdownDescription: "The slot the disk takes on the instance, `vda` to `vdz` but `vdc`, and none the boot volume or another local disk has; the first free one, in the order the disks are listed, when left empty. It is a hint at most, not the name the guest gives the disk. In the guest, the disk's serial is its volume's id, which a Linux guest links as `/dev/disk/by-id/virtio-<volume-id>`.",
 												Computed:            true,
 											},
 										},
@@ -1182,7 +1182,7 @@ func launchTemplateListSchema() schema1.Schema {
 												Computed:            true,
 											},
 											"device": schema1.StringAttribute{
-												MarkdownDescription: "The device name the guest sees the disk under, `vda` to `vdz` but `vdc`, and none the boot volume or another local disk has. The first free one, in the order the disks are listed, when left empty.",
+												MarkdownDescription: "The slot the disk takes on the instance, `vda` to `vdz` but `vdc`, and none the boot volume or another local disk has; the first free one, in the order the disks are listed, when left empty. It is a hint at most, not the name the guest gives the disk. In the guest, the disk's serial is its volume's id, which a Linux guest links as `/dev/disk/by-id/virtio-<volume-id>`.",
 												Computed:            true,
 											},
 										},

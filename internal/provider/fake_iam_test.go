@@ -61,6 +61,9 @@ type iamBinding struct {
 	name, role, project, creator string
 	// user is the user's id, or serviceAccount the service account's.
 	user, serviceAccount string
+	// resources are the full names the binding is limited to, in name
+	// order, as the API keeps them.
+	resources []string
 }
 
 // fakeIAM serves IAM's REST API from memory. Its mutations answer
@@ -212,7 +215,7 @@ func (f *fakeIAM) serve(w http.ResponseWriter, r *http.Request) {
 	case len(s) == 3 && s[0] == "organizations" && s[2] == "roleBindings" && r.Method == http.MethodPost:
 		f.createBinding(w, s[1], requestID, body)
 	case len(s) == 4 && s[0] == "organizations" && s[2] == "roleBindings":
-		f.binding(w, r, path, requestID)
+		f.binding(w, r, path, requestID, body)
 	case len(s) == 3 && s[0] == "organizations" && s[2] == "serviceAccounts" && r.Method == http.MethodGet:
 		show := r.URL.Query().Get("showDeleted") == "true"
 		items, next := page(f.serviceAccounts, path+"/", r, func(a *iamv1beta1.ServiceAccount) bool {
@@ -281,6 +284,7 @@ func (f *fakeIAM) bindingMessage(b *iamBinding, own bool) *iamv1beta1.RoleBindin
 	return &iamv1beta1.RoleBinding{
 		Name:   b.name,
 		Member: f.member(b, own), Role: role, Project: b.project, Creator: creator,
+		Resources:  b.resources,
 		CreateTime: timestamppb.New(time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)),
 	}
 }
@@ -314,6 +318,9 @@ func (f *fakeIAM) createBinding(w http.ResponseWriter, organization, requestID s
 		return
 	}
 	b := &iamBinding{role: in.GetRole(), project: in.GetProject(), creator: "//iam.origincloudapis.eu/users/" + iamCaller, name: "organizations/" + organization + "/"}
+	if b.resources = sortedResources(w, in.GetResources()); b.resources == nil && len(in.GetResources()) > 0 {
+		return
+	}
 	member := relativeName(in.GetMember())
 	switch segments := strings.Split(member, "/"); {
 	case len(segments) == 2 && segments[0] == "users":
@@ -348,7 +355,43 @@ func (f *fakeIAM) createBinding(w http.ResponseWriter, organization, requestID s
 	writeMessage(w, f.bindingMessage(b, false))
 }
 
-func (f *fakeIAM) binding(w http.ResponseWriter, r *http.Request, name, requestID string) {
+// sortedResources returns a binding's resources in name order, as the API
+// keeps them, or writes the API's refusal of a duplicate and returns nil.
+func sortedResources(w http.ResponseWriter, resources []string) []string {
+	if len(resources) == 0 {
+		return nil
+	}
+	sorted := slices.Sorted(slices.Values(resources))
+	for i := 1; i < len(sorted); i++ {
+		if sorted[i] == sorted[i-1] {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "resources lists "+sorted[i]+" twice")
+			return nil
+		}
+	}
+	return sorted
+}
+
+// updateBinding replaces b's resources, the one field UpdateRoleBinding
+// changes.
+func (f *fakeIAM) updateBinding(w http.ResponseWriter, r *http.Request, b *iamBinding, body []byte) {
+	if mask := r.URL.Query().Get("updateMask"); mask != "resources" {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "update_mask must be resources, not "+strconv.Quote(mask))
+		return
+	}
+	in := new(iamv1beta1.RoleBinding)
+	if err := protojson.Unmarshal(body, in); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+		return
+	}
+	resources := sortedResources(w, in.GetResources())
+	if resources == nil && len(in.GetResources()) > 0 {
+		return
+	}
+	b.resources = resources
+	writeMessage(w, f.bindingMessage(b, false))
+}
+
+func (f *fakeIAM) binding(w http.ResponseWriter, r *http.Request, name, requestID string, body []byte) {
 	b, ok := f.bindings[name]
 	if !ok {
 		if r.Method == http.MethodDelete && requestID != "" && f.created["delete "+requestID] == name {
@@ -361,6 +404,8 @@ func (f *fakeIAM) binding(w http.ResponseWriter, r *http.Request, name, requestI
 	switch r.Method {
 	case http.MethodGet:
 		writeMessage(w, f.bindingMessage(b, false))
+	case http.MethodPatch:
+		f.updateBinding(w, r, b, body)
 	case http.MethodDelete:
 		organization := strings.Split(name, "/")[1]
 		if relativeName(b.role) == "roles/owner" && b.project == "" && f.owners(organization) == 1 {

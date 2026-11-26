@@ -58,7 +58,7 @@ func publicImageSchema() schema.Schema {
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
 						"device": schema.StringAttribute{
-							MarkdownDescription: "The device name the disk appears under on every instance launched from the image.",
+							MarkdownDescription: "The slot the disk takes on every instance launched from the image. It is a hint at most, not the name the guest gives the disk.",
 							Computed:            true,
 						},
 						"size_gib": schema.Int64Attribute{
@@ -189,7 +189,7 @@ func publicImageListSchema() schema.Schema {
 							NestedObject: schema.NestedAttributeObject{
 								Attributes: map[string]schema.Attribute{
 									"device": schema.StringAttribute{
-										MarkdownDescription: "The device name the disk appears under on every instance launched from the image.",
+										MarkdownDescription: "The slot the disk takes on every instance launched from the image. It is a hint at most, not the name the guest gives the disk.",
 										Computed:            true,
 									},
 									"size_gib": schema.Int64Attribute{

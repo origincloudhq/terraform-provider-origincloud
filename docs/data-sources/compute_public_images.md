@@ -45,5 +45,5 @@ Read-Only:
 
 Read-Only:
 
-- `device` (String) The device name the disk appears under on every instance launched from the image.
+- `device` (String) The slot the disk takes on every instance launched from the image. It is a hint at most, not the name the guest gives the disk.
 - `size_gib` (Number) The disk's size in GiB.

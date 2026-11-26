@@ -42,7 +42,7 @@ A project's own image, which an instance's boot volume can be created from.
 
 Required:
 
-- `device` (String) The device name the disk appears under on every instance launched from the image: `vda` to `vdz` but `vdc`, unique within the image.
+- `device` (String) The slot the disk takes on every instance launched from the image: `vda` to `vdz` but `vdc`, unique within the image. It is a hint at most, not the name the guest gives the disk. In the guest, the disk's serial is its volume's id, which a Linux guest links as `/dev/disk/by-id/virtio-<volume-id>`.
 - `size_gib` (Number) The disk's size in GiB, at least the snapshot's.
 
 Optional:
