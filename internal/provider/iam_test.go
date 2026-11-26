@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -673,4 +674,120 @@ data "origincloud_iam_service_account_keys" "ci" {
 			t.Errorf("the provider called %s", call)
 		}
 	}
+}
+
+// roleBindingResourcesConfig returns a configuration of the provider
+// calling fake with a binding of role to a user in a project, limited to
+// resources, a list of HCL expressions, or on the whole project when
+// resources is nil.
+func roleBindingResourcesConfig(fake *fakeIAM, role string, resources ...string) string {
+	limit := ""
+	if resources != nil {
+		limit = "\n  resources    = [" + strings.Join(resources, ", ") + "]"
+	}
+	return iamProvider(fake) + fmt.Sprintf(`
+resource "origincloud_iam_role_binding" "ana" {
+  organization = "acme"
+  member       = "//iam.origincloudapis.eu/users/u-ana"
+  role         = "//iam.origincloudapis.eu/roles/%s"
+  project      = "//resourcemanager.origincloudapis.eu/projects/acme-prod"%s
+}
+`, role, limit)
+}
+
+// A binding's resources are read back and imported, and changing them
+// updates the binding in place through UpdateRoleBinding, also to none,
+// which widens it to the whole project; changing its role still replaces
+// it.
+func TestARoleBindingsResourcesChangeInPlace(t *testing.T) {
+	t.Setenv("ORIGINCLOUD_ACCESS_TOKEN", "test-token")
+	fake := newFakeIAM(t)
+	const (
+		billingDB     = `"//pvs.origincloudapis.eu/projects/acme-prod/zones/eu-central1-az1/volumes/billing-db"`
+		billingStripe = `"//pvs.origincloudapis.eu/projects/acme-prod/zones/eu-central1-az1/volumes/billing-stripe"`
+		webDB         = `"//pvs.origincloudapis.eu/projects/acme-prod/zones/eu-central1-az1/volumes/web-db"`
+	)
+	listed := func(resources ...string) resource.TestCheckFunc {
+		checks := []resource.TestCheckFunc{resource.TestCheckResourceAttr(anaBinding, "resources.#", strconv.Itoa(len(resources)))}
+		for _, r := range resources {
+			checks = append(checks, resource.TestCheckTypeSetElemAttr(anaBinding, "resources.*", strings.Trim(r, `"`)))
+		}
+		return resource.ComposeAggregateTestCheckFunc(checks...)
+	}
+	var name string
+	sameBinding := func(s *terraform.State) error {
+		if got := s.RootModule().Resources[anaBinding].Primary.Attributes["name"]; got != name {
+			return fmt.Errorf("the binding is %s, not %s", got, name)
+		}
+		return nil
+	}
+	created := roleBindingResourcesConfig(fake, "viewer", billingDB, billingStripe)
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories(),
+		Steps: []resource.TestStep{
+			{
+				Config: created,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					listed(billingDB, billingStripe),
+					func(s *terraform.State) error {
+						name = s.RootModule().Resources[anaBinding].Primary.Attributes["name"]
+						return nil
+					},
+				),
+			},
+			// Imported, the binding has the list it was created with.
+			{
+				Config:            created,
+				ResourceName:      anaBinding,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+			// An entry swapped for another updates the binding in place.
+			{
+				Config: roleBindingResourcesConfig(fake, "viewer", billingDB, webDB),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(anaBinding, plancheck.ResourceActionUpdate),
+				}},
+				Check: resource.ComposeAggregateTestCheckFunc(listed(billingDB, webDB), sameBinding),
+			},
+			// No list widens it to the whole project, in place too.
+			{
+				Config: roleBindingResourcesConfig(fake, "viewer"),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(anaBinding, plancheck.ResourceActionUpdate),
+				}},
+				Check: resource.ComposeAggregateTestCheckFunc(resource.TestCheckNoResourceAttr(anaBinding, "resources.#"), sameBinding),
+			},
+			{
+				Config: roleBindingResourcesConfig(fake, "viewer", billingStripe),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(anaBinding, plancheck.ResourceActionUpdate),
+				}},
+				Check: resource.ComposeAggregateTestCheckFunc(listed(billingStripe), sameBinding),
+			},
+			// Another role still replaces the binding.
+			{
+				Config: roleBindingResourcesConfig(fake, "editor", billingStripe),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(anaBinding, plancheck.ResourceActionReplace),
+				}},
+				Check: listed(billingStripe),
+			},
+		},
+		CheckDestroy: func(*terraform.State) error {
+			fake.mu.Lock()
+			defer fake.mu.Unlock()
+			var updates []string
+			for _, call := range fake.calls {
+				if strings.HasPrefix(call, "PATCH ") {
+					updates = append(updates, call)
+				}
+			}
+			if want := []string{"PATCH " + name, "PATCH " + name, "PATCH " + name}; !slices.Equal(updates, want) {
+				return fmt.Errorf("the updates sent are %v, not %v", updates, want)
+			}
+			return nil
+		},
+	})
 }
