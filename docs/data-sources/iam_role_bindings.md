@@ -3,12 +3,12 @@
 page_title: "origincloud_iam_role_bindings Data Source - origincloud"
 subcategory: ""
 description: |-
-  Lists an organization's role bindings, active and pending, oldest first, optionally only a member's or a project's. Needs iam.member.list on the organization. With the parent organizations/- it lists the caller's own active bindings in every organization and needs no permission; member must be empty there.
+  Lists an organization's role bindings, active and pending, oldest first, optionally only a member's, a project's or a service account's, or only those that apply to one resource. Needs iam.member.list on the organization. With the parent organizations/- it lists the caller's own active bindings in every organization and needs no permission; member must be empty there.
 ---
 
 # origincloud_iam_role_bindings (Data Source)
 
-Lists an organization's role bindings, active and pending, oldest first, optionally only a member's or a project's. Needs `iam.member.list` on the organization. With the parent `organizations/-` it lists the caller's own active bindings in every organization and needs no permission; `member` must be empty there.
+Lists an organization's role bindings, active and pending, oldest first, optionally only a member's, a project's or a service account's, or only those that apply to one resource. Needs `iam.member.list` on the organization. With the parent `organizations/-` it lists the caller's own active bindings in every organization and needs no permission; `member` must be empty there.
 
 
 
@@ -33,6 +33,8 @@ Read-Only:
 - `id` (String) The role binding's full resource name, `//iam.origincloudapis.eu/organizations/{organization}/roleBindings/{role_binding}`: what an argument that refers to the role binding takes. `name` is the relative name, without the host.
 - `member` (String) The full name of who holds the role: a user, `//iam.origincloudapis.eu/users/{user}`, one of the organization's service accounts, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`, or a platform service agent, `//iam.origincloudapis.eu/serviceAgents/{service_agent}`. A pending binding's member is `user:{email}`, the address it was granted to, as typed, until it becomes active. On create, `user:{email}` names a user by email address: see CreateRoleBinding.
 - `name` (String) The binding's resource name. A pending binding keeps its name when it becomes active.
-- `project` (String) The full name of the project the binding is limited to, one of the organization's: `//resourcemanager.origincloudapis.eu/projects/{project}`. Empty for a binding on the whole organization, which covers every project in it.
+- `project` (String) The full name of the project the binding is limited to, one of the organization's: `//resourcemanager.origincloudapis.eu/projects/{project}`. Empty for a binding on the whole organization, which covers every project in it, and for a binding on one service account.
+- `resources` (List of String) The full names of the resources the binding is limited to within its organization or project, such as `//secretmanager.origincloudapis.eu/projects/{project}/regions/{region}/secrets/{secret}`, in name order; at most 100. The binding grants its role on these resources alone, and nothing on the rest of its scope or on the organization or the project itself. Empty for a binding on its whole scope. Each entry must be a resource of the binding's organization, in the binding's project if `project` is set, of a kind that can be listed. Never set together with `service_account`, nor on a pending binding. A resource deleted after the binding was created stays listed, and the binding covers a resource created later under the same name. The one field UpdateRoleBinding changes.
 - `role` (String) The full name of the role granted, `//iam.origincloudapis.eu/roles/{role}`.
+- `service_account` (String) The full name of the service account the binding is limited to, one of the organization's active accounts: `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`. Such a binding grants its role on that account alone, and nothing on the organization or its projects. Only a role whose every permission acts on one service account can be bound so: `roles/iam.service-account-token-creator`, which lets the member get an access token for that account and no other. Empty for a binding on the whole organization or a project; never set together with `project`. The binding is removed when the account is deleted.
 - `state` (String) Whether the binding grants its role yet. One of `ACTIVE`, `PENDING`.

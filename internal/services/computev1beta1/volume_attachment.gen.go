@@ -66,7 +66,7 @@ func volumeAttachmentSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"device": schema.StringAttribute{
-				MarkdownDescription: "The device name the guest sees the volume under, `vda` to `vdz`. The first free one when left empty. Changing it replaces the volume attachment.",
+				MarkdownDescription: "The slot the volume's disk takes on the instance, `vda` to `vdz` but `vdc`; the first free one when left empty. It is a hint at most, not the name the guest gives the disk: a guest names its disks in the order it finds them, so a disk attached to a running instance often gets another name. In the guest, the disk's serial is the volume's id, which a Linux guest links as `/dev/disk/by-id/virtio-<volume-id>`. Changing it replaces the volume attachment.",
 				Optional:            true,
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()},
@@ -214,7 +214,7 @@ func volumeAttachmentListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"device": schema1.StringAttribute{
-							MarkdownDescription: "The device name the guest sees the volume under, `vda` to `vdz`. The first free one when left empty.",
+							MarkdownDescription: "The slot the volume's disk takes on the instance, `vda` to `vdz` but `vdc`; the first free one when left empty. It is a hint at most, not the name the guest gives the disk: a guest names its disks in the order it finds them, so a disk attached to a running instance often gets another name. In the guest, the disk's serial is the volume's id, which a Linux guest links as `/dev/disk/by-id/virtio-<volume-id>`.",
 							Computed:            true,
 						},
 						"boot": schema1.BoolAttribute{

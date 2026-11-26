@@ -31,7 +31,7 @@ Lists an instance's volume attachments, the boot volume's first, then by device 
 Read-Only:
 
 - `boot` (Boolean) Whether this is the instance's boot volume, which was attached at launch and can't be detached.
-- `device` (String) The device name the guest sees the volume under, `vda` to `vdz`. The first free one when left empty.
+- `device` (String) The slot the volume's disk takes on the instance, `vda` to `vdz` but `vdc`; the first free one when left empty. It is a hint at most, not the name the guest gives the disk: a guest names its disks in the order it finds them, so a disk attached to a running instance often gets another name. In the guest, the disk's serial is the volume's id, which a Linux guest links as `/dev/disk/by-id/virtio-<volume-id>`.
 - `id` (String) The volume attachment's full resource name, `//compute.origincloudapis.eu/projects/{project}/zones/{zone}/instances/{instance}/volumeAttachments/{volume_attachment}`: what an argument that refers to the volume attachment takes. `name` is the relative name, without the host.
 - `name` (String) The attachment's resource name.
 - `state` (String) Where the attachment is. One of `CREATING`, `ATTACHING`, `ATTACHED`, `DETACHING`, `RELEASING`, `RELEASE_ABANDONED`, `FAILED`.

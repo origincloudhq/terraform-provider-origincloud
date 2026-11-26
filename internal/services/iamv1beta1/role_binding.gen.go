@@ -5,6 +5,7 @@ package iamv1beta1
 
 import (
 	context "context"
+	attr "github.com/hashicorp/terraform-plugin-framework/attr"
 	schema1 "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	schema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	planmodifier "github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -14,24 +15,27 @@ import (
 	framework "github.com/origincloudhq/terraform-provider-origincloud/internal/framework"
 	core "go.origincloud.eu/sdk/core"
 	v1beta1 "go.origincloud.eu/sdk/iam/v1beta1"
+	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 )
 
 // roleBindingModel is origincloud_iam_role_binding's state.
 type roleBindingModel struct {
-	ID           types.String `tfsdk:"id"`
-	Organization types.String `tfsdk:"organization"`
-	Name         types.String `tfsdk:"name"`
-	Member       types.String `tfsdk:"member"`
-	Role         types.String `tfsdk:"role"`
-	Project      types.String `tfsdk:"project"`
-	Creator      types.String `tfsdk:"creator"`
-	CreateTime   types.String `tfsdk:"create_time"`
-	State        types.String `tfsdk:"state"`
+	ID             types.String `tfsdk:"id"`
+	Organization   types.String `tfsdk:"organization"`
+	Name           types.String `tfsdk:"name"`
+	Member         types.String `tfsdk:"member"`
+	Role           types.String `tfsdk:"role"`
+	Project        types.String `tfsdk:"project"`
+	ServiceAccount types.String `tfsdk:"service_account"`
+	Creator        types.String `tfsdk:"creator"`
+	CreateTime     types.String `tfsdk:"create_time"`
+	State          types.String `tfsdk:"state"`
+	Resources      types.List   `tfsdk:"resources"`
 }
 
 func roleBindingSchema() schema.Schema {
 	return schema.Schema{
-		MarkdownDescription: "One role granted to one member, organization-wide or in one project. A binding can't be changed: delete it and create another.",
+		MarkdownDescription: "One role granted to one member, organization-wide, in one project or on one service account, optionally only on a list of resources there. Only its list of resources can be changed, with UpdateRoleBinding; to change anything else, delete the binding and create another.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				MarkdownDescription: "The role binding's full resource name, `//iam.origincloudapis.eu/organizations/{organization}/roleBindings/{role_binding}`: what an argument that refers to the role binding takes. `name` is the relative name, without the host.",
@@ -61,7 +65,14 @@ func roleBindingSchema() schema.Schema {
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"project": schema.StringAttribute{
-				MarkdownDescription: "The full name of the project the binding is limited to, one of the organization's: `//resourcemanager.origincloudapis.eu/projects/{project}`. Empty for a binding on the whole organization, which covers every project in it. Changing it replaces the role binding.",
+				MarkdownDescription: "The full name of the project the binding is limited to, one of the organization's: `//resourcemanager.origincloudapis.eu/projects/{project}`. Empty for a binding on the whole organization, which covers every project in it, and for a binding on one service account. Changing it replaces the role binding.",
+				Optional:            true,
+				Computed:            true,
+				Validators:          []validator.String{framework.FullNameReference()},
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplaceIfConfigured()},
+			},
+			"service_account": schema.StringAttribute{
+				MarkdownDescription: "The full name of the service account the binding is limited to, one of the organization's active accounts: `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`. Such a binding grants its role on that account alone, and nothing on the organization or its projects. Only a role whose every permission acts on one service account can be bound so: `roles/iam.service-account-token-creator`, which lets the member get an access token for that account and no other. Empty for a binding on the whole organization or a project; never set together with `project`. The binding is removed when the account is deleted. Changing it replaces the role binding.",
 				Optional:            true,
 				Computed:            true,
 				Validators:          []validator.String{framework.FullNameReference()},
@@ -79,16 +90,24 @@ func roleBindingSchema() schema.Schema {
 				MarkdownDescription: "Whether the binding grants its role yet. One of `ACTIVE`, `PENDING`.",
 				Computed:            true,
 			},
+			"resources": schema.ListAttribute{
+				MarkdownDescription: "The full names of the resources the binding is limited to within its organization or project, such as `//secretmanager.origincloudapis.eu/projects/{project}/regions/{region}/secrets/{secret}`, in name order; at most 100. The binding grants its role on these resources alone, and nothing on the rest of its scope or on the organization or the project itself. Empty for a binding on its whole scope. Each entry must be a resource of the binding's organization, in the binding's project if `project` is set, of a kind that can be listed. Never set together with `service_account`, nor on a pending binding. A resource deleted after the binding was created stays listed, and the binding covers a resource created later under the same name. The one field UpdateRoleBinding changes.",
+				Optional:            true,
+				ElementType:         types.StringType,
+				Validators:          []validator.List{framework.ElementCheck{FullNames: true}},
+			},
 		},
 	}
 }
 
 func roleBindingToProto(m *roleBindingModel) *v1beta1.RoleBinding {
 	return &v1beta1.RoleBinding{
-		Name:    m.Name.ValueString(),
-		Member:  m.Member.ValueString(),
-		Role:    m.Role.ValueString(),
-		Project: m.Project.ValueString(),
+		Name:           m.Name.ValueString(),
+		Member:         m.Member.ValueString(),
+		Role:           m.Role.ValueString(),
+		Project:        m.Project.ValueString(),
+		ServiceAccount: m.ServiceAccount.ValueString(),
+		Resources:      framework.Elements(m.Resources, func(e attr.Value) string { return e.(types.String).ValueString() }),
 	}
 }
 
@@ -107,9 +126,11 @@ func roleBindingFromProto(p *v1beta1.RoleBinding, m *roleBindingModel) error {
 	m.Member = types.StringValue(p.GetMember())
 	m.Role = types.StringValue(p.GetRole())
 	m.Project = types.StringValue(p.GetProject())
+	m.ServiceAccount = types.StringValue(p.GetServiceAccount())
 	m.Creator = types.StringValue(p.GetCreator())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
 	m.State = types.StringValue(p.GetState().String())
+	m.Resources = framework.Optional(m.Resources, framework.StringList(p.GetResources()), len(p.GetResources()) == 0)
 	return nil
 }
 
@@ -118,13 +139,16 @@ func roleBindingResource() framework.ResourceSpec[roleBindingModel, *v1beta1.Rol
 		TypeName:   "_iam_role_binding",
 		Pattern:    "organizations/{organization}/roleBindings/{role_binding}",
 		Service:    "iam",
-		References: map[string]string{"role": "iam", "project": "resourcemanager"},
+		References: map[string]string{"role": "iam", "project": "resourcemanager", "service_account": "iam"},
 		Schema:     roleBindingSchema(),
 		Name:       func(m *roleBindingModel) string { return m.Name.ValueString() },
 		ToProto:    roleBindingToProto,
 		FromProto:  roleBindingFromProto,
 		UpdateMask: func(plan, state *roleBindingModel) []string {
 			var mask []string
+			if !plan.Resources.Equal(state.Resources) {
+				mask = append(mask, "resources")
+			}
 			return mask
 		},
 		CreateSync: func(ctx context.Context, client *core.Client, plan *roleBindingModel) (*v1beta1.RoleBinding, error) {
@@ -136,6 +160,9 @@ func roleBindingResource() framework.ResourceSpec[roleBindingModel, *v1beta1.Rol
 		Get: func(ctx context.Context, client *core.Client, name string) (*v1beta1.RoleBinding, error) {
 			return v1beta1.NewRoleBindingClient(client).GetRoleBinding(ctx, &v1beta1.GetRoleBindingRequest{Name: name})
 		},
+		Update: func(ctx context.Context, client *core.Client, resource *v1beta1.RoleBinding, mask []string) (*v1beta1.RoleBinding, error) {
+			return v1beta1.NewRoleBindingClient(client).UpdateRoleBinding(ctx, &v1beta1.UpdateRoleBindingRequest{RoleBinding: resource, UpdateMask: &fieldmaskpb.FieldMask{Paths: mask}})
+		},
 		Delete: func(ctx context.Context, client *core.Client, name string) error {
 			_, err := v1beta1.NewRoleBindingClient(client).DeleteRoleBinding(ctx, &v1beta1.DeleteRoleBindingRequest{Name: name})
 			return err
@@ -145,14 +172,16 @@ func roleBindingResource() framework.ResourceSpec[roleBindingModel, *v1beta1.Rol
 
 // roleBindingItemModel is an item of origincloud_iam_role_bindings.
 type roleBindingItemModel struct {
-	ID         types.String `tfsdk:"id"`
-	Name       types.String `tfsdk:"name"`
-	Member     types.String `tfsdk:"member"`
-	Role       types.String `tfsdk:"role"`
-	Project    types.String `tfsdk:"project"`
-	Creator    types.String `tfsdk:"creator"`
-	CreateTime types.String `tfsdk:"create_time"`
-	State      types.String `tfsdk:"state"`
+	ID             types.String `tfsdk:"id"`
+	Name           types.String `tfsdk:"name"`
+	Member         types.String `tfsdk:"member"`
+	Role           types.String `tfsdk:"role"`
+	Project        types.String `tfsdk:"project"`
+	ServiceAccount types.String `tfsdk:"service_account"`
+	Creator        types.String `tfsdk:"creator"`
+	CreateTime     types.String `tfsdk:"create_time"`
+	State          types.String `tfsdk:"state"`
+	Resources      types.List   `tfsdk:"resources"`
 }
 
 func roleBindingItemFromProto(p *v1beta1.RoleBinding, m *roleBindingItemModel) error {
@@ -165,9 +194,11 @@ func roleBindingItemFromProto(p *v1beta1.RoleBinding, m *roleBindingItemModel) e
 	m.Member = types.StringValue(p.GetMember())
 	m.Role = types.StringValue(p.GetRole())
 	m.Project = types.StringValue(p.GetProject())
+	m.ServiceAccount = types.StringValue(p.GetServiceAccount())
 	m.Creator = types.StringValue(p.GetCreator())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
 	m.State = types.StringValue(p.GetState().String())
+	m.Resources = framework.StringList(p.GetResources())
 	return nil
 }
 
@@ -179,7 +210,7 @@ type roleBindingListModel struct {
 
 func roleBindingListSchema() schema1.Schema {
 	return schema1.Schema{
-		MarkdownDescription: "Lists an organization's role bindings, active and pending, oldest first, optionally only a member's or a project's. Needs `iam.member.list` on the organization. With the parent `organizations/-` it lists the caller's own active bindings in every organization and needs no permission; `member` must be empty there.",
+		MarkdownDescription: "Lists an organization's role bindings, active and pending, oldest first, optionally only a member's, a project's or a service account's, or only those that apply to one resource. Needs `iam.member.list` on the organization. With the parent `organizations/-` it lists the caller's own active bindings in every organization and needs no permission; `member` must be empty there.",
 		Attributes: map[string]schema1.Attribute{
 			"organization": schema1.StringAttribute{
 				MarkdownDescription: "The organization whose role bindings to list.",
@@ -207,7 +238,11 @@ func roleBindingListSchema() schema1.Schema {
 							Computed:            true,
 						},
 						"project": schema1.StringAttribute{
-							MarkdownDescription: "The full name of the project the binding is limited to, one of the organization's: `//resourcemanager.origincloudapis.eu/projects/{project}`. Empty for a binding on the whole organization, which covers every project in it.",
+							MarkdownDescription: "The full name of the project the binding is limited to, one of the organization's: `//resourcemanager.origincloudapis.eu/projects/{project}`. Empty for a binding on the whole organization, which covers every project in it, and for a binding on one service account.",
+							Computed:            true,
+						},
+						"service_account": schema1.StringAttribute{
+							MarkdownDescription: "The full name of the service account the binding is limited to, one of the organization's active accounts: `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`. Such a binding grants its role on that account alone, and nothing on the organization or its projects. Only a role whose every permission acts on one service account can be bound so: `roles/iam.service-account-token-creator`, which lets the member get an access token for that account and no other. Empty for a binding on the whole organization or a project; never set together with `project`. The binding is removed when the account is deleted.",
 							Computed:            true,
 						},
 						"creator": schema1.StringAttribute{
@@ -221,6 +256,11 @@ func roleBindingListSchema() schema1.Schema {
 						"state": schema1.StringAttribute{
 							MarkdownDescription: "Whether the binding grants its role yet. One of `ACTIVE`, `PENDING`.",
 							Computed:            true,
+						},
+						"resources": schema1.ListAttribute{
+							MarkdownDescription: "The full names of the resources the binding is limited to within its organization or project, such as `//secretmanager.origincloudapis.eu/projects/{project}/regions/{region}/secrets/{secret}`, in name order; at most 100. The binding grants its role on these resources alone, and nothing on the rest of its scope or on the organization or the project itself. Empty for a binding on its whole scope. Each entry must be a resource of the binding's organization, in the binding's project if `project` is set, of a kind that can be listed. Never set together with `service_account`, nor on a pending binding. A resource deleted after the binding was created stays listed, and the binding covers a resource created later under the same name. The one field UpdateRoleBinding changes.",
+							Computed:            true,
+							ElementType:         types.StringType,
 						},
 					},
 				},

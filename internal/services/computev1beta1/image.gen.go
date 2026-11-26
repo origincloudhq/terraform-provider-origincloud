@@ -84,7 +84,7 @@ func imageSchema() schema.Schema {
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
 						"device": schema.StringAttribute{
-							MarkdownDescription: "The device name the disk appears under on every instance launched from the image: `vda` to `vdz` but `vdc`, unique within the image.",
+							MarkdownDescription: "The slot the disk takes on every instance launched from the image: `vda` to `vdz` but `vdc`, unique within the image. It is a hint at most, not the name the guest gives the disk. In the guest, the disk's serial is its volume's id, which a Linux guest links as `/dev/disk/by-id/virtio-<volume-id>`.",
 							Required:            true,
 						},
 						"size_gib": schema.Int64Attribute{
@@ -334,7 +334,7 @@ func imageListSchema() schema1.Schema {
 							NestedObject: schema1.NestedAttributeObject{
 								Attributes: map[string]schema1.Attribute{
 									"device": schema1.StringAttribute{
-										MarkdownDescription: "The device name the disk appears under on every instance launched from the image: `vda` to `vdz` but `vdc`, unique within the image.",
+										MarkdownDescription: "The slot the disk takes on every instance launched from the image: `vda` to `vdz` but `vdc`, unique within the image. It is a hint at most, not the name the guest gives the disk. In the guest, the disk's serial is its volume's id, which a Linux guest links as `/dev/disk/by-id/virtio-<volume-id>`.",
 										Computed:            true,
 									},
 									"size_gib": schema1.Int64Attribute{
