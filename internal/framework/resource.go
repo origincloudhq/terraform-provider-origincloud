@@ -54,6 +54,14 @@ type ResourceSpec[M any, P proto.Message] struct {
 	// attributes then replaces it.
 	Update func(ctx context.Context, client *core.Client, resource P, mask []string) (P, error)
 	Delete func(ctx context.Context, client *core.Client, name string) error
+	// DeleteState is Delete for a resource whose delete takes options from
+	// its state, such as a secret's force_delete, instead of Delete.
+	DeleteState func(ctx context.Context, client *core.Client, state *M) error
+	// FreesIDOnDelete says that deleting the resource, as its state sets
+	// the delete's options, frees the id the client chose, so that a
+	// replacement may keep it. Nil when a deleted resource's id is never
+	// free.
+	FreesIDOnDelete func(state *M) bool
 
 	// Toggles are the resource's boolean attributes that methods of their
 	// own set and clear, rather than an update.
@@ -366,7 +374,7 @@ func (r *Resource[M, P]) Delete(ctx context.Context, req resource.DeleteRequest,
 	if gone {
 		return
 	}
-	if err := r.spec.Delete(ctx, r.client, name); err != nil && !NotFound(err) {
+	if err := r.delete(ctx, name, &m); err != nil && !NotFound(err) {
 		// Gone meanwhile, such as an instance terminated while its delete
 		// was refused, it is deleted all the same.
 		if r.spec.Gone != nil {
@@ -376,6 +384,15 @@ func (r *Resource[M, P]) Delete(ctx context.Context, req resource.DeleteRequest,
 		}
 		resp.Diagnostics.AddError(r.summary("delete"), err.Error())
 	}
+}
+
+// delete calls the spec's delete, with the options of state when it takes
+// them.
+func (r *Resource[M, P]) delete(ctx context.Context, name string, state *M) error {
+	if r.spec.DeleteState != nil {
+		return r.spec.DeleteState(ctx, r.client, state)
+	}
+	return r.spec.Delete(ctx, r.client, name)
 }
 
 // fromProto sets m from got, the resource the API answered with, over

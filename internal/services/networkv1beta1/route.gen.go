@@ -66,16 +66,14 @@ func routeSchema() schema.Schema {
 			"internet_gateway": schema.StringAttribute{
 				MarkdownDescription: "The full name of the internet gateway of the table's VPC to send the traffic to. Changing it replaces the route.",
 				Optional:            true,
-				Computed:            true,
-				Validators:          []validator.String{framework.FullNameReference(), framework.Oneof{Others: []string{"nat_gateway"}}},
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), framework.OneofOthers{"nat_gateway"}, stringplanmodifier.RequiresReplace()},
+				Validators:          []validator.String{framework.FullNameReference(), framework.Oneof{Others: []string{"nat_gateway"}, Required: true}},
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"nat_gateway": schema.StringAttribute{
 				MarkdownDescription: "The full name of the NAT gateway in the table's VPC to send the traffic to, for the IPv4 default route only: a NAT gateway translates IPv4 only. Named in the gateway's own zone; a name with another zone is refused with `INVALID_ARGUMENT`. Changing it replaces the route.",
 				Optional:            true,
-				Computed:            true,
 				Validators:          []validator.String{framework.FullNameReference(), framework.Oneof{Others: []string{"internet_gateway"}}},
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), framework.OneofOthers{"internet_gateway"}, stringplanmodifier.RequiresReplace()},
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 		},
 	}

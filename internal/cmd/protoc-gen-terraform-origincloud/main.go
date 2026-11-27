@@ -90,6 +90,9 @@ func generate(gen *protogen.Plugin) error {
 	if err := checkTogglesFound(); err != nil {
 		return err
 	}
+	if err := checkDeleteOptionsFound(gen.Files); err != nil {
+		return err
+	}
 	if err := checkSecretsFound(gen.Files); err != nil {
 		return err
 	}
@@ -216,6 +219,19 @@ func (t resourceType) parentVariables() []string {
 		return t.variables
 	}
 	return t.variables[:len(t.variables)-1]
+}
+
+// typePrefixes are the services whose resources are named with words of their
+// own rather than the service's host label, such as secretmanager's
+// origincloud_secret_manager_secret.
+var typePrefixes = map[string]string{"secretmanager": "secret_manager"}
+
+// typePrefix is the first part of the Terraform type names of t's service.
+func (t resourceType) typePrefix() string {
+	if prefix, ok := typePrefixes[t.shortcode]; ok {
+		return prefix
+	}
+	return t.shortcode
 }
 
 // managed says that the type is a resource rather than a data source: the
@@ -458,7 +474,7 @@ func generateResource(g *protogen.GeneratedFile, t resourceType) error {
 	client := g.QualifiedGoIdent(t.file.GoImportPath.Ident("New"+strings.TrimSuffix(t.service.GoName, "Service")+"Client")) + "(client)"
 	ctx := g.QualifiedGoIdent(contextPackage.Ident("Context"))
 	coreClient := "*" + g.QualifiedGoIdent(corePackage.Ident("Client"))
-	typeName := "_" + t.shortcode + "_" + snake(t.singular)
+	typeName := "_" + t.typePrefix() + "_" + snake(t.singular)
 
 	generateModel(g, model, "origincloud"+typeName+"'s state", attrs)
 	generateSchema(g, t, lowerFirst(t.message.GoIdent.GoName), resourceSchemaPackage, attrs)
@@ -596,7 +612,14 @@ func generateResource(g *protogen.GeneratedFile, t resourceType) error {
 	}
 
 	// Delete
-	g.P("Delete: func(ctx ", ctx, ", client ", coreClient, ", name string) error {")
+	hasOption := slices.ContainsFunc(attrs, func(a attribute) bool { return a.deleteOption != nil })
+	if hasOption {
+		// The delete's options are the state's.
+		g.P("DeleteState: func(ctx ", ctx, ", client ", coreClient, ", m *", model, ") error {")
+		g.P("name := m.Name.ValueString()")
+	} else {
+		g.P("Delete: func(ctx ", ctx, ", client ", coreClient, ", name string) error {")
+	}
 	if t.del == nil {
 		// A singleton exists as long as its parent does: destroying it
 		// leaves it as it is.
@@ -608,7 +631,14 @@ func generateResource(g *protogen.GeneratedFile, t resourceType) error {
 		g.P("}")
 		return nil
 	}
-	call := client + "." + t.del.GoName + "(ctx, &" + g.QualifiedGoIdent(t.del.Input.GoIdent) + "{Name: name})"
+	request := g.QualifiedGoIdent(t.del.Input.GoIdent) + "{Name: name"
+	for _, a := range attrs {
+		if a.deleteOption != nil {
+			// The option's field, set from the state.
+			request += ", " + a.deleteOption.field.GoName + ": m." + a.goName + ".ValueBool()"
+		}
+	}
+	call := client + "." + t.del.GoName + "(ctx, &" + request + "})"
 	if operationResult(t.del) != "" {
 		g.P("op, err := ", call)
 		g.P("if err != nil {")
@@ -621,6 +651,11 @@ func generateResource(g *protogen.GeneratedFile, t resourceType) error {
 		g.P("return err")
 	}
 	g.P("},")
+	for _, a := range attrs {
+		if a.deleteOption != nil && a.deleteOption.frees {
+			g.P("FreesIDOnDelete: func(m *", model, ") bool { return m.", a.goName, ".ValueBool() },")
+		}
+	}
 
 	generateToggles(g, t, model, message, client, attrs)
 	generateSpelled(g, model, attrs)
@@ -844,7 +879,7 @@ func generateDataSource(g *protogen.GeneratedFile, t resourceType, name string) 
 	model := name + "Model"
 	message := "*" + g.QualifiedGoIdent(t.message.GoIdent)
 	client := g.QualifiedGoIdent(t.file.GoImportPath.Ident("New"+strings.TrimSuffix(t.service.GoName, "Service")+"Client")) + "(client)"
-	typeName := "_" + t.shortcode + "_" + snake(t.singular)
+	typeName := "_" + t.typePrefix() + "_" + snake(t.singular)
 	spec := g.QualifiedGoIdent(frameworkPackage.Ident("DataSourceSpec"))
 
 	generateModel(g, model, "origincloud"+typeName+"'s state", attrs)
@@ -920,7 +955,7 @@ func generateListDataSource(g *protogen.GeneratedFile, t resourceType) error {
 	}
 	itemModel, itemFromProto := name+"Model", name+"FromProto"
 	message := "*" + g.QualifiedGoIdent(t.message.GoIdent)
-	typeName := "_" + t.shortcode + "_" + snake(t.plural)
+	typeName := "_" + t.typePrefix() + "_" + snake(t.plural)
 	if t.create != nil {
 		// A resource: its state isn't an item's.
 		itemModel, itemFromProto = name+"ItemModel", name+"ItemFromProto"

@@ -1202,3 +1202,52 @@ func TestRevisionsAndLaunchesAreCheckedAgainstTheAPI(t *testing.T) {
 		t.Errorf("a revised field that isn't a message failed with %q", failure)
 	}
 }
+
+// withDeleteOption gives DeleteWidget a request with a boolean force, and
+// declares it the delete option force_delete of widgets.
+func withDeleteOption(t *testing.T, force string) func(*descriptorpb.FileDescriptorProto) {
+	saved := deleteOptions
+	deleteOptions = []deleteOption{{resource: "test.widgets.v1.Widget", attribute: "force_delete", field: "force", frees: true, doc: "Whether to force."}}
+	t.Cleanup(func() { deleteOptions = saved })
+	return func(file *descriptorpb.FileDescriptorProto) {
+		request := new(descriptorpb.DescriptorProto)
+		text := `name: "DeleteWidgetRequest" field { name: "name" number: 1 label: LABEL_OPTIONAL type: TYPE_STRING } ` + force
+		if err := prototext.Unmarshal([]byte(text), request); err != nil {
+			panic(err)
+		}
+		file.MessageType = append(file.MessageType, request)
+		for _, m := range file.Service[0].Method {
+			if m.GetName() == "DeleteWidget" {
+				m.InputType = proto.String(".test.widgets.v1.DeleteWidgetRequest")
+			}
+		}
+	}
+}
+
+// A delete option is an argument that only the delete uses: it is kept from
+// the plan, and the delete sets the request's field from the state.
+func TestADeleteOptionIsAnArgumentTheDeleteReadsFromTheState(t *testing.T) {
+	files, failure := run(t, withDeleteOption(t, `field { name: "force" number: 2 label: LABEL_OPTIONAL type: TYPE_BOOL }`))
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	code := files["internal/services/widgetsv1/widget.gen.go"]
+	contains(t, "widget.gen.go", code,
+		`"force_delete": schema.BoolAttribute{ MarkdownDescription: "Whether to force.", Optional: true, },`,
+		"DeleteState: func(ctx context.Context, client *core.Client, m *widgetModel) error {",
+		"&v1.DeleteWidgetRequest{Name: name, Force: m.ForceDelete.ValueBool()}",
+		"FreesIDOnDelete: func(m *widgetModel) bool { return m.ForceDelete.ValueBool() },",
+	)
+	// Nothing answers with it, and nothing sends it but the delete.
+	if n := strings.Count(code, "ForceDelete"); n != 3 {
+		t.Errorf("the option is used %d times, not by the model, the delete and the id alone:\n%s", n, code)
+	}
+}
+
+// An option whose request has no such boolean field fails generation.
+func TestADeleteOptionNeedsABooleanFieldOfTheDeletesRequest(t *testing.T) {
+	_, failure := run(t, withDeleteOption(t, `field { name: "force" number: 2 label: LABEL_OPTIONAL type: TYPE_STRING }`))
+	if !strings.Contains(failure, "delete option force_delete: DeleteWidgetRequest has no boolean field force") {
+		t.Errorf("generation failed with %q", failure)
+	}
+}

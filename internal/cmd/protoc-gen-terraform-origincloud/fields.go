@@ -82,6 +82,9 @@ type attribute struct {
 	// toggle is the attribute's toggle, when methods of their own set and
 	// clear it (toggles.go).
 	toggle *resolvedToggle
+	// deleteOption is the attribute's option of the delete, when it only
+	// sets a field of the delete's request (deletes.go).
+	deleteOption *resolvedDeleteOption
 	// modifiers and validators are the attribute's own, written by the
 	// functions of the generated code's imports.
 	modifiers, validators []func(c conv) string
@@ -246,6 +249,21 @@ func attributes(t resourceType, forResource bool, prefix string) ([]attribute, e
 		attrs = append(attrs, attribute{
 			name: r.attribute, goName: camel(r.attribute), kind: "Bool", doc: r.doc,
 			optional: true, computed: true, keep: true, toggle: r,
+		})
+	}
+	options, err := deleteOptionsOf(t)
+	if err != nil {
+		return nil, err
+	}
+	for _, o := range options {
+		if slices.ContainsFunc(attrs, func(b attribute) bool { return b.name == o.attribute }) {
+			return nil, fmt.Errorf("delete option %s: the attribute is already a field's", o.attribute)
+		}
+		// Optional, and not computed: the API doesn't answer with it, and the
+		// state keeps the configured value.
+		attrs = append(attrs, attribute{
+			name: o.attribute, goName: camel(o.attribute), kind: "Bool", doc: o.doc,
+			optional: true, deleteOption: o,
 		})
 	}
 	return attrs, nil
@@ -728,7 +746,9 @@ func generateConversions(g *protogen.GeneratedFile, t resourceType, name, model,
 	if forResource {
 		// The name's values set the attributes that are parts of it; a
 		// name of no such part is checked all the same.
-		used := slices.ContainsFunc(attrs, func(a attribute) bool { return a.field == nil && a.name != "id" && a.toggle == nil })
+		used := slices.ContainsFunc(attrs, func(a attribute) bool {
+			return a.field == nil && a.name != "id" && a.toggle == nil && a.deleteOption == nil
+		})
 		if used {
 			g.P("values, err := ", c.framework("NameValues"), "(", fmt.Sprintf("%q", t.pattern), ", p.GetName())")
 			g.P("if err != nil {")
@@ -742,6 +762,9 @@ func generateConversions(g *protogen.GeneratedFile, t resourceType, name, model,
 		if a.toggle != nil {
 			g.P("m.", a.goName, " = ", c.types("BoolValue"), "(p.Get", a.toggle.state.GoName, "() == ", g.QualifiedGoIdent(a.toggle.on.GoIdent), ")")
 			continue
+		}
+		if a.deleteOption != nil {
+			continue // not in the answer: the state keeps the plan's
 		}
 		if a.field == nil {
 			if a.name == "id" {

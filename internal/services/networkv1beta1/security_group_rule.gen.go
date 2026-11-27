@@ -94,23 +94,20 @@ func securityGroupRuleSchema() schema.Schema {
 			"cidr_block": schema.StringAttribute{
 				MarkdownDescription: "The peer as an address range: where admitted traffic comes from, or where sent traffic goes to. Changing it replaces the security group rule.",
 				Optional:            true,
-				Computed:            true,
-				Validators:          []validator.String{framework.Oneof{Others: []string{"peer_security_group", "same_group"}}},
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), framework.OneofOthers{"peer_security_group", "same_group"}, stringplanmodifier.RequiresReplace()},
+				Validators:          []validator.String{framework.Oneof{Others: []string{"peer_security_group", "same_group"}, Required: true}},
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"peer_security_group": schema.StringAttribute{
 				MarkdownDescription: "The peer as another security group of the same VPC, by its full name: its members' addresses. The rule's own group is refused here with `INVALID_ARGUMENT`: it is `same_group`. Changing it replaces the security group rule.",
 				Optional:            true,
-				Computed:            true,
 				Validators:          []validator.String{framework.FullNameReference(), framework.Oneof{Others: []string{"cidr_block", "same_group"}}},
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), framework.OneofOthers{"cidr_block", "same_group"}, stringplanmodifier.RequiresReplace()},
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"same_group": schema.BoolAttribute{
 				MarkdownDescription: "The peer as the rule's own group's members; only `true` is a peer. Changing it replaces the security group rule.",
 				Optional:            true,
-				Computed:            true,
 				Validators:          []validator.Bool{framework.Oneof{Others: []string{"cidr_block", "peer_security_group"}}},
-				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown(), framework.OneofOthers{"cidr_block", "peer_security_group"}, boolplanmodifier.RequiresReplace()},
+				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.RequiresReplace()},
 			},
 			"description": schema.StringAttribute{
 				MarkdownDescription: "What the rule is for. Changing it replaces the security group rule.",

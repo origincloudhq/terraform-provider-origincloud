@@ -73,6 +73,7 @@ Optional:
 - `login_user` (String) The account to log in as: a user created at first boot that holds the key pair. A POSIX user name of at most 32 lowercase letters, digits, underscores and hyphens, starting with a letter or an underscore, and not `root`. The image's `default_user` when left empty.
 - `network_interfaces` (Attributes List) The instance's network interfaces, in device order, the boot interface first; at most one today. Left empty, the instance gets one interface created from an empty spec: in the project's default subnet, with the VPC's default security group. (see [below for nested schema](#nestedatt--launch_template_data--network_interfaces))
 - `service_account` (String) The full name of the service account the instance runs as, `//iam.origincloudapis.eu/organizations/{organization}/serviceAccounts/{service_account}`: a `WORKLOAD` service account of the project's organization that isn't deleted. Launching with one needs `iam.service_account.act_as` on the organization as well. Empty for an instance that runs as none.
+- `shutdown_behavior` (String) What happens when the instance's operating system shuts it down. `STOP` when left unspecified. One of `STOP`, `TERMINATE`. Left out, it keeps its current value; see the field's description.
 - `tags` (Map of String) Labels of your own for the instance, at most 50. The `origin:name` tag is the name the console shows.
 
 <a id="nestedatt--launch_template_data--boot_volume"></a>

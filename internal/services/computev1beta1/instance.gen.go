@@ -45,6 +45,7 @@ type instanceModel struct {
 	ServiceAccount     types.String `tfsdk:"service_account"`
 	LaunchTemplate     types.String `tfsdk:"launch_template"`
 	LocalDisks         types.List   `tfsdk:"local_disks"`
+	ShutdownBehavior   types.String `tfsdk:"shutdown_behavior"`
 }
 
 func instanceSchema() schema.Schema {
@@ -253,6 +254,13 @@ func instanceSchema() schema.Schema {
 					},
 				},
 			},
+			"shutdown_behavior": schema.StringAttribute{
+				MarkdownDescription: "What happens when the instance's operating system shuts it down: it stops, or it is terminated. `STOP` when left unspecified at launch. Changeable at any time before the instance is terminated. One of `STOP`, `TERMINATE`. Left out, it keeps its current value; see the field's description.",
+				Optional:            true,
+				Computed:            true,
+				Validators:          []validator.String{framework.OneOf("STOP", "TERMINATE")},
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+			},
 		},
 	}
 }
@@ -390,6 +398,7 @@ func instanceToProto(m *instanceModel) *v1beta1.Instance {
 		ServiceAccount:    m.ServiceAccount.ValueString(),
 		LaunchTemplate:    m.LaunchTemplate.ValueString(),
 		LocalDisks:        framework.Elements(m.LocalDisks, func(e attr.Value) *v1beta1.LocalDisk { return instance_LocalDisksToProto(e.(types.Object)) }),
+		ShutdownBehavior:  v1beta1.ShutdownBehavior(v1beta1.ShutdownBehavior_value[m.ShutdownBehavior.ValueString()]),
 	}
 }
 
@@ -423,6 +432,7 @@ func instanceFromProto(p *v1beta1.Instance, m *instanceModel) error {
 	m.ServiceAccount = types.StringValue(p.GetServiceAccount())
 	m.LaunchTemplate = types.StringValue(p.GetLaunchTemplate())
 	m.LocalDisks = framework.MessageList(instance_LocalDisksAttrTypes(), p.GetLocalDisks(), m.LocalDisks, instance_LocalDisksFromProto)
+	m.ShutdownBehavior = framework.ChosenEnum(p.GetShutdownBehavior())
 	return nil
 }
 
@@ -446,6 +456,9 @@ func instanceResource() framework.ResourceSpec[instanceModel, *v1beta1.Instance]
 			}
 			if !plan.ServiceAccount.Equal(state.ServiceAccount) {
 				mask = append(mask, "service_account")
+			}
+			if !plan.ShutdownBehavior.Equal(state.ShutdownBehavior) {
+				mask = append(mask, "shutdown_behavior")
 			}
 			return mask
 		},
@@ -512,6 +525,7 @@ type instanceItemModel struct {
 	ServiceAccount     types.String `tfsdk:"service_account"`
 	LaunchTemplate     types.String `tfsdk:"launch_template"`
 	LocalDisks         types.List   `tfsdk:"local_disks"`
+	ShutdownBehavior   types.String `tfsdk:"shutdown_behavior"`
 }
 
 func instanceItem_BootVolumeAttrTypes() map[string]attr.Type {
@@ -651,6 +665,7 @@ func instanceItemFromProto(p *v1beta1.Instance, m *instanceItemModel) error {
 	m.ServiceAccount = types.StringValue(p.GetServiceAccount())
 	m.LaunchTemplate = types.StringValue(p.GetLaunchTemplate())
 	m.LocalDisks = framework.MessageList(instanceItem_LocalDisksAttrTypes(), p.GetLocalDisks(), types.ListNull(types.ObjectType{AttrTypes: instanceItem_LocalDisksAttrTypes()}), instanceItem_LocalDisksFromProto)
+	m.ShutdownBehavior = types.StringValue(p.GetShutdownBehavior().String())
 	return nil
 }
 
@@ -827,6 +842,10 @@ func instanceListSchema() schema1.Schema {
 									},
 								},
 							},
+						},
+						"shutdown_behavior": schema1.StringAttribute{
+							MarkdownDescription: "What happens when the instance's operating system shuts it down: it stops, or it is terminated. `STOP` when left unspecified at launch. Changeable at any time before the instance is terminated. One of `STOP`, `TERMINATE`.",
+							Computed:            true,
 						},
 					},
 				},

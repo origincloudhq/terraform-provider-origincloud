@@ -158,6 +158,13 @@ func launchTemplateSchema() schema.Schema {
 							},
 						},
 					},
+					"shutdown_behavior": schema.StringAttribute{
+						MarkdownDescription: "What happens when the instance's operating system shuts it down. `STOP` when left unspecified. One of `STOP`, `TERMINATE`. Left out, it keeps its current value; see the field's description.",
+						Optional:            true,
+						Computed:            true,
+						Validators:          []validator.String{framework.OneOf("STOP", "TERMINATE")},
+						PlanModifiers:       []planmodifier.String{stringplanmodifier.UseNonNullStateForUnknown()},
+					},
 				},
 			},
 			"default_version": schema.Int64Attribute{
@@ -209,6 +216,7 @@ func launchTemplate_LaunchTemplateDataAttrTypes() map[string]attr.Type {
 		"tags":               types.MapType{ElemType: types.StringType},
 		"network_interfaces": types.ListType{ElemType: types.ObjectType{AttrTypes: launchTemplate_LaunchTemplateData_NetworkInterfacesAttrTypes()}},
 		"local_disks":        types.ListType{ElemType: types.ObjectType{AttrTypes: launchTemplate_LaunchTemplateData_LocalDisksAttrTypes()}},
+		"shutdown_behavior":  types.StringType,
 	}
 }
 
@@ -224,6 +232,7 @@ func launchTemplate_LaunchTemplateDataFromProto(p *v1beta1.LaunchTemplateData, p
 		"tags":               framework.Optional(framework.Attr(prior, "tags", types.MapNull(types.StringType)), framework.StringMap(p.GetTags()), len(p.GetTags()) == 0),
 		"network_interfaces": framework.Optional(framework.Attr(prior, "network_interfaces", types.ListNull(types.ObjectType{AttrTypes: launchTemplate_LaunchTemplateData_NetworkInterfacesAttrTypes()})), framework.MessageList(launchTemplate_LaunchTemplateData_NetworkInterfacesAttrTypes(), p.GetNetworkInterfaces(), framework.Attr(prior, "network_interfaces", types.ListNull(types.ObjectType{AttrTypes: launchTemplate_LaunchTemplateData_NetworkInterfacesAttrTypes()})), launchTemplate_LaunchTemplateData_NetworkInterfacesFromProto), len(p.GetNetworkInterfaces()) == 0),
 		"local_disks":        framework.Optional(framework.Attr(prior, "local_disks", types.ListNull(types.ObjectType{AttrTypes: launchTemplate_LaunchTemplateData_LocalDisksAttrTypes()})), framework.MessageList(launchTemplate_LaunchTemplateData_LocalDisksAttrTypes(), p.GetLocalDisks(), framework.Attr(prior, "local_disks", types.ListNull(types.ObjectType{AttrTypes: launchTemplate_LaunchTemplateData_LocalDisksAttrTypes()})), launchTemplate_LaunchTemplateData_LocalDisksFromProto), len(p.GetLocalDisks()) == 0),
+		"shutdown_behavior":  framework.ChosenEnum(p.GetShutdownBehavior()),
 	})
 }
 
@@ -246,6 +255,7 @@ func launchTemplate_LaunchTemplateDataToProto(o types.Object) *v1beta1.LaunchTem
 		LocalDisks: framework.Elements(framework.Attr(o, "local_disks", types.ListNull(types.ObjectType{AttrTypes: launchTemplate_LaunchTemplateData_LocalDisksAttrTypes()})), func(e attr.Value) *v1beta1.LocalDisk {
 			return launchTemplate_LaunchTemplateData_LocalDisksToProto(e.(types.Object))
 		}),
+		ShutdownBehavior: v1beta1.ShutdownBehavior(v1beta1.ShutdownBehavior_value[framework.Attr(o, "shutdown_behavior", types.StringNull()).ValueString()]),
 	}
 }
 
@@ -552,6 +562,10 @@ func launchTemplateByNameSchema() schema1.Schema {
 							},
 						},
 					},
+					"shutdown_behavior": schema1.StringAttribute{
+						MarkdownDescription: "What happens when the instance's operating system shuts it down. `STOP` when left unspecified. One of `STOP`, `TERMINATE`.",
+						Computed:            true,
+					},
 				},
 			},
 			"default_version": schema1.Int64Attribute{
@@ -599,6 +613,7 @@ func launchTemplateByName_LaunchTemplateDataAttrTypes() map[string]attr.Type {
 		"tags":               types.MapType{ElemType: types.StringType},
 		"network_interfaces": types.ListType{ElemType: types.ObjectType{AttrTypes: launchTemplateByName_LaunchTemplateData_NetworkInterfacesAttrTypes()}},
 		"local_disks":        types.ListType{ElemType: types.ObjectType{AttrTypes: launchTemplateByName_LaunchTemplateData_LocalDisksAttrTypes()}},
+		"shutdown_behavior":  types.StringType,
 	}
 }
 
@@ -614,6 +629,7 @@ func launchTemplateByName_LaunchTemplateDataFromProto(p *v1beta1.LaunchTemplateD
 		"tags":               framework.StringMap(p.GetTags()),
 		"network_interfaces": framework.MessageList(launchTemplateByName_LaunchTemplateData_NetworkInterfacesAttrTypes(), p.GetNetworkInterfaces(), types.ListNull(types.ObjectType{AttrTypes: launchTemplateByName_LaunchTemplateData_NetworkInterfacesAttrTypes()}), launchTemplateByName_LaunchTemplateData_NetworkInterfacesFromProto),
 		"local_disks":        framework.MessageList(launchTemplateByName_LaunchTemplateData_LocalDisksAttrTypes(), p.GetLocalDisks(), types.ListNull(types.ObjectType{AttrTypes: launchTemplateByName_LaunchTemplateData_LocalDisksAttrTypes()}), launchTemplateByName_LaunchTemplateData_LocalDisksFromProto),
+		"shutdown_behavior":  types.StringValue(p.GetShutdownBehavior().String()),
 	})
 }
 
@@ -855,6 +871,10 @@ func launchTemplateRevisionsSchema() schema1.Schema {
 										},
 									},
 								},
+								"shutdown_behavior": schema1.StringAttribute{
+									MarkdownDescription: "What happens when the instance's operating system shuts it down. `STOP` when left unspecified. One of `STOP`, `TERMINATE`.",
+									Computed:            true,
+								},
 							},
 						},
 						"default_version": schema1.Int64Attribute{
@@ -944,6 +964,7 @@ func launchTemplateItem_LaunchTemplateDataAttrTypes() map[string]attr.Type {
 		"tags":               types.MapType{ElemType: types.StringType},
 		"network_interfaces": types.ListType{ElemType: types.ObjectType{AttrTypes: launchTemplateItem_LaunchTemplateData_NetworkInterfacesAttrTypes()}},
 		"local_disks":        types.ListType{ElemType: types.ObjectType{AttrTypes: launchTemplateItem_LaunchTemplateData_LocalDisksAttrTypes()}},
+		"shutdown_behavior":  types.StringType,
 	}
 }
 
@@ -959,6 +980,7 @@ func launchTemplateItem_LaunchTemplateDataFromProto(p *v1beta1.LaunchTemplateDat
 		"tags":               framework.StringMap(p.GetTags()),
 		"network_interfaces": framework.MessageList(launchTemplateItem_LaunchTemplateData_NetworkInterfacesAttrTypes(), p.GetNetworkInterfaces(), types.ListNull(types.ObjectType{AttrTypes: launchTemplateItem_LaunchTemplateData_NetworkInterfacesAttrTypes()}), launchTemplateItem_LaunchTemplateData_NetworkInterfacesFromProto),
 		"local_disks":        framework.MessageList(launchTemplateItem_LaunchTemplateData_LocalDisksAttrTypes(), p.GetLocalDisks(), types.ListNull(types.ObjectType{AttrTypes: launchTemplateItem_LaunchTemplateData_LocalDisksAttrTypes()}), launchTemplateItem_LaunchTemplateData_LocalDisksFromProto),
+		"shutdown_behavior":  types.StringValue(p.GetShutdownBehavior().String()),
 	})
 }
 
@@ -1187,6 +1209,10 @@ func launchTemplateListSchema() schema1.Schema {
 											},
 										},
 									},
+								},
+								"shutdown_behavior": schema1.StringAttribute{
+									MarkdownDescription: "What happens when the instance's operating system shuts it down. `STOP` when left unspecified. One of `STOP`, `TERMINATE`.",
+									Computed:            true,
 								},
 							},
 						},
