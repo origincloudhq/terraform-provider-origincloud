@@ -473,7 +473,7 @@ func TestASecurityGroupRuleHasExactlyOnePeer(t *testing.T) {
 	fake := newFakeNetwork(t)
 	fromGroup := `peer_security_group = origincloud_network_security_group.lb.id`
 	fromRange := `cidr_block = "10.0.0.0/8"`
-	exactlyOne := regexp.MustCompile(`set exactly one of cidr_block,\s+peer_security_group and same_group`)
+	exactlyOne := regexp.MustCompile(`exactly one of this and peer_security_group,\s+same_group\s+must be set`)
 
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: factories(),
@@ -492,8 +492,8 @@ func TestASecurityGroupRuleHasExactlyOnePeer(t *testing.T) {
 				),
 			},
 			// The peers are a oneof: two of them are refused at the plan,
-			// naming the others. One left out isn't, as the members aren't
-			// REQUIRED: the API's refusal reaches the user.
+			// naming the others, and so is none, as the members are
+			// REQUIRED.
 			{
 				Config:      peersConfig(fake, fromGroup, extraSecurityGroupRule(fromGroup+"\n  "+fromRange)),
 				PlanOnly:    true,

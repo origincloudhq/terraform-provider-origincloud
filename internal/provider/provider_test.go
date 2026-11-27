@@ -409,6 +409,9 @@ func checkFullName(address string) resource.TestCheckFunc {
 			return fmt.Errorf("no %s in the state", address)
 		}
 		service, _, _ := strings.Cut(strings.TrimPrefix(r.Type, "origincloud_"), "_")
+		if strings.HasPrefix(r.Type, "origincloud_secret_manager_") {
+			service = "secretmanager" // the type names it in words
+		}
 		want := "//" + service + ".origincloudapis.eu/" + r.Primary.Attributes["name"]
 		if got := r.Primary.Attributes["id"]; got != want {
 			return fmt.Errorf("%s's id is %q, not its full name %q", address, got, want)

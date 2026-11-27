@@ -99,7 +99,8 @@ func (r *Resource[M, P]) ModifyPlan(ctx context.Context, req resource.ModifyPlan
 		id := r.spec.ClientID(&plan)
 		// An optional id left out is the API's choice again.
 		if changed := r.spec.Replaced(&plan, &state, &config); len(changed) > 0 &&
-			!r.spec.ClientID(&config).IsNull() && !id.IsUnknown() && id.Equal(r.spec.ClientID(&state)) {
+			!r.spec.ClientID(&config).IsNull() && !id.IsUnknown() && id.Equal(r.spec.ClientID(&state)) &&
+			(r.spec.FreesIDOnDelete == nil || !r.spec.FreesIDOnDelete(&state)) {
 			resp.Diagnostics.AddAttributeError(path.Root(changed[0]), "Can't replace with the same id", fmt.Sprintf(
 				"Changing %s replaces the %s, and a deleted %[2]s's id can't be used again: choose a new %[3]s.",
 				strings.Join(changed, ", "), r.spec.Singular, r.spec.IDAttribute))

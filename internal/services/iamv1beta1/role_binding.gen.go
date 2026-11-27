@@ -30,7 +30,7 @@ type roleBindingModel struct {
 	Creator        types.String `tfsdk:"creator"`
 	CreateTime     types.String `tfsdk:"create_time"`
 	State          types.String `tfsdk:"state"`
-	Resources      types.List   `tfsdk:"resources"`
+	Resources      types.Set    `tfsdk:"resources"`
 }
 
 func roleBindingSchema() schema.Schema {
@@ -90,11 +90,11 @@ func roleBindingSchema() schema.Schema {
 				MarkdownDescription: "Whether the binding grants its role yet. One of `ACTIVE`, `PENDING`.",
 				Computed:            true,
 			},
-			"resources": schema.ListAttribute{
+			"resources": schema.SetAttribute{
 				MarkdownDescription: "The full names of the resources the binding is limited to within its organization or project, such as `//secretmanager.origincloudapis.eu/projects/{project}/regions/{region}/secrets/{secret}`, in name order; at most 100. The binding grants its role on these resources alone, and nothing on the rest of its scope or on the organization or the project itself. Empty for a binding on its whole scope. Each entry must be a resource of the binding's organization, in the binding's project if `project` is set, of a kind that can be listed. Never set together with `service_account`, nor on a pending binding. A resource deleted after the binding was created stays listed, and the binding covers a resource created later under the same name. The one field UpdateRoleBinding changes.",
 				Optional:            true,
 				ElementType:         types.StringType,
-				Validators:          []validator.List{framework.ElementCheck{FullNames: true}},
+				Validators:          []validator.Set{framework.ElementCheck{FullNames: true}},
 			},
 		},
 	}
@@ -130,7 +130,7 @@ func roleBindingFromProto(p *v1beta1.RoleBinding, m *roleBindingModel) error {
 	m.Creator = types.StringValue(p.GetCreator())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
 	m.State = types.StringValue(p.GetState().String())
-	m.Resources = framework.Optional(m.Resources, framework.StringList(p.GetResources()), len(p.GetResources()) == 0)
+	m.Resources = framework.Optional(m.Resources, framework.StringSet(p.GetResources()), len(p.GetResources()) == 0)
 	return nil
 }
 
@@ -181,7 +181,7 @@ type roleBindingItemModel struct {
 	Creator        types.String `tfsdk:"creator"`
 	CreateTime     types.String `tfsdk:"create_time"`
 	State          types.String `tfsdk:"state"`
-	Resources      types.List   `tfsdk:"resources"`
+	Resources      types.Set    `tfsdk:"resources"`
 }
 
 func roleBindingItemFromProto(p *v1beta1.RoleBinding, m *roleBindingItemModel) error {
@@ -198,7 +198,7 @@ func roleBindingItemFromProto(p *v1beta1.RoleBinding, m *roleBindingItemModel) e
 	m.Creator = types.StringValue(p.GetCreator())
 	m.CreateTime = framework.Timestamp(p.GetCreateTime(), types.StringNull())
 	m.State = types.StringValue(p.GetState().String())
-	m.Resources = framework.StringList(p.GetResources())
+	m.Resources = framework.StringSet(p.GetResources())
 	return nil
 }
 
@@ -257,7 +257,7 @@ func roleBindingListSchema() schema1.Schema {
 							MarkdownDescription: "Whether the binding grants its role yet. One of `ACTIVE`, `PENDING`.",
 							Computed:            true,
 						},
-						"resources": schema1.ListAttribute{
+						"resources": schema1.SetAttribute{
 							MarkdownDescription: "The full names of the resources the binding is limited to within its organization or project, such as `//secretmanager.origincloudapis.eu/projects/{project}/regions/{region}/secrets/{secret}`, in name order; at most 100. The binding grants its role on these resources alone, and nothing on the rest of its scope or on the organization or the project itself. Empty for a binding on its whole scope. Each entry must be a resource of the binding's organization, in the binding's project if `project` is set, of a kind that can be listed. Never set together with `service_account`, nor on a pending binding. A resource deleted after the binding was created stays listed, and the binding covers a resource created later under the same name. The one field UpdateRoleBinding changes.",
 							Computed:            true,
 							ElementType:         types.StringType,

@@ -265,6 +265,22 @@ to the plugin or `internal/framework`.
   provider's schema (`TestNoResourceOrDataSourceReturnsAPrivateKey`) fails
   on any attribute that could hold a private key, or any sensitive one not
   listed in it.
+- A boolean argument that only the destruction of a resource uses, such as
+  a secret's `force_delete`, is a **delete option**: it sets a boolean field
+  of the delete's request (`DeleteSecretRequest.force`, which skips the
+  recovery window and frees the id). It is an optional argument that isn't a
+  field of the resource, so the API never answers with it: the state keeps the
+  configured value, an imported resource has none, and the delete reads it
+  from the state, so a change to it has to be applied before the apply that
+  destroys the resource. Changing it updates nothing in the API. Nothing in
+  the API marks such a field, so each is declared in `deletes.go`, which
+  generation checks against the API, as it does toggles. An option that frees
+  the id also lifts the refusal of a plan that replaces the resource under
+  the id it has, when the option is set in the state. A secret deleted
+  without it stays in its recovery window with its id taken, and creating a
+  secret with that id is refused by the API with `CONFLICT`, which the
+  provider passes on: it doesn't call `RestoreSecret`, which would bring the
+  old versions back with the secret.
 - A resource that keeps a history of one field, such as a launch template's
   recipe (AIP-162), is a **revision**: the field is `REQUIRED` and
   `IMMUTABLE`, which would replace the resource when it changes, so each is

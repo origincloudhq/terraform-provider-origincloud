@@ -119,6 +119,10 @@ data sources are generated from the API definitions in
 | Data source | `origincloud_kms_keys` | A project's keys in a region |
 | Data source | `origincloud_kms_grants` | A key's grants that haven't expired |
 | Data source | `origincloud_kms_public_key` | A signing key version's public key |
+| Resource | `origincloud_secret_manager_secret` | A regional secret: its id, KMS key and tags, deleted with a recovery window unless `force_delete` is set |
+| Data source | `origincloud_secret_manager_secrets` | A project's secrets in a region, without any payload |
+| Data source | `origincloud_secret_manager_secret_version` | One version of a secret: its state and times, without the payload |
+| Data source | `origincloud_secret_manager_secret_versions` | A secret's versions, without any payload |
 
 ## Using it
 

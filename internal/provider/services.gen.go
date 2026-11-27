@@ -14,6 +14,7 @@ import (
 	networkv1beta1 "github.com/origincloudhq/terraform-provider-origincloud/internal/services/networkv1beta1"
 	pvsv1beta1 "github.com/origincloudhq/terraform-provider-origincloud/internal/services/pvsv1beta1"
 	resourcemanagerv1beta1 "github.com/origincloudhq/terraform-provider-origincloud/internal/services/resourcemanagerv1beta1"
+	secretmanagerv1beta1 "github.com/origincloudhq/terraform-provider-origincloud/internal/services/secretmanagerv1beta1"
 	supportv1beta1 "github.com/origincloudhq/terraform-provider-origincloud/internal/services/supportv1beta1"
 )
 
@@ -29,6 +30,7 @@ func serviceResources() []func() resource.Resource {
 	all = append(all, networkv1beta1.Resources()...)
 	all = append(all, pvsv1beta1.Resources()...)
 	all = append(all, resourcemanagerv1beta1.Resources()...)
+	all = append(all, secretmanagerv1beta1.Resources()...)
 	all = append(all, supportv1beta1.Resources()...)
 	return all
 }
@@ -45,6 +47,7 @@ func serviceDataSources() []func() datasource.DataSource {
 	all = append(all, networkv1beta1.DataSources()...)
 	all = append(all, pvsv1beta1.DataSources()...)
 	all = append(all, resourcemanagerv1beta1.DataSources()...)
+	all = append(all, secretmanagerv1beta1.DataSources()...)
 	all = append(all, supportv1beta1.DataSources()...)
 	return all
 }

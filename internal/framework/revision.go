@@ -118,13 +118,17 @@ func (m followsRevision) PlanModifyInt64(ctx context.Context, req planmodifier.I
 		resp.PlanValue = types.Int64Unknown()
 		return
 	}
-	var plan, state types.Object
+	var plan, state, config types.Object
 	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, path.Root(m.field), &plan)...)
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root(m.field), &state)...)
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root(m.field), &config)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if plan.Equal(state) {
+	// A value the API chooses and the configuration leaves out, such as an
+	// optional enum the API hasn't chosen, is planned unknown while anything
+	// changes, but is no change of the field.
+	if known(plan, state, config).Equal(state) {
 		resp.PlanValue = req.StateValue
 	} else {
 		resp.PlanValue = types.Int64Unknown()
